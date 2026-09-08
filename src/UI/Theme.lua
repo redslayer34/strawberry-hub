@@ -1,21 +1,20 @@
 --=============================================================================
--- THEME — palette centrale, applicable a chaud
+-- THEME — central palette, applied live
 --=============================================================================
---  Aucun composant ne code une couleur en dur. Chacun enregistre un
---  "peintre" : une fonction qui applique la palette a ses instances. Changer
---  de theme consiste alors a rejouer tous les peintres, sans reconstruire
---  quoi que ce soit — l'etat des toggles, la position de la fenetre et
---  l'onglet actif survivent au changement.
+--  No component hardcodes a colour. Each one registers a "painter": a function
+--  that applies the palette to its instances. Changing theme is then a matter
+--  of replaying every painter, rebuilding nothing — toggle values, window
+--  position and the active tab all survive the change.
 --
---  Le peintre est appele une premiere fois a l'enregistrement : un composant
---  n'a donc jamais a peindre lui-meme a la construction.
+--  A painter runs once on registration, so a component never has to paint
+--  itself at construction time.
 --=============================================================================
 
 local Theme = {}
 
--- Sombre, compact, accent rouge discret. Les ecarts entre Background,
--- Sidebar et Element sont volontairement faibles : c'est ce qui donne
--- l'aspect pose de la reference, sans bordures marquees.
+-- Dark, compact, discreet red accent. The gaps between Background, Sidebar and
+-- Element are deliberately small: that restraint is what gives the reference
+-- its settled look, without heavy borders.
 Theme.DEFAULT = {
     Window       = Color3.fromRGB(13, 13, 15),
     Background   = Color3.fromRGB(20, 20, 23),
@@ -51,20 +50,20 @@ local nextId = 0
 
 function Theme.get() return current end
 
--- Lecture d'une teinte, avec repli sur la palette par defaut : un theme
--- partiel fourni par l'utilisateur ne doit pas laisser de trous.
+-- Reads a colour, falling back to the default palette: a partial theme
+-- supplied by the caller must not leave holes.
 function Theme.color(key)
     return current[key] or Theme.DEFAULT[key] or Color3.fromRGB(255, 0, 255)
 end
 
--- painter : function(theme). Appele tout de suite, puis a chaque SetTheme.
--- Renvoie un identifiant a passer a Theme.unregister (garde par le Maid du
--- composant, ce qui evite les peintres orphelins apres Destroy).
+-- painter : function(theme). Called immediately, then on every SetTheme.
+-- Returns an id to hand to Theme.unregister — held by the component's Maid,
+-- which is what prevents orphaned painters after Destroy.
 function Theme.register(painter)
     nextId = nextId + 1
     painters[nextId] = painter
     local ok, err = pcall(painter, current)
-    if not ok then warn("[UI] peintre en erreur : " .. tostring(err)) end
+    if not ok then warn("[UI] painter failed: " .. tostring(err)) end
     return nextId
 end
 
@@ -72,8 +71,8 @@ function Theme.unregister(id)
     if id then painters[id] = nil end
 end
 
--- Fusion, pas remplacement : passer { Accent = ... } ne doit pas effacer le
--- reste de la palette.
+-- Merge, not replace: passing { Accent = ... } must not wipe the rest of the
+-- palette.
 function Theme.set(newTheme)
     if type(newTheme) ~= "table" then return current end
 
@@ -83,7 +82,7 @@ function Theme.set(newTheme)
 
     for _, painter in pairs(painters) do
         local ok, err = pcall(painter, current)
-        if not ok then warn("[UI] peintre en erreur : " .. tostring(err)) end
+        if not ok then warn("[UI] painter failed: " .. tostring(err)) end
     end
     return current
 end
@@ -94,8 +93,8 @@ function Theme.reset()
     return Theme.set(copy)
 end
 
--- Utile aux tests et au diagnostic : un compteur qui ne redescend jamais
--- signale des composants detruits sans liberer leur peintre.
+-- Useful for tests and diagnostics: a count that never comes back down means
+-- components are being destroyed without releasing their painter.
 function Theme.painterCount()
     local n = 0
     for _ in pairs(painters) do n = n + 1 end

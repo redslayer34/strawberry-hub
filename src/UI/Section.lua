@@ -1,11 +1,10 @@
 --=============================================================================
--- SECTION — un titre discret et une pile de composants
+-- SECTION — a discreet heading and a stack of components
 --=============================================================================
---  La section n'est qu'un regroupement visuel : elle ne possede pas ses
---  composants au sens du cycle de vie du jeu, mais elle les garde en liste
---  pour pouvoir tous les detruire d'un coup. Sans cette liste, detruire une
---  section laisserait des peintres de theme et des connexions vivants alors
---  que leurs instances ont disparu.
+--  A section is only a visual grouping: it does not own its components in the
+--  engine sense, but it keeps a list of them so they can all be destroyed at
+--  once. Without that list, destroying a section would leave theme painters
+--  and connections alive while their instances are gone.
 --=============================================================================
 
 local Button = require("UI.Components.Button")
@@ -61,8 +60,8 @@ function Section.new(parent, opts, order, context)
     return self
 end
 
--- Ordre d'ajout = ordre d'affichage. Un compteur plutot que #components :
--- retirer un composant ne doit pas faire remonter les suivants.
+-- Insertion order is display order. A counter rather than #components: removing
+-- a component must not shift the ones after it.
 function Section:nextOrder()
     self.count = self.count + 1
     return self.count
@@ -86,8 +85,8 @@ function Section:CreateSlider(opts)
     return self:track(Slider.new(self.holder, opts, self:nextOrder()))
 end
 
--- Le contexte porte la couche de superposition : le menu du dropdown doit
--- pouvoir sortir du ScrollingFrame de l'onglet.
+-- The context carries the overlay layer: a dropdown menu has to be able to
+-- escape the tab's ScrollingFrame.
 function Section:CreateDropdown(opts)
     return self:track(Dropdown.new(self.holder, opts, self:nextOrder(), self.context))
 end

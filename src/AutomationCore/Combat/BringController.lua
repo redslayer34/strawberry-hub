@@ -1,21 +1,21 @@
 --=============================================================================
--- BRING CONTROLLER — amener les cibles, sans decider lesquelles
+-- BRING CONTROLLER — bring the targets in, without deciding which
 --=============================================================================
---  Ce module ne choisit RIEN. Il recoit une liste deja filtree et se contente
---  de la placer. Le flux impose est :
+--  This module chooses NOTHING. It receives an already-filtered list and only
+--  places it. The mandated flow is:
 --
 --      QuestDetector -> TargetSelector -> TargetValidator -> BringController
 --
---  Deux differences de fond avec l'ancien Move.bringMobs :
+--  Two substantive differences from the old Move.bringMobs:
 --
---  1. EMPLACEMENTS DISTINCTS. L'ancien code ecrivait le meme CFrame pour tous
---     les mobs : ils se chevauchaient, se repoussaient, et le serveur les
---     renvoyait au loin. Ici chaque cible recoit son emplacement autour de
---     l'ancre, et l'emplacement d'un mob mort est rendu au suivant.
+--  1. DISTINCT SLOTS. The old code wrote the same CFrame for every mob: they
+--     overlapped, pushed each other away, and the server sent them flying.
+--     Here each target gets its own slot around the anchor, and a dead mob's
+--     slot is handed to the next one.
 --
---  2. PULL LIMIT. Un mob tres eloigne n'est pas teleporte a travers la carte
---     (le serveur rejette le saut, et l'anti-triche le remarque). On demande
---     au TravelController de rapprocher le JOUEUR, puis on rescanne.
+--  2. PULL LIMIT. A very distant mob is not teleported across the map (the
+--     server rejects the jump, and the anti-cheat notices). We ask the
+--     TravelController to move the PLAYER closer instead, then rescan.
 --=============================================================================
 
 local Log = require("AutomationCore.Log")
@@ -38,12 +38,12 @@ function BringController.new(ctx)
 end
 
 ---------------------------------------------------------------------------
--- Emplacements
+-- Slots
 ---------------------------------------------------------------------------
 
--- Repartition reguliere sur un cercle sous l'ancre. Avec MaxTargets = 6 cela
--- donne exactement avant / arriere / gauche / droite plus deux intermediaires,
--- mais la formule reste valable pour n'importe quel nombre d'emplacements.
+-- Even distribution around a circle below the anchor. With MaxTargets = 6 that
+-- gives exactly front / back / left / right plus two in between, but the
+-- formula holds for any slot count.
 function BringController:slotOffset(index)
     local cfg = self.ctx.cfg.Bring
     local count = math.max(1, cfg.MaxTargets)
@@ -58,8 +58,8 @@ function BringController:slotPosition(anchor, index)
     return anchor.Position + self:slotOffset(index)
 end
 
--- Libere les emplacements dont l'occupant est mort, a disparu, ou n'est plus
--- une cible valide. C'est ce qui permet la reattribution demandee.
+-- Frees slots whose occupant is dead, gone, or no longer a valid target. This
+-- is what makes the required reassignment possible.
 function BringController:reclaim(quest)
     local ctx = self.ctx
     for index, slot in pairs(self.slots) do
@@ -94,9 +94,9 @@ end
 -- Cycle
 ---------------------------------------------------------------------------
 
--- targets : liste DEJA validee. quest : QuestState, uniquement pour
--- revalider les occupants d'un tour a l'autre.
--- Renvoie un compte-rendu : { moved, tooFar, placed, anchor, status }.
+-- targets : an ALREADY validated list. quest : QuestState, used only to
+-- revalidate occupants from one turn to the next.
+-- Returns a report: { moved, tooFar, placed, anchor, status }.
 function BringController:update(targets, quest)
     local ctx = self.ctx
     local cfg = ctx.cfg.Bring
@@ -115,8 +115,8 @@ function BringController:update(targets, quest)
         return report
     end
 
-    -- L'ancre est recalculee ici, pas conservee : c'est elle qui garantit que
-    -- les emplacements restent au-dessus du sol quand le paquet se deplace.
+    -- The anchor is recomputed here, not kept: it is what guarantees the slots
+    -- stay above ground when the pack moves.
     local anchor = SafeCombatAnchor.compute(ctx)
     if not anchor then
         report.status = "no_anchor"
@@ -124,8 +124,8 @@ function BringController:update(targets, quest)
     end
     report.anchor = anchor
 
-    -- Un deplacement franc de l'ancre rend les affectations caduques : les
-    -- emplacements ne sont plus au meme endroit.
+    -- A sharp anchor move makes the assignments obsolete: the slots are no
+    -- longer in the same place.
     if self.lastAnchor and (anchor.Position - self.lastAnchor.Position).Magnitude > cfg.SlotSpacing * 2 then
         table.clear(self.slots)
         table.clear(self.assigned)
@@ -144,11 +144,11 @@ function BringController:update(targets, quest)
             local distance = (root.Position - origin).Magnitude
 
             if distance > cfg.PullLimit then
-                -- Trop loin : on ne le tire pas. Le joueur ira a lui.
+                -- Too far: do not pull it. The player will go to it.
                 report.tooFar = report.tooFar + 1
             elseif distance > cfg.Radius then
-                -- Hors rayon de collecte, mais pas assez loin pour declencher
-                -- un voyage : on l'ignore simplement ce tour-ci.
+                -- Outside the collection radius, but not far enough to trigger
+                -- a journey: simply skip it this turn.
                 reachable = reachable + 1
             else
                 reachable = reachable + 1
@@ -166,8 +166,8 @@ function BringController:update(targets, quest)
                     report.placed = report.placed + 1
                     local goal = self:slotPosition(anchor, index)
 
-                    -- Deja en place : reecrire sa position a 10 Hz revient a
-                    -- lutter contre le serveur pour rien.
+                    -- Already in place: rewriting its position at 10 Hz means
+                    -- fighting the server for nothing.
                     if (root.Position - goal).Magnitude > cfg.DeadZone then
                         local ok = SafeCombatAnchor.validatePosition(ctx, goal)
                         if ok then
@@ -176,9 +176,9 @@ function BringController:update(targets, quest)
                             root.AssemblyLinearVelocity = Vector3.zero
                             report.moved = report.moved + 1
                         else
-                            -- Emplacement devenu mauvais : on force le
-                            -- recalcul de l'ancre au tour suivant.
-                            SafeCombatAnchor.invalidate(ctx, "emplacement invalide")
+                            -- The slot has gone bad: force the anchor to be
+                            -- recomputed next turn.
+                            SafeCombatAnchor.invalidate(ctx, "invalid slot")
                         end
                     end
                 end
@@ -189,11 +189,11 @@ function BringController:update(targets, quest)
     self.moved = report.moved
     self.tooFar = report.tooFar
 
-    -- Aucune cible atteignable alors qu'il en existe : c'est le signal du
-    -- PullLimit. QuestFarm doit rapprocher le joueur et recalculer le paquet.
+    -- No reachable target while some exist: that is the PullLimit signal.
+    -- QuestFarm must move the player closer and recompute the pack.
     if reachable == 0 and report.tooFar > 0 then
         report.status = "too_far"
-        Log.Bring(report.tooFar, "cible(s) hors de portee -- rapprochement du joueur")
+        Log.Bring(report.tooFar, "target(s) out of reach -- moving the player closer")
     elseif report.placed > 0 then
         report.status = "bringing"
     else
@@ -203,8 +203,8 @@ function BringController:update(targets, quest)
     return report
 end
 
--- Le joueur est maintenu sur l'ancre par le runtime (60 Hz). On lui donne
--- l'ancre et le pilote de bring, on ne duplique pas sa boucle.
+-- The player is held on the anchor by the runtime (60 Hz). We hand it the
+-- anchor and the bring driver; we do not duplicate its loop.
 function BringController:attach()
     local ctx = self.ctx
     local state = ctx.legacy.State
@@ -222,7 +222,7 @@ function BringController:detach()
     table.clear(self.assigned)
 end
 
--- Position de vol du joueur, lue par le runtime a chaque frame.
+-- The player's flight position, read by the runtime every frame.
 function BringController:publishAnchor(anchor)
     self.ctx.legacy.State.bringAnchor = anchor
 end
@@ -230,7 +230,7 @@ end
 function BringController:describe()
     local count = 0
     for _ in pairs(self.slots) do count = count + 1 end
-    return string.format("%d emplacement(s) occupe(s), %d deplace(s), %d hors portee",
+    return string.format("%d slot(s) filled, %d moved, %d out of reach",
         count, self.moved, self.tooFar)
 end
 

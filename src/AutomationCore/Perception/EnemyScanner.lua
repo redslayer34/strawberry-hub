@@ -1,15 +1,14 @@
 --=============================================================================
--- ENEMY SCANNER — index des ennemis reellement presents
+-- ENEMY SCANNER — index of the enemies actually present
 --=============================================================================
---  Un seul parcours du dossier Enemies par tour de perception, au lieu d'un
---  balayage complet par cible cherchee (l'ancien Enemies.nearestOfList
---  relançait un scan entier par nom de la liste).
+--  One pass over the Enemies folder per perception turn, instead of a full
+--  sweep per name searched (the old Enemies.nearestOfList restarted a complete
+--  scan for every name in its list).
 --
---  Le scanner ne decide de rien. Il repond a une seule question : qu'est-ce
---  qui existe, la, maintenant. C'est lui qui fait le pont entre le nom lu
---  dans la quete ("Desert Bandits") et le nom d'instance reel
---  ("Desert Bandit") : la quete donne l'intention, le Workspace donne
---  l'orthographe. Aucun des deux ne peut le faire seul.
+--  The scanner decides nothing. It answers one question: what exists, here,
+--  now. It is also the bridge between the name read from the quest ("Desert
+--  Bandits") and the real instance name ("Desert Bandit"): the quest supplies
+--  the intent, the Workspace supplies the spelling. Neither can do it alone.
 --=============================================================================
 
 local Log = require("AutomationCore.Log")
@@ -21,15 +20,15 @@ EnemyScanner.__index = EnemyScanner
 function EnemyScanner.new(ctx)
     return setmetatable({
         ctx = ctx,
-        byCanonical = {},   -- forme canonique -> { entries = {}, liveName = "..." }
-        entries = {},       -- toutes les entrees du dernier scan
+        byCanonical = {},   -- canonical form -> { entries = {}, liveName = "..." }
+        entries = {},       -- every entry from the last scan
         scannedAt = 0,
         lastCount = 0,
     }, EnemyScanner)
 end
 
--- Partie manipulable d'un mob. HumanoidRootPart d'abord, replis ensuite :
--- certains rigs de boss n'exposent pas de HRP classique.
+-- A mob's manipulable part. HumanoidRootPart first, fallbacks after: some boss
+-- rigs do not expose a conventional HRP.
 local function rootOf(model)
     local root = model:FindFirstChild("HumanoidRootPart")
     if root and root:IsA("BasePart") then return root end
@@ -39,8 +38,8 @@ local function rootOf(model)
     return model:FindFirstChildWhichIsA("BasePart")
 end
 
--- Reconstruit l'index. Borne par MaxScanPerTick pour qu'un serveur charge ne
--- fasse pas tomber le framerate.
+-- Rebuilds the index. Bounded by MaxScanPerTick so a busy server cannot drop
+-- the frame rate.
 function EnemyScanner:scan()
     local ctx = self.ctx
     local folder = ctx.world.enemies()
@@ -62,7 +61,7 @@ function EnemyScanner:scan()
     for _, model in ipairs(folder:GetChildren()) do
         seen = seen + 1
         if seen > budget then
-            Log.Perception("scan tronque a", budget, "entites")
+            Log.Perception("scan truncated at", budget, "entities")
             break
         end
 
@@ -70,8 +69,8 @@ function EnemyScanner:scan()
         local root = humanoid and rootOf(model)
         if root then
             local position = root.Position
-            -- Le rayon borne l'index, pas la validite : un mob hors rayon
-            -- n'est pas invalide, il est seulement hors de portee utile.
+            -- The radius bounds the index, not validity: a mob out of range is
+            -- not invalid, merely out of useful reach.
             if not here or (position - here).Magnitude <= radius then
                 local canonical = Names.normalize(model.Name)
                 if canonical then
@@ -110,25 +109,25 @@ function EnemyScanner:age()
     return os.clock() - self.scannedAt
 end
 
--- Nom d'instance reel correspondant a une forme canonique, ou nil si rien de
--- tel n'existe actuellement. C'est le seul chemin autorise pour passer du
--- texte de quete a une entite : pas de `find`, pas de rapprochement flou.
+-- The real instance name matching a canonical form, or nil if no such thing
+-- currently exists. This is the only sanctioned path from quest text to an
+-- entity: no `find`, no fuzzy matching.
 function EnemyScanner:resolveName(canonical)
     if not canonical then return nil end
     local bucket = self.byCanonical[canonical]
     return bucket and bucket.liveName or nil
 end
 
--- Entrees vivantes portant cette forme canonique. Liste vide si aucune :
--- l'appelant doit traiter ce cas, il declenche la recherche de region.
+-- Live entries carrying this canonical form. Empty list if none: the caller
+-- must handle that case, it is what triggers the region search.
 function EnemyScanner:candidatesFor(canonical)
     local bucket = canonical and self.byCanonical[canonical]
     if not bucket then return {} end
 
     local alive = {}
     for _, entry in ipairs(bucket.entries) do
-        -- Re-verification a la lecture : entre le scan et l'usage, un mob a
-        -- pu mourir ou etre retire. Aucune reference obsolete ne sort d'ici.
+        -- Re-checked on read: between the scan and its use, a mob may have
+        -- died or been removed. No stale reference leaves this function.
         if entry.model.Parent and entry.humanoid.Health > 0 then
             entry.health = entry.humanoid.Health
             entry.position = entry.root.Position
@@ -138,8 +137,8 @@ function EnemyScanner:candidatesFor(canonical)
     return alive
 end
 
--- Vie maximale observee pour ce nom. Sert a distinguer un boss d'un mob
--- ordinaire sans liste codee en dur.
+-- Highest max health observed for this name. Used to tell a boss from an
+-- ordinary mob without a hardcoded list.
 function EnemyScanner:maxHealthFor(canonical)
     local bucket = canonical and self.byCanonical[canonical]
     return bucket and bucket.maxHealth or 0

@@ -1,29 +1,29 @@
 --[[
     Strawberry Hub — Blox Fruits
     ===========================================================================
-    Fusion refactorisee de 3 sources (repeat / redz / "if getgenv").
+    Refactored merge of three sources (repeat / redz / "if getgenv").
 
-    v2 — 100% self-contained : plus AUCUN telechargement.
-    L'UI Fluent a ete remplacee par une UI native embarquee : le hub se charge
-    meme si HttpGet est bloque, si GitHub est injoignable, ou si l'executeur
-    ne suit pas les redirections (cause du non-chargement en v1).
+    Engine only. The window is built by Runtime.Interface on top of the
+    StrawberryUI library; this file owns no presentation code and exposes its
+    primitives through StrawberryHub.Internal.
 
-    Aucun code hostile : ni backdoor, ni kick-trap, ni bypass d'anti-cheat.
+    No hostile code: no backdoor, no kick trap, no anti-cheat bypass.
 
-    Modules : Config · Util · Core · Move · Attack · Enemies · Quests
-              Farming · Combat · Materials · Teleport · Shop · Player
-              Performance · Server · Events · UI · Persist
+    Modules: Config · Util · Diagnostics · Persist · Core · Remote · Move
+             Attack · Enemies · Quests · Farming · Combat · Materials
+             Teleport · Shop · Player · Performance · AntiDetection
+             Server · Events · FastAttack
 ]]
 
 --=============================================================================
--- GARDE DE RECHARGEMENT
+-- RELOAD GUARD
 --=============================================================================
 if getgenv().StrawberryHub then
     pcall(function() getgenv().StrawberryHub.Unload() end)
 end
 
 --=============================================================================
--- CONFIG — toutes les valeurs ajustables. Aucun nombre magique ailleurs.
+-- CONFIG — every tunable value. No magic numbers anywhere else.
 --=============================================================================
 local Config = {
     Debug = false,
@@ -47,9 +47,9 @@ local Config = {
         EngageTimeout = 8,         -- s sans degat avant d'abandonner une cible
         RespawnWait = 3,           -- secondes apres la mort avant de reprendre
 
-        -- Pilote le farm par l'AutomationCore (detection dynamique, machine a
-        -- etats, recovery) au lieu de la boucle historique basee sur la table
-        -- de CFrame figes. La table reste disponible en dernier recours.
+        -- Drives the farm through the AutomationCore (dynamic detection, state
+        -- machine, recovery) instead of the historical loop built on the frozen
+        -- CFrame table. That table stays available as a last resort.
         UseAutomationCore = true,
     },
 
@@ -69,7 +69,7 @@ local Config = {
         StatsPerTick = 3,
     },
 
-    -- Configuration centrale du Fast Attack (voir module plus bas).
+    -- Central Fast Attack configuration (see the module further down).
     FastAttack = {
         Enabled = true,
         Interval = 0.05,      -- delai entre deux attaques (s)
@@ -144,7 +144,7 @@ local Config = {
         "NOEXPLOIT", "FIGHT4FRUIT", "EARN_FRUITS", "EXP_5B",
     },
 
-    -- Remotes de detection/ban/kick du jeu a intercepter (tag ou nom).
+    -- The game's detection/ban/kick remotes to intercept (by tag or name).
     AntiDetection = {
         Enabled = true,
         DisableAbuseScreenshots = true,
@@ -155,26 +155,16 @@ local Config = {
         },
     },
 
-    -- Instrumentation. Desactivee par defaut : quand Enabled est faux, chaque
-    -- point de mesure coute un unique test booleen.
+    -- Instrumentation. Off by default: when Enabled is false, each probe
+    -- costs a single boolean test.
     Diagnostics = {
         Enabled = false,
     },
 
     Persist = { Folder = "StrawberryHub", File = "settings.json" },
 
-    Theme = {
-        Bg        = Color3.fromRGB(22, 23, 28),
-        Panel     = Color3.fromRGB(30, 32, 38),
-        Sidebar   = Color3.fromRGB(26, 27, 33),
-        Accent    = Color3.fromRGB(245, 200, 60),
-        Text      = Color3.fromRGB(235, 237, 242),
-        TextDim   = Color3.fromRGB(150, 155, 165),
-        On        = Color3.fromRGB(90, 200, 120),
-        Off       = Color3.fromRGB(70, 72, 82),
-    },
 
-    -- 84 paliers de progression (mer / niveau / quete / positions)
+    -- 84 progression bands (sea / level / quest / positions)
     Quests = {
 		{ Sea=1, Min=1, Max=9, Name="Bandit", Quest="BanditQuest1", QLevel=1, QCF=CFrame.new(1059.37195, 15.4495068, 1550.4231, 0.939700544, -0, -0.341998369, 0, 1, -0, 0.341998369, 0, 0.939700544), MonCF=CFrame.new(1045.962646484375, 27.00250816345215, 1560.8203125) },
 		{ Sea=1, Min=10, Max=14, Name="Monkey", Quest="JungleQuest", QLevel=1, QCF=CFrame.new(-1598.08911, 35.5501175, 153.377838, 0, 0, 1, 0, 1, -0, -1, 0, 0), MonCF=CFrame.new(-1448.51806640625, 67.85301208496094, 11.46579647064209) },
@@ -278,9 +268,9 @@ local UserInputService  = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
 
--- Declaree ici, renseignee tout en bas : les modules intermediaires (Farming)
--- doivent pouvoir lire StrawberryHub.FarmDriver, et une reference posee apres
--- leur definition serait resolue comme un global (donc nil).
+-- Declared here, filled in at the very bottom: the modules in between (Farming)
+-- must be able to read StrawberryHub.FarmDriver, and a reference placed after
+-- their definition would resolve as a global (so nil).
 local StrawberryHub
 
 --=============================================================================
@@ -337,17 +327,17 @@ function Util.keys(tbl)
 end
 
 --=============================================================================
--- DIAGNOSTICS — instrumentation mesurable, desactivable, sans effet de bord
+-- DIAGNOSTICS — measurable instrumentation, switchable, side-effect free
 --=============================================================================
---  But : transformer les points CORROBORE / PROBABLE / INCONNU de l'audit en
---  chiffres reels, avant toute suppression ou optimisation.
+--  Purpose: turn the audit's CORROBORATED / LIKELY / UNKNOWN points into real
+--  numbers, before anything is removed or optimised.
 --
---  Contraintes tenues :
---    * cout quasi nul quand desactive (un test booleen par point de mesure) ;
---    * aucun print/log dans les chemins chauds — uniquement des compteurs ;
---    * statistiques calculees a la demande, jamais en continu ;
---    * aucune modification du comportement metier, dans les deux etats ;
---    * nettoyage complet par Unload().
+--  Constraints honoured:
+--    * near-zero cost when disabled (one boolean test per probe);
+--    * no print/log on hot paths — counters only;
+--    * statistics computed on demand, never continuously;
+--    * no change to behaviour, in either state;
+--    * full cleanup through Unload().
 --=============================================================================
 local Diagnostics = {}
 
@@ -385,7 +375,7 @@ function Diagnostics.cleanup()
     Diagnostics.reset()
 end
 
--- Compteur simple. Chemin chaud : une comparaison + une addition.
+-- Simple counter. Hot path: one comparison plus one addition.
 function Diagnostics.count(key, n)
     if not enabled then return end
     local now = os.clock()
@@ -394,14 +384,14 @@ function Diagnostics.count(key, n)
     counters[key] = (counters[key] or 0) + (n or 1)
 end
 
--- Debut de mesure. Renvoie nil quand desactive : Diagnostics.stop devient
--- alors un simple test de nil, donc gratuit.
+-- Start of a measurement. Returns nil when disabled: Diagnostics.stop then
+-- becomes a plain nil test, so it is free.
 function Diagnostics.start()
     if not enabled then return nil end
     return os.clock()
 end
 
--- Fin de mesure. `inspected` = elements parcourus, `found` = resultats retenus.
+-- End of a measurement. `inspected` = items walked, `found` = results kept.
 function Diagnostics.stop(key, t0, inspected, found)
     if not t0 then return end
     local dt = os.clock() - t0
@@ -420,7 +410,7 @@ function Diagnostics.stop(key, t0, inspected, found)
     lastSeen[key] = os.clock()
 end
 
--- Valeur observee (non cumulative) : arme -> delai, etc.
+-- Observed value (not cumulative): weapon -> delay, and so on.
 function Diagnostics.observe(category, key, value)
     if not enabled then return end
     local c = observations[category]
@@ -431,7 +421,7 @@ function Diagnostics.observe(category, key, value)
     c[tostring(key)] = value
 end
 
--- Conserve la plus grande valeur vue pour une cle (distances, pics).
+-- Keeps the largest value seen for a key (distances, peaks).
 function Diagnostics.observeMax(category, key, value)
     if not enabled then return end
     local c = observations[category]
@@ -444,14 +434,14 @@ function Diagnostics.observeMax(category, key, value)
     if value > prev then c[k] = value end
 end
 
--- Vrai si la categorie n'a pas encore ete observee pour cette cle : evite de
--- refaire une sonde couteuse (ex. GetWeaponData) a chaque attaque.
+-- True when the category has not yet been observed for this key: avoids
+-- repeating an expensive probe (e.g. GetWeaponData) on every attack.
 function Diagnostics.seen(category, key)
     local c = observations[category]
     return c ~= nil and c[tostring(key)] ~= nil
 end
 
---------------------------------------------------------------------- rapport
+--------------------------------------------------------------------- report
 local function fmtMs(seconds)
     return string.format("%.3f ms", seconds * 1000)
 end
@@ -468,8 +458,8 @@ local function section(out, title)
     line(out, "-- " .. title)
 end
 
--- Rapport lisible. Les valeurs absentes sont affichees explicitement plutot
--- qu'omises : "0" est une mesure, pas un trou.
+-- Readable report. Missing values are printed explicitly rather than omitted:
+-- "0" is a measurement, not a gap.
 function Diagnostics.Dump()
     local elapsed = os.clock() - startedAt
     local out = {}
@@ -497,8 +487,8 @@ function Diagnostics.Dump()
                     :format(first - startedAt, (lastSeen[k] or first) - startedAt) or ""))
     end
 
-    ------------------------------------------------------- disponibilite CF
-    section(out, "REFERENCES DE COMBAT (presence, pas usage)")
+    ------------------------------------------------------- CF availability
+    section(out, "COMBAT REFERENCES (presence, not usage)")
     local d = State.diag or {}
     line(out, ("  Global.SendHitsToServer : %s"):format(tostring(d.sendHits)))
     line(out, ("  CombatController        : %s"):format(tostring(d.rigLib)))
@@ -507,7 +497,7 @@ function Diagnostics.Dump()
     line(out, ("  Remotes.Validator       : %s"):format(tostring(d.validator)))
 
     ------------------------------------------------------------- scans
-    section(out, "SCANS D'ENNEMIS (cout reel)")
+    section(out, "ENEMY SCANS (real cost)")
     local scanKeys = {
         "Enemies.nearest", "TargetManager:FindTargets",
         "engage", "Move.bringMobs", "Enemies.nearestOfList",
@@ -529,13 +519,13 @@ function Diagnostics.Dump()
         end
     end
     line(out, "")
-    line(out, ("  COUT TOTAL DES SCANS : %s sur %.1f s  =>  %.2f%% du temps")
+    line(out, ("  TOTAL SCAN COST: %s over %.1f s  =>  %.2f%% of the time")
         :format(fmtMs(grandTotal), elapsed,
             elapsed > 0 and (grandTotal / elapsed) * 100 or 0))
     line(out, ("  (%d appels cumules, %.1f/s)")
         :format(grandCalls, elapsed > 0 and grandCalls / elapsed or 0))
 
-    ------------------------------------------------------------- deplacement
+    ------------------------------------------------------------- movement
     section(out, "DEPLACEMENT")
     for _, k in ipairs({ "Move.tweenTo", "Move.snap", "Move.hold", "Move.tweenSpeed" }) do
         line(out, ("  %-26s %8d"):format(k, counters[k] or 0))
@@ -547,7 +537,7 @@ function Diagnostics.Dump()
         end
     end
 
-    ------------------------------------------------------------- armes
+    ------------------------------------------------------------- weapons
     section(out, "ARMES (source de verite du delai)")
     local w = observations.weapon
     if w and next(w) then
@@ -556,10 +546,10 @@ function Diagnostics.Dump()
             line(out, ("    %s"):format(tostring(info)))
         end
     else
-        line(out, "  aucune observation (attaque au moins une fois, module actif)")
+        line(out, "  no observation (attack at least once, with the module active)")
     end
 
-    ------------------------------------------------------------- erreurs
+    ------------------------------------------------------------- errors
     section(out, "ERREURS")
     local errs = observations.error
     if errs and next(errs) then
@@ -567,7 +557,7 @@ function Diagnostics.Dump()
             line(out, ("  %s : %s"):format(k, tostring(v)))
         end
     else
-        line(out, "  aucune erreur enregistree")
+        line(out, "  no errors recorded")
     end
 
     ------------------------------------------------------------- transitions
@@ -583,8 +573,8 @@ function Diagnostics.Dump()
     return table.concat(out, "\n")
 end
 
--- Ecrit le rapport la ou l'utilisateur peut le recuperer, sans jamais
--- polluer un chemin chaud (appel manuel uniquement).
+-- Writes the report where the user can retrieve it, without ever polluting a
+-- hot path (manual call only).
 function Diagnostics.Export()
     local report = Diagnostics.Dump()
     warn(report)
@@ -603,7 +593,7 @@ function Diagnostics.Export()
 end
 
 --=============================================================================
--- PERSIST — sauvegarde des reglages (reprise de l'idee JSON de "if getgenv")
+-- PERSIST — settings storage (JSON idea taken from "if getgenv")
 --=============================================================================
 local Persist = {}
 
@@ -639,14 +629,14 @@ function Persist.save()
 end
 
 function Persist.load()
--- La mesure suit le reglage sauvegarde : desactivee par defaut.
+-- Measurement follows the saved setting: off by default.
 Diagnostics.setEnabled(Config.Diagnostics.Enabled)
     if not canWriteFiles() then return end
     Util.try(function()
         local path = Config.Persist.Folder .. "/" .. Config.Persist.File
         if not isfile(path) then return end
         local data = HttpService:JSONDecode(readfile(path))
-        -- Fusion prudente : on n'ecrase que les cles connues.
+        -- Careful merge: only known keys are overwritten.
         for section, values in pairs(data) do
             if type(values) == "table" and type(Config[section]) == "table" then
                 for k, v in pairs(values) do
@@ -657,9 +647,9 @@ Diagnostics.setEnabled(Config.Diagnostics.Enabled)
             end
         end
 
-        -- Les reglages enregistres avant le nerf peuvent contenir une vitesse
-        -- superieure au plafond : on les ramene dans les limites, et le
-        -- plafond lui-meme n'est jamais restaure depuis le fichier.
+        -- Settings saved before the nerf may hold a speed above the cap: they
+        -- are brought back within limits, and the cap itself is never restored
+        -- from the file.
         Config.Farming.MaxTweenSpeed = 200
         if type(Config.Farming.TweenSpeed) ~= "number"
             or Config.Farming.TweenSpeed > Config.Farming.MaxTweenSpeed then
@@ -669,7 +659,7 @@ Diagnostics.setEnabled(Config.Diagnostics.Enabled)
 end
 
 --=============================================================================
--- CORE — refs perso, boucles stoppables, connexions
+-- CORE — character refs, stoppable loops, connections
 --=============================================================================
 local Core = {}
 
@@ -701,7 +691,7 @@ function Core.bind(connection)
     return connection
 end
 
--- Boucle stoppable : tourne tant que le flag est vrai ET que le hub est charge.
+-- Stoppable loop: runs while the flag is true AND the hub is loaded.
 function Core.loop(flag, interval, body)
     task.spawn(function()
         while State.alive and State.flags[flag] do
@@ -716,7 +706,7 @@ function Core.setFlag(flag, value, interval, body)
     if value and interval and body then Core.loop(flag, interval, body) end
 end
 
--- Coupe toutes les boucles d'un coup.
+-- Cuts every loop at once.
 function Core.stopAll()
     for flag in pairs(State.flags) do State.flags[flag] = false end
 end
@@ -750,19 +740,19 @@ function Remote.redeem(code)
 end
 
 --=============================================================================
--- MOVE — deplacement tween + sol anti-noyade
+-- MOVE — tween movement plus an anti-drowning floor
 --=============================================================================
 local Move = {}
 
--- Vrai si une feature de deplacement est active (pilote le sol).
--- Le sol n'est utile QUE pendant les deplacements (ne pas couler / tomber).
--- Des qu'on est colle a une cible, Move.hold ecrit la position chaque frame :
--- le sol devient inutile, et surtout NUISIBLE (une plateforme solide de 40x40
--- sous le joueur catapultait les mobs situes juste en dessous -> ennemis
--- projetes, desynchronises, injoignables).
+-- True when a movement feature is active (drives the floor).
+-- The floor is only useful WHILE moving (not sinking / not falling).
+-- Once glued to a target, Move.hold writes the position every frame:
+-- the floor becomes useless, and worse HARMFUL (a solid 40x40 platform under
+-- the player catapulted the mobs just below it -> enemies thrown, desynced,
+-- unreachable).
 function Move.wantFloor()
-    -- En mode sur on ne cree aucun objet solide : la plateforme invisible
-    -- percutait les mobs et les envoyait valser.
+    -- In safe mode no solid object is created: the invisible platform used to
+    -- hit mobs and send them flying.
     if Config.Farming.SafeMode then return false end
     if State.holdTarget then return false end
     if Config.Farming.BringMob then return false end
@@ -796,44 +786,44 @@ function Move.updateFloor(active)
     end
 end
 
--- Maintient le joueur colle a la cible, a 60 Hz, en annulant la vitesse.
--- Sans l'annulation de vitesse, le personnage derive puis est reclaque en
--- place : c'est exactement le tremblement constate.
--- Ramene a soi tous les ennemis vivants dans le rayon configure. C'est le
--- vrai "bring mob" : ce sont les MOBS qui se deplacent, pas le joueur.
--- Doit etre rejoue a chaque frame, le serveur repositionnant les ennemis.
--- Le mode sur interdit de DEFORMER les mobs (taille, vitesse), pas de les
--- deplacer : bring est une fonction de positionnement, activee explicitement.
--- L'ancien garde SafeMode faisait sortir cette fonction sans rien faire, ce
--- qui figeait le farm (le joueur ne bougeait pas non plus en mode bring).
--- Nom du mob a ramener, deduit du mode actif. Deriver le filtre de l'etat
--- courant (et non d'une variable posee/effacee par cible) evite le trou entre
--- deux ennemis, pendant lequel TOUT etait aspire, bosses compris.
--- Renvoie (nomDuMob, autoriseARamener).
--- Le filtre est alimente en continu par la boucle de farm (State.bringFilter),
--- jamais deduit ici : le module Quests est declare plus bas dans le fichier et
--- ne serait pas visible depuis cette portee.
+-- Keeps the player glued to the target at 60 Hz, cancelling velocity.
+-- Without cancelling velocity the character drifts and is then snapped back
+-- into place: that is exactly the observed jitter.
+-- Pulls every living enemy within the configured radius to the player. This is
+-- the real "bring mob": the MOBS move, not the player.
+-- It must be replayed every frame, since the server repositions the enemies.
+-- Safe mode forbids DEFORMING mobs (size, speed), not moving them: bring is a
+-- positioning feature, enabled explicitly.
+-- The old SafeMode guard made this function return doing nothing, which froze
+-- the farm (the player did not move either in bring mode).
+-- Name of the mob to bring, derived from the active mode. Deriving the filter
+-- from current state (rather than a variable set/cleared per target) avoids the
+-- gap between two enemies, during which EVERYTHING was vacuumed up, bosses
+-- included. Returns (mobName, allowedToBring).
+-- The filter is fed continuously by the farming loop (State.bringFilter), never
+-- derived here: the Quests module is declared further down the file and would
+-- not be visible from this scope.
 function Move.bringFilterName()
     if not Config.Farming.BringQuestOnly then return nil, true end
     if State.bringFilter then return State.bringFilter, true end
-    -- Filtre inconnu : on ne ramene RIEN plutot que d'aspirer toute la zone
-    -- (bosses compris, ce qui les desynchronisait).
+    -- Unknown filter: bring NOTHING rather than vacuum the whole zone
+    -- (bosses included, which desynced them).
     return nil, false
 end
 
 local lastBring = 0
 
 function Move.bringMobs()
-    -- L'AutomationCore, quand il est branche, place les mobs lui-meme : sur
-    -- des emplacements distincts autour de l'ancre, a partir d'une liste deja
-    -- validee. La version ci-dessous empile tous les mobs sur un seul CFrame
-    -- et se fie a State.bringFilter ; elle reste comme repli.
+    -- The AutomationCore, when attached, places the mobs itself: on distinct
+    -- slots around the anchor, from an already-validated list. The version
+    -- below stacks every mob on a single CFrame and trusts State.bringFilter;
+    -- it stays as a fallback.
     local driver = State.bringDriver
     if driver then return driver() end
 
-    -- Le bring lutte contre le serveur : a 60 Hz les mobs rebondissent et
-    -- finissent desynchronises. Une dizaine de repositionnements par seconde
-    -- suffit largement.
+    -- Bring fights the server: at 60 Hz the mobs bounce and end up desynced.
+    -- Ten repositionings per second is plenty.
+    --
     local now = os.clock()
     if now - lastBring < Config.Farming.BringInterval then return end
     lastBring = now
@@ -864,9 +854,9 @@ function Move.bringMobs()
         if ehrp and ehum and ehum.Health > 0
             and (not filter or enemy.Name == filter) then
             local d = (ehrp.Position - origin).Magnitude
-            -- On ne repositionne QUE les mobs encore loin. Reecrire la position
-            -- d'un mob deja sur place a 60 Hz revenait a lutter en continu
-            -- contre le serveur : rebond permanent et ennemis injoignables.
+            -- Only mobs still far away are repositioned. Rewriting the position
+            -- of a mob already in place at 60 Hz meant fighting the server
+            -- continuously: permanent bouncing and unreachable enemies.
             if d <= radius and d > 6 then
                 ehrp.CanCollide = false
                 ehrp.CFrame = hrp.CFrame * CFrame.new(0, -height, 0)
@@ -878,20 +868,20 @@ function Move.bringMobs()
     Diagnostics.stop("Move.bringMobs", t0, #children, moved)
 end
 
--- Place le joueur au decalage voulu ET l'oriente vers la cible. Le M1 melee
--- est directionnel cote serveur : sans orientation, le coup ne porte pas.
--- Utilise par Move.hold (60 Hz) ET par Attack.strike (placement immediat),
--- pour que la premiere frappe parte deja dans le bon sens.
+-- Places the player at the wanted offset AND faces the target. Melee M1 is
+-- directional server-side: without the facing, the blow does not land.
+-- Used by Move.hold (60 Hz) AND by Attack.strike (immediate placement), so the
+-- first strike already goes the right way.
 function Move.faceTarget(targetPart, offset)
     local hrp = Core.hrp()
     if not hrp or not targetPart or not targetPart.Parent then return end
 
     local pos
     if Config.Farming.SafeMode then
-        -- On se place en retrait ET en hauteur, face au mob. Les touches etant
-        -- envoyees directement par FastAttack (RegisterHit), la hauteur ne
-        -- bloque plus les degats : elle met seulement hors de portee des
-        -- attaques au corps a corps de l'ennemi.
+        -- Stand back AND above, facing the mob. Since hits are sent directly by
+        -- FastAttack (RegisterHit), height no longer blocks damage: it only
+        -- puts us out of reach of the enemy's melee.
+        --
         local tp = targetPart.Position
         local from = hrp.Position
         local dir = Vector3.new(from.X - tp.X, 0, from.Z - tp.Z)
@@ -902,8 +892,8 @@ function Move.faceTarget(targetPart, offset)
     else
         pos = (targetPart.CFrame * offset).Position
     end
-    -- Garde-fou : deux points identiques donnent un CFrame.lookAt NaN, ce qui
-    -- ejecte le personnage hors de la carte.
+    -- Guard: two identical points give a NaN CFrame.lookAt, which throws the
+    -- character off the map.
     if (pos - targetPart.Position).Magnitude < 0.5 then
         pos = targetPart.Position + Vector3.new(0, 3, 3)
     end
@@ -917,9 +907,9 @@ function Move.hold()
     local hrp = Core.hrp()
     if not hrp then return end
 
-    -- Mode bring : le joueur est maintenu en vol a un point fixe, et les mobs
-    -- sont amenes juste en dessous. Sans ce maintien il restait au sol et les
-    -- ennemis etaient donc ramenes SOUS le decor.
+    -- Bring mode: the player is held flying at a fixed point and the mobs are
+    -- brought just below. Without that hold the player stayed on the ground and
+    -- the enemies were therefore brought UNDER the scenery.
     if Config.Farming.BringMob then
         if State.bringAnchor then
             hrp.CFrame = State.bringAnchor
@@ -932,16 +922,16 @@ function Move.hold()
 
     local target, offset = State.holdTarget, State.holdOffset
     if not target or not target.Parent or not offset then return end
-    -- Se placer PRES de la cible et la REGARDER : le M1 melee est directionnel,
-    -- il faut etre oriente vers le mob pour que le coup porte cote serveur.
+    -- Stand NEAR the target and LOOK at it: melee M1 is directional, you have
+    -- to face the mob for the blow to land server-side.
     Move.faceTarget(target, offset)
 end
 
--- Vitesse de deplacement effective, TOUJOURS bornee. Une mise a jour du jeu
--- a resserre la detection de vitesse : au-dela de MaxTweenSpeed studs/s le
--- deplacement est repere. Le plafond est applique ici, a l'unique endroit ou
--- la vitesse est consommee, pour qu'aucun chemin (UI, config sauvegardee,
--- edition manuelle) ne puisse le contourner.
+-- Effective movement speed, ALWAYS bounded. A game update tightened speed
+-- detection: past MaxTweenSpeed studs/s the movement is flagged. The cap is
+-- applied here, at the single place speed is consumed, so no path (UI, saved
+-- config, manual edit) can get around it.
+--
 function Move.tweenSpeed()
     Diagnostics.count("Move.tweenSpeed")
     local wanted = tonumber(Config.Farming.TweenSpeed) or Config.Farming.MaxTweenSpeed
@@ -969,8 +959,8 @@ function Move.tweenTo(targetCFrame)
 
     local distance = Util.dist(targetCFrame.Position, hrp.Position)
     if distance <= Config.Farming.SnapDistance then
-        -- Teleportation instantanee : mode de deplacement distinct du tween,
-        -- mesure separement (aucune vitesse n'y est appliquee).
+        -- Instant teleport: a movement mode distinct from the tween, measured
+        -- separately (no speed is applied to it).
         Diagnostics.count("Move.snap")
         Diagnostics.observeMax("movement", "snap_max_distance", math.floor(distance))
         Move.stopTween()
@@ -978,9 +968,9 @@ function Move.tweenTo(targetCFrame)
         return
     end
 
-    -- Un tween deja en route vers la meme destination ne doit PAS etre
-    -- recree : appele depuis une boucle a 20 Hz, il repartait de zero a
-    -- chaque tick et le personnage n'avancait jamais.
+    -- A tween already running to the same destination must NOT be recreated:
+    -- called from a 20 Hz loop it restarted from scratch on every tick and the
+    -- character never got anywhere.
     if State.tween and State.tweenGoal
         and Util.dist(State.tweenGoal.Position, targetCFrame.Position)
             < Config.Farming.RetweenThreshold
@@ -1008,16 +998,16 @@ function Move.tweenTo(targetCFrame)
 end
 
 --=============================================================================
--- ATTACK — moteur de combat reel (CombatFramework)
+-- ATTACK — the real combat engine (CombatFramework)
 --=============================================================================
---  Le clic VirtualUser ne produit AUCUN degat dans Blox Fruits : le serveur
---  n'accepte que la sequence RigControllerEvent + jeton Validator. C'est cette
---  sequence qui est reproduite ici (fusionnee depuis repeat.lua, la seule
---  source qui en contenait une implementation locale).
+--  A VirtualUser click deals NO damage in Blox Fruits: the server only accepts
+--  the RigControllerEvent + Validator token sequence. That sequence is what is
+--  reproduced here (merged from repeat.lua, the only source that carried a
+--  local implementation of it).
 --
---  Fragile par nature : les index d'upvalues de `attack` changent a chaque
---  grosse mise a jour du jeu. Tout est donc protege, et l'echec est signale
---  une seule fois via State.attackError plutot qu'en boucle.
+--  Fragile by nature: the upvalue indices of `attack` change with every major
+--  game update. Everything is therefore guarded, and failure is reported once
+--  through State.attackError rather than in a loop.
 --=============================================================================
 local Attack = {}
 
@@ -1034,7 +1024,7 @@ local CF = {
     hooked = false,
 }
 
--- Resout les references du CombatFramework. Rejouable apres un respawn.
+-- Resolves the CombatFramework references. Replayable after a respawn.
 function Attack.init()
     local ok = pcall(function()
         local scripts = LocalPlayer:WaitForChild("PlayerScripts", 10)
@@ -1042,8 +1032,8 @@ function Attack.init()
         if not cfModule then error("CombatFramework introuvable") end
 
         local ups = debug.getupvalues(require(cfModule))
-        -- L'upvalue 2 porte historiquement le conteneur d'activeController,
-        -- mais on le cherche par forme pour survivre a un decalage d'index.
+        -- Upvalue 2 historically holds the activeController container, but we
+        -- look it up by shape to survive an index shift.
         for _, up in pairs(ups) do
             if type(up) == "table" and up.activeController ~= nil then
                 CF.controller = up
@@ -1055,8 +1045,8 @@ function Attack.init()
 
     end)
 
-    -- Resolution INDEPENDANTE de chaque piece : une piece manquante ne doit
-    -- pas empecher les autres strategies de fonctionner.
+    -- INDEPENDENT resolution of each piece: one missing piece must not stop
+    -- the other strategies from working.
     pcall(function() CF.rigLib = require(ReplicatedStorage.CombatFramework.RigLib) end)
     pcall(function() CF.rigEvent = ReplicatedStorage:FindFirstChild("RigControllerEvent") end)
     pcall(function()
@@ -1066,11 +1056,11 @@ function Attack.init()
     pcall(function()
         local mods = ReplicatedStorage:FindFirstChild("Modules")
         local net = mods and mods:FindFirstChild("Net")
-        -- Le nom contient un slash : FindFirstChild le gere sans probleme.
+        -- The name contains a slash: FindFirstChild handles that fine.
         CF.registerAttack = net and net:FindFirstChild("RE/RegisterAttack")
     end)
-    -- Point d'entree officiel du M1, tel qu'appele par ClientComponents.
-    -- WeaponToolClient : `CombatController:Attack(tool)`.
+    -- The official M1 entry point, as called by ClientComponents.
+    -- WeaponToolClient: `CombatController:Attack(tool)`.
     pcall(function()
         local ctrl = ReplicatedStorage:FindFirstChild("Controllers")
         local mod = ctrl and ctrl:FindFirstChild("CombatController")
@@ -1081,21 +1071,21 @@ function Attack.init()
         local mod = mods and mods:FindFirstChild("CombatUtil")
         if mod then CF.combatUtil = require(mod) end
     end)
-    -- Global expose SendHitsToServer, seul moyen d'enregistrer une touche :
-    -- il relance la coroutine interne qui ajoute le jeton de session attendu
-    -- par le serveur (4e argument de RE/RegisterHit).
+    -- Global exposes SendHitsToServer, the only way to register a hit: it
+    -- restarts the internal coroutine that adds the session token the server
+    -- expects (4th argument of RE/RegisterHit).
     pcall(function()
         local mod = ReplicatedStorage:FindFirstChild("Global")
         if mod then CF.globalMod = require(mod) end
     end)
 
-    -- Si les require ont echoue (chemins changes par une MAJ), on retrouve
-    -- getBladeHits par scan memoire.
+    -- If the requires failed (paths changed by an update), getBladeHits is
+    -- recovered by scanning memory.
     Attack.resolveRig()
 
     CF.ready = ok
-    -- Le fast attack "Controller" ne depend QUE du controleur : on le
-    -- considere pret des que celui-ci est resolu, meme sans les remotes.
+    -- The "Controller" fast attack depends ONLY on the controller: we consider
+    -- it ready as soon as that is resolved, even without the remotes.
     State.diag = {
         controller = (Attack.controller() ~= nil),
         rigLib = (CF.combatController ~= nil),
@@ -1110,7 +1100,7 @@ function Attack.init()
     return ok
 end
 
--- Supprime les temporisations d'animation d'attaque (gain de cadence).
+-- Removes attack animation delays (rate gain).
 function Attack.hookAnimations()
     if CF.hooked then return end
     CF.hooked = true
@@ -1133,23 +1123,23 @@ function Attack.hookAnimations()
     Util.try(function() require(ReplicatedStorage.Util.CameraShaker):Stop() end)
 end
 
--- Trois strategies d'attaque coexistent, plus un mode "Auto" qui determine
--- laquelle fonctionne reellement en OBSERVANT les degats infliges. C'est le
--- seul moyen fiable : selon la version du jeu et l'executeur, la strategie
--- qui passe n'est pas la meme, et aucune ne signale son propre echec.
+-- Three attack strategies coexist, plus an "Auto" mode that works out which
+-- one actually functions by OBSERVING the damage dealt. That is the only
+-- reliable way: depending on the game version and the executor, the strategy
+-- that gets through differs, and none of them reports its own failure.
 --
---   Controller — remet activeController a neuf puis appelle :attack().
---                Ne depend d'aucun index d'upvalue.
---   Remote     — sequence reseau complete : weaponChange + jeton Validator
---                + hit. Depend des upvalues 4/5/6/7 de `attack`.
---   RemoteRaw  — weaponChange + hit, sans jeton (versions plus anciennes).
+--   Controller — resets activeController then calls :attack().
+--                Depends on no upvalue index.
+--   Remote     — the full network sequence: weaponChange + Validator token
+--                + hit. Depends on upvalues 4/5/6/7 of `attack`.
+--   RemoteRaw  — weaponChange + hit, without the token (older versions).
 Attack.METHODS = { "Auto", "SendHits", "CombatController", "RegisterAttack", "Controller", "Remote", "RemoteRaw" }
 
--- Resolution du controleur de combat.
--- Methode PRINCIPALE : scan getgc, qui identifie la table du controleur par sa
--- FORME (champs hitboxMagnitude + attack + blades) plutot que par un index
--- d'upvalue fragile. C'est ce qui survit aux mises a jour du jeu (v31.4 avait
--- casse l'ancienne methode : Ctrl:NON dans le diagnostic).
+-- Combat controller resolution.
+-- PRIMARY method: a getgc scan, which identifies the controller table by its
+-- SHAPE (hitboxMagnitude + attack + blades fields) rather than by a fragile
+-- upvalue index. That is what survives game updates (v31.4 broke the old
+-- method: Ctrl:NO in the diagnostics).
 local controllerCache
 
 local function looksLikeController(o)
@@ -1165,12 +1155,12 @@ function Attack.controller()
     Diagnostics.count("ControllerResolveCalls")
     controllerCache = nil
 
-    -- Throttle : le scan getgc est couteux ; appele depuis Stepped (60 Hz) il
-    -- gelerait le jeu tant que rien n'est trouve. Une tentative par seconde max.
+    -- Throttle: the getgc scan is expensive; called from Stepped (60 Hz) it
+    -- would freeze the game while nothing is found. One attempt per second max.
     if os.clock() - lastScan < 1 then return nil end
     lastScan = os.clock()
 
-    -- 1) getgc : le plus fiable sur les executeurs modernes (Delta inclus).
+    -- 1) getgc: the most reliable on modern executors (Delta included).
     if type(getgc) == "function" then
         local ok, res = pcall(function()
             for _, o in pairs(getgc(true)) do
@@ -1184,7 +1174,7 @@ function Attack.controller()
         end
     end
 
-    -- 2) Repli : upvalues du module CombatFramework (ancienne methode).
+    -- 2) Fallback: CombatFramework module upvalues (the old method).
     pcall(function()
         local scripts = LocalPlayer:FindFirstChild("PlayerScripts")
         local cfModule = scripts and scripts:FindFirstChild("CombatFramework")
@@ -1214,7 +1204,7 @@ function Attack.controller()
     return controllerCache
 end
 
--- Trouve la fonction getBladeHits (module RigLib) via getgc si le require echoue.
+-- Finds the getBladeHits function (RigLib module) via getgc if the require fails.
 function Attack.resolveRig()
     if CF.rigLib then return end
     if type(getgc) ~= "function" then return end
@@ -1253,7 +1243,7 @@ local function currentBlade()
     return blade
 end
 
--- Etat neuf du controleur : sans ca le jeu impose ses temporisations.
+-- A fresh controller state: without this the game imposes its own delays.
 local function primeController(ctrl)
     ctrl.hitboxMagnitude = Config.Combat.HitboxRange
     ctrl.active = false
@@ -1265,7 +1255,7 @@ local function primeController(ctrl)
     ctrl.attacking = false
 end
 
--- Cibles touchables autour du joueur, dedupliquees par modele.
+-- Hittable targets around the player, deduplicated by model.
 local function bladeTargets()
     Diagnostics.count("BladeTargetsCalls")
     local char, hrp = Core.character(), Core.hrp()
@@ -1290,8 +1280,8 @@ end
 ------------------------------------------------------------------ strategies
 local Strategy = {}
 
--- Noms de parties acceptes par le jeu (table v_u_36 de CombatUtil). Une touche
--- envoyee sur une partie hors de cette liste est ignoree cote serveur.
+-- Part names the game accepts (CombatUtil's v_u_36 table). A hit sent on a
+-- part outside this list is ignored server-side.
 local VALID_HIT_PARTS = {
     "UpperTorso", "LowerTorso", "Head", "ModelHitbox", "Torso",
     "RightUpperArm", "RightLowerArm", "RightHand",
@@ -1300,7 +1290,7 @@ local VALID_HIT_PARTS = {
     "LeftUpperLeg", "LeftLowerLeg", "LeftFoot",
 }
 
--- Renvoie une partie frappable d'un ennemi.
+-- Returns a hittable part of an enemy.
 local function hitPartOf(enemy)
     for _, name in ipairs(VALID_HIT_PARTS) do
         local part = enemy:FindFirstChild(name)
@@ -1309,19 +1299,19 @@ local function hitPartOf(enemy)
     return nil
 end
 
--- STRATEGIE MAITRESSE — enregistre reellement les degats.
+-- MASTER STRATEGY — the one that actually registers damage.
 --
--- Source : ReplicatedStorage.Modules.CombatUtil (decompile). Les touches sont
--- envoyees par RE/RegisterHit avec QUATRE arguments :
---     FireServer(hitPart, autresTouches, nil, jetonDeSession)
+-- Source: ReplicatedStorage.Modules.CombatUtil (decompiled). Hits are sent
+-- through RE/RegisterHit with FOUR arguments:
+--     FireServer(hitPart, otherHits, nil, sessionToken)
 --
--- Le jeton vaut `tostring(UserId):sub(2,4) .. tostring(coroutine.running()):sub(11,15)`
--- et est genere dans une coroutine interne : impossible a reconstituer de
--- l'exterieur. Mais le jeu expose `Global.SendHitsToServer(part, extras)`,
--- qui relance cette coroutine et ajoute le jeton pour nous.
+-- The token is `tostring(UserId):sub(2,4) .. tostring(coroutine.running()):sub(11,15)`
+-- and is generated inside an internal coroutine: impossible to rebuild from
+-- outside. But the game exposes `Global.SendHitsToServer(part, extras)`, which
+-- restarts that coroutine and adds the token for us.
 --
--- C'est LA piece qui manquait : RegisterAttack annonce le coup, RegisterHit
--- applique les degats. Je n'envoyais que le premier.
+-- THIS is the piece that was missing: RegisterAttack announces the blow,
+-- RegisterHit applies the damage. Only the first was being sent.
 function Strategy.SendHits()
     Diagnostics.count("SendHitsCalls")
     local G = CF.globalMod
@@ -1343,7 +1333,7 @@ function Strategy.SendHits()
                 if not first then
                     first = part
                 else
-                    -- Format attendu : { rig, partieTouchee }
+                    -- Expected format: { rig, hitPart }
                     table.insert(extras, { enemy, part })
                 end
             end
@@ -1351,8 +1341,8 @@ function Strategy.SendHits()
     end
     if not first then return false end
 
-    -- Le swing (animation + RE/RegisterAttack) reste utile : le serveur
-    -- s'attend a voir une attaque avant les touches.
+    -- The swing (animation + RE/RegisterAttack) is still useful: the server
+    -- expects to see an attack before the hits.
     Strategy.CombatController()
 
     Diagnostics.count("GlobalSendHits_Legacy")
@@ -1361,19 +1351,19 @@ function Strategy.SendHits()
     end)
 end
 
--- STRATEGIE PRINCIPALE — reproduit exactement ce que fait le jeu au clic.
+-- PRIMARY STRATEGY — reproduces exactly what the game does on a click.
 --
--- Source : ReplicatedStorage.ClientComponents.WeaponToolClient (decompile) :
+-- Source: ReplicatedStorage.ClientComponents.WeaponToolClient (decompiled):
 --     if weaponData.WeaponType == "Melee" then
 --         CombatController:Attack(tool)
 --     else
 --         CombatController:Attack(tool, inputObject)
 --     end
 --
--- Passer par ce point d'entree fait dérouler toute la chaine officielle
--- (GetWeaponData, CanAttack, attackMelee, RunHitDetection) qui aboutit
--- elle-meme a RE/RegisterAttack. Tirer le remote seul sautait cette chaine :
--- le serveur n'avait alors aucune donnee de touche -> aucun degat.
+-- Going through this entry point runs the whole official chain (GetWeaponData,
+-- CanAttack, attackMelee, RunHitDetection), which itself ends at
+-- RE/RegisterAttack. Firing the remote alone skipped that chain: the server
+-- then had no hit data -> no damage.
 function Strategy.CombatController()
     Diagnostics.count("CombatControllerCalls")
     local cc = CF.combatController
@@ -1385,19 +1375,19 @@ function Strategy.CombatController()
     if not tool then return false end
 
     return pcall(function()
-        -- Le cooldown est porte par l'outil : on le remet a zero pour
-        -- enchainer les coups (c'est ce qui fait le "fast" du fast attack).
+        -- The cooldown lives on the tool: reset it to chain blows (that is
+        -- what makes the "fast" in fast attack).
         pcall(function() tool:SetAttribute("Cooldown", 0) end)
-        -- :Attack peut ceder la main (animations) : jamais depuis Stepped.
+        -- :Attack can yield (animations): never from Stepped.
         task.spawn(function()
             pcall(function() cc:Attack(tool) end)
         end)
     end)
 end
 
--- Signature observee au remote spy (v31.4) : RE/RegisterAttack(delai, combo).
--- Conservee en repli : ne declenche pas la chaine de detection de touche,
--- donc rarement suffisante seule.
+-- Signature observed with a remote spy (v31.4): RE/RegisterAttack(delay, combo).
+-- Kept as a fallback: it does not trigger the hit-detection chain, so it is
+-- rarely enough on its own.
 local combo = 0
 function Strategy.RegisterAttack()
     if not CF.registerAttack then return false end
@@ -1417,8 +1407,8 @@ function Strategy.Controller()
     end)
 end
 
--- Fabrique le jeton anti-triche a partir des upvalues de `attack`.
--- Renvoie (seed, compteur) ou nil si la forme attendue a change.
+-- Builds the anti-cheat token from the upvalues of `attack`.
+-- Returns (seed, counter), or nil if the expected shape has changed.
 local function nextToken(ctrl)
     Diagnostics.count("NextTokenCalls")
     local a = debug.getupvalue(ctrl.attack, 5)
@@ -1460,7 +1450,7 @@ function Strategy.Remote()
     return pcall(function()
         local seed, counter = nextToken(ctrl)
         if not seed then
-            State.attackError = "upvalues changees par une MAJ du jeu"
+            State.attackError = "upvalues changed by a game update"
             error("token")
         end
         playSwing(ctrl)
@@ -1490,9 +1480,9 @@ function Strategy.RemoteRaw()
 end
 
 ------------------------------------------------------------------ calibration
--- En mode Auto, on essaie une strategie ; si aucun degat n'est observe apres
--- toutes les CalibrateSeconds sans degat, on passe a la suivante. Des qu'une strategie
--- inflige des degats, on la verrouille (State.workingMethod).
+-- In Auto mode we try one strategy; if no damage is observed for
+-- CalibrateSeconds, we move to the next. As soon as a strategy deals damage we
+-- lock onto it (State.workingMethod).
 local rotation = { "SendHits", "CombatController", "RegisterAttack", "Controller", "Remote", "RemoteRaw" }
 local rotationIndex = 1
 local lastRotate = os.clock()
@@ -1503,11 +1493,11 @@ function Attack.currentStrategy()
     return rotation[rotationIndex]
 end
 
--- Appelee quand des degats sont constates : fige la strategie gagnante.
+-- Called when damage is observed: freezes the winning strategy.
 function Attack.confirmWorking()
-    -- Les degats observes ne comptent que si NOTRE strategie a tire depuis la
-    -- derniere rotation : sinon on verrouillait a tort sur des degats venant
-    -- des clics manuels du joueur (diagnostic : Controller* avec Hits:0).
+    -- Observed damage only counts if OUR strategy has fired since the last
+    -- rotation: otherwise we wrongly locked onto damage coming from the
+    -- player's manual clicks (diagnostic: Controller* with Hits:0).
     if not State.firedSinceRotate then return end
     lastRotate = os.clock()
     if State.workingMethod then return end
@@ -1519,24 +1509,24 @@ function Attack.noteDamage()
     lastRotate = os.clock()   -- une strategie qui touche ne doit pas etre abandonnee
 end
 
--- Rotation PUREMENT temporelle : toutes les CalibrateSeconds sans degat
--- confirme, on passe a la strategie suivante. Independante de rigLib (sinon
--- une init incomplete bloquait le cyclage et on restait coince sur Controller).
+-- PURELY time-based rotation: every CalibrateSeconds without confirmed damage,
+-- move to the next strategy. Independent of rigLib (otherwise an incomplete
+-- init blocked the cycling and we stayed stuck on Controller).
 local function rotateStrategy()
     if Config.Combat.Method ~= "Auto" or State.workingMethod then return end
     if os.clock() - lastRotate >= Config.Combat.CalibrateSeconds then
         lastRotate = os.clock()
         rotationIndex = rotationIndex % #rotation + 1
         State.firedSinceRotate = false
-        Util.log("Aucun degat - essai de la strategie", rotation[rotationIndex])
+        Util.log("No damage - trying strategy", rotation[rotationIndex])
     end
 end
 
--- Point d'entree unique.
+-- Single entry point.
 function Attack.fast()
-    -- Ce chemin n'est atteint QUE si FastAttack est indisponible ou desactive
-    -- (garde dans la boucle Stepped) : son compteur mesure donc l'usage reel
-    -- du systeme de repli.
+    -- This path is reached ONLY when FastAttack is unavailable or disabled
+    -- (guarded in the Stepped loop): its counter therefore measures the real
+    -- usage of the fallback system.
     Diagnostics.count("LegacyCombatFallbackCalls")
     local name = Attack.currentStrategy()
     local fn = Strategy[name]
@@ -1551,43 +1541,43 @@ function Attack.fast()
     return ok
 end
 
--- Vrai si une fonction de combat tourne (pilote la boucle Stepped).
+-- True when a combat feature is running (drives the Stepped loop).
 function Attack.active()
     return State.flags.AutoFarm or State.flags.FarmTarget
         or State.flags.KillAura or State.flags.SeaBeast
         or State.flags.MatActive
 end
 
--- Rend une cible frappable : hitbox elargie (sans quoi getBladeHits ne
--- detecte rien), collisions coupees, deplacement bloque.
--- Taille reelle d'un HumanoidRootPart Roblox : sert a REPARER les mobs
--- deformes par les anciennes versions du script.
+-- Makes a target hittable: widened hitbox (without which getBladeHits detects
+-- nothing), collisions off, movement blocked.
+-- The real size of a Roblox HumanoidRootPart: used to REPAIR mobs deformed by
+-- older versions of the script.
 local NORMAL_HRP = Vector3.new(2, 2, 1)
 
--- Prepare une cible SANS casser son etat reseau.
+-- Prepares a target WITHOUT breaking its network state.
 --
--- Ce qui a ete retire ici, et pourquoi :
---   * `ehrp.Size = 70` : purement CLIENT. Le serveur garde la vraie hitbox,
---     donc cela n'aidait en rien RE/RegisterAttack (qui est serveur-autoritaire),
---     mais deformait le mob, decalait son centre physique et le faisait
---     flotter/partir en vrille -> mobs "invincibles" et buggues.
---   * `Humanoid.WalkSpeed = 0` : egalement CLIENT. Le serveur continuait de
---     deplacer le mob -> desynchronisation entre la position vue et la position
---     reelle, donc des coups portes a cote.
+-- What was removed here, and why:
+--   * `ehrp.Size = 70`: purely CLIENT-side. The server keeps the real hitbox,
+--     so it did nothing for RE/RegisterAttack (which is server-authoritative),
+--     but it deformed the mob, shifted its physical centre and made it float or
+--     spin out -> "invincible", buggy mobs.
+--   * `Humanoid.WalkSpeed = 0`: also CLIENT-side. The server kept moving the
+--     mob -> desync between the position seen and the real one, so blows landed
+--     beside it.
 --
--- On ne garde que CanCollide=false, qui empeche le joueur d'etre pousse
--- sans rien desynchroniser.
+-- Only CanCollide=false is kept, which stops the player being pushed without
+-- desyncing anything.
 function Attack.prepareTarget(enemy)
     if not enemy then return end
     Util.try(function()
         local ehrp = enemy:FindFirstChild("HumanoidRootPart")
-        -- Reparation systematique : annule les deformations laissees par les
-        -- versions precedentes, meme en mode sur.
+        -- Systematic repair: undoes deformations left by previous versions,
+        -- even in safe mode.
         if ehrp and ehrp.Size.X > 4 then ehrp.Size = NORMAL_HRP end
 
-        -- En mode sur on s'arrete la : aucune modification de l'etat du mob.
-        -- Toute mutation cote client (collision, vitesse, taille) desynchronise
-        -- le mob par rapport au serveur, qui refuse alors les coups.
+        -- In safe mode we stop here: no change to the mob's state at all.
+        -- Any client-side mutation (collision, speed, size) desyncs the mob
+        -- from the server, which then refuses the blows.
         if Config.Farming.SafeMode then return end
 
         if ehrp then ehrp.CanCollide = false end
@@ -1596,7 +1586,7 @@ function Attack.prepareTarget(enemy)
     end)
 end
 
--- Remet d'aplomb tous les ennemis deformes de la zone (bouton UI).
+-- Straightens out every deformed enemy in the area (UI button).
 function Attack.repairMobs()
     local folder = workspace:FindFirstChild("Enemies")
     if not folder then return 0 end
@@ -1615,11 +1605,11 @@ end
 
 function Attack.ready() return CF.ready end
 
--- Prepare la cible et DECLARE la position a tenir. Le repositionnement reel
--- est fait a 60 Hz par Move.hold() depuis Heartbeat : teleporter par a-coups
--- toutes les 100 ms laissait la gravite reprendre le dessus entre deux sauts,
--- ce qui produisait le va-et-vient visible autour du mob.
--- Active le Buso Haki pendant le farm s'il n'est pas deja actif.
+-- Prepares the target and DECLARES the position to hold. The actual
+-- repositioning is done at 60 Hz by Move.hold() from Heartbeat: teleporting in
+-- jerks every 100 ms let gravity take over between jumps, which produced the
+-- visible back-and-forth around the mob.
+-- Enables Buso Haki during farming when it is not already on.
 function Attack.autoHaki()
     if not Config.Player.AutoHaki then return end
     local char = Core.character()
@@ -1628,10 +1618,10 @@ function Attack.autoHaki()
     end
 end
 
--- Valeur speciale du selecteur : ne rien imposer, garder l'arme en main.
+-- Special selector value: impose nothing, keep the weapon in hand.
 Attack.AUTO = "Auto (arme en main)"
 
--- Types reconnus par le jeu via la propriete ToolTip d'un Tool.
+-- Types the game recognises through a Tool's ToolTip property.
 Attack.TYPES = { "Melee", "Sword", "Gun", "Blox Fruit" }
 
 local typeSet = {}
@@ -1650,7 +1640,7 @@ local function toolsOf(container)
     return out
 end
 
--- Premier Tool du sac correspondant au type demande (ToolTip).
+-- First Tool in the backpack matching the requested type (ToolTip).
 local function findByType(wantedType)
     local backpack = LocalPlayer:FindFirstChild("Backpack")
     for _, t in ipairs(toolsOf(backpack)) do
@@ -1672,10 +1662,10 @@ local function heldType()
     return ok and tip or nil
 end
 
--- Garantit qu'une arme est en main. Trois modes : Auto (ne touche a rien si
--- une arme est deja tenue), un TYPE (Melee/Sword/Gun/Blox Fruit via ToolTip),
--- ou un NOM precis. Aucun changement si l'arme voulue est deja equipee : c'est
--- ce qui permet de changer d'arme a la main sans etre ecrase.
+-- Guarantees a weapon is in hand. Three modes: Auto (touches nothing if a
+-- weapon is already held), a TYPE (Melee/Sword/Gun/Blox Fruit via ToolTip), or
+-- a precise NAME. No change if the wanted weapon is already equipped: that is
+-- what lets you switch weapon by hand without being overridden.
 function Attack.equip(selection)
     local hum = Core.humanoid()
     local char = Core.character()
@@ -1696,8 +1686,8 @@ function Attack.equip(selection)
     if Attack.isType(selection) then
         if heldType() == selection then return end
         local tool = findByType(selection)
-        -- Le melee par defaut du jeu s'appelle "Combat" : CombatController:Attack
-        -- exige un Tool equipe, donc on le retrouve aussi par son nom.
+        -- The game's default melee is called "Combat": CombatController:Attack
+        -- requires an equipped Tool, so we also find it by name.
         if not tool and selection == "Melee" and backpack then
             tool = backpack:FindFirstChild("Combat")
         end
@@ -1725,14 +1715,14 @@ function Attack.strike(enemy)
     Attack.prepareTarget(enemy)
 
     local f = Config.Farming
-    -- La cible en cours definit quels mobs sont ramenes (filtre de quete).
+    -- The current target defines which mobs are brought in (quest filter).
     State.bringFilter = enemy.Name
 
     if f.BringMob then
         State.holdTarget = nil
         State.holdOffset = nil
-        -- Point de vol fixe, pris au-dessus de la cible : les mobs seront
-        -- amenes juste en dessous, a portee, sans que rien ne traverse le sol.
+        -- Fixed flight point, taken above the target: the mobs will be brought
+        -- just below, in range, with nothing going through the floor.
         if not State.bringAnchor then
             State.bringAnchor = CFrame.new(
                 ehrp.Position + Vector3.new(0, f.AttackHeight + f.BringHeight, 0))
@@ -1740,24 +1730,24 @@ function Attack.strike(enemy)
     else
         State.holdTarget = ehrp
         State.holdOffset = CFrame.new(0, f.AttackHeight, f.AttackBack)
-        -- Placement immediat ET oriente : sans lui, la premiere frappe part
-        -- hors de portee (ou dos au mob) en attendant le prochain Heartbeat.
+        -- Immediate AND oriented placement: without it the first strike goes
+        -- out of range (or with our back to the mob) until the next Heartbeat.
         Move.faceTarget(ehrp, State.holdOffset)
     end
 
     Attack.equip(State.selectedWeapon)
     Attack.autoHaki()
-    -- Volontairement PAS d'appel a Attack.fast() ici : la boucle Stepped est
-    -- la seule a frapper. Frapper des deux endroits consommait le jeton
-    -- Validator deux fois par attaque et desynchronisait le compteur, d'ou
-    -- des degats qui ne passaient qu'une fois sur deux.
+    -- Deliberately NO call to Attack.fast() here: the Stepped loop is the only
+    -- one that strikes. Striking from both places consumed the Validator token
+    -- twice per attack and desynced the counter, which is why damage only got
+    -- through every other time.
 end
 
 function Attack.releaseHold()
     State.holdTarget = nil
     State.holdOffset = nil
-    -- Liberer l'ancre : sinon le joueur resterait bloque en vol apres la mort
-    -- de la cible, empechant le deplacement vers la suivante.
+    -- Release the anchor: otherwise the player would stay stuck flying after
+    -- the target dies, preventing movement to the next one.
     State.bringAnchor = nil
 end
 
@@ -1794,10 +1784,10 @@ function Enemies.nearest(name, maxRange)
     return best, bestDist
 end
 
--- Premier mob trouve parmi une liste de noms (pour les materiaux).
+-- First mob found among a list of names (for materials).
 function Enemies.nearestOfList(names)
-    -- Note : chaque iteration relance un scan complet. Le cout cumule est
-    -- mesure ici, distinctement de Enemies.nearest.
+    -- Note: each iteration restarts a full scan. The cumulative cost is
+    -- measured here, separately from Enemies.nearest.
     local t0 = Diagnostics.start()
     for i, n in ipairs(names) do
         local e = Enemies.nearest(n)
@@ -1890,9 +1880,9 @@ function Farming.set(value)
     end
 end
 
--- Reste verrouille sur un ennemi jusqu'a sa mort au lieu de rebalayer le
--- Workspace a chaque frame : c'est ce qui rend le farm reellement efficace.
--- `guard` decide si la boucle doit continuer (flag encore actif, etc.).
+-- Stays locked on one enemy until it dies rather than re-sweeping the
+-- Workspace every frame: that is what makes the farm genuinely efficient.
+-- `guard` decides whether the loop should continue (flag still on, etc.).
 local function engage(enemy, guard)
     local t0 = Diagnostics.start()
     local hum = enemy:FindFirstChildOfClass("Humanoid")
@@ -1905,25 +1895,25 @@ local function engage(enemy, guard)
     local lastProgress = os.clock()
     while State.alive and guard() and enemy.Parent
         and hum.Health > 0 and Core.alive() do
-        -- Abandon si la cible ne perd plus de vie pendant trop longtemps :
-        -- sans cela, un mob inatteignable bloquait le farm indefiniment.
+        -- Give up if the target stops losing health for too long: without this,
+        -- an unreachable mob blocked the farm indefinitely.
         if hum.Health < lastHealth then lastProgress = os.clock() end
         if os.clock() - lastProgress > Config.Farming.EngageTimeout then
-            Util.log("Cible abandonnee (aucun degat depuis", Config.Farming.EngageTimeout, "s)")
+            Util.log("Target dropped (no damage for", Config.Farming.EngageTimeout, "s)")
             break
         end
         Attack.strike(enemy)
         task.wait(Config.Combat.AttackDelay)
 
-        -- Observation des degats : c'est la seule preuve qu'une strategie
-        -- fonctionne vraiment. Elle sert a verrouiller le mode Auto.
+        -- Damage observation: the only proof a strategy really works. It is
+        -- what locks in Auto mode.
         if hum.Health < lastHealth then
             State.damageSeen = (State.damageSeen or 0) + 1
             Attack.confirmWorking()
         end
         lastHealth = hum.Health
     end
-    -- `found` = 1 si la cible est morte pendant l'engagement.
+    -- `found` = 1 if the target died during the engagement.
     Diagnostics.stop("engage", t0, 1, (hum.Health <= 0) and 1 or 0)
     Attack.releaseHold()
 end
@@ -1931,16 +1921,16 @@ end
 function Farming.tick()
     if not State.flags.AutoFarm then return end
 
-    -- L'AutomationCore, quand il est branche, remplace integralement le corps
-    -- ci-dessous : il fait sa propre detection, sa propre validation de cible
-    -- et sa propre recuperation. La boucle historique reste en place comme
-    -- repli si le core n'a pas pu se charger.
+    -- The AutomationCore, when attached, replaces the body below entirely: it
+    -- does its own detection, its own target validation and its own recovery.
+    -- The historical loop stays in place as a fallback if the core could not
+    -- load.
     local driver = StrawberryHub.FarmDriver
     if driver and Config.Farming.UseAutomationCore then
         return driver()
     end
 
-    -- Mort : on arrete tout deplacement et on laisse le respawn se faire.
+    -- Death: stop all movement and let the respawn happen.
     if not Core.alive() then
         Move.stopTween()
         task.wait(Config.Farming.RespawnWait)
@@ -1950,11 +1940,11 @@ function Farming.tick()
     local q = Quests.current()
     if not q then return end
 
-    -- Filtre de bring maintenu a chaque tick : sans cela il disparaissait
-    -- entre deux cibles et tous les mobs de la zone etaient aspires.
+    -- Bring filter maintained on every tick: without it the filter vanished
+    -- between two targets and every mob in the zone was vacuumed up.
     State.bringFilter = q.Name
 
-    -- Passage de zone lointaine (Fishman / Ship / Sky) via requestEntrance.
+    -- Distant-zone transit (Fishman / Ship / Sky) through requestEntrance.
     if q.Entrance then
         local hrp = Core.hrp()
         if hrp and Util.dist(q.QCF.Position, hrp.Position) > 10000 then
@@ -1965,7 +1955,7 @@ function Farming.tick()
 
     local function stillFarming() return State.flags.AutoFarm end
 
-    -- Mode "No Quest" : on frappe le mob sans jamais prendre la quete.
+    -- "No Quest" mode: hit the mob without ever taking the quest.
     if Config.Farming.Mode == "No Quest" then
         local enemy = Enemies.nearest(q.Name)
         if enemy then
@@ -1976,7 +1966,7 @@ function Farming.tick()
         return
     end
 
-    -- Mode "Quest" : abandonne une quete qui ne correspond plus au palier.
+    -- "Quest" mode: abandon a quest that no longer matches the level band.
     local title = Quests.activeTitle()
     if title and not string.find(title, q.Name, 1, true) then
         Remote.invoke("AbandonQuest")
@@ -1994,7 +1984,7 @@ function Farming.tick()
 
     local enemy = Enemies.nearest(q.Name)
     if enemy then
-        -- On lache la cible aussi si la quete se termine entre-temps.
+        -- Drop the target too if the quest ends in the meantime.
         engage(enemy, function()
             return State.flags.AutoFarm and Quests.isActive()
         end)
@@ -2022,12 +2012,12 @@ function Combat.setTarget(value)
     if not value then Move.stopTween() end
 end
 
--- Frappe sans se teleporter : utile en ville / raid.
+-- Strike without teleporting: useful in town / raids.
 function Combat.setKillAura(value)
     Core.setFlag("KillAura", value, Config.Loops.Combat, function()
         if not State.flags.KillAura or not Core.alive() then return end
-        -- La frappe est portee par la boucle Stepped (flag KillAura inclus
-        -- dans Attack.active) : ici on se contente d'armer le personnage.
+        -- The strike is delivered by the Stepped loop (the KillAura flag is
+        -- included in Attack.active): here we only arm the character.
         if Enemies.nearest(nil, Config.Combat.AuraRange) then
             Attack.equip(State.selectedWeapon)
             Attack.autoHaki()
@@ -2148,14 +2138,14 @@ function Player.initAntiAFK()
     end))
 end
 
--- Re-equipe l'arme et relance proprement apres un respawn.
+-- Re-equips the weapon and restarts cleanly after a respawn.
 function Player.initRespawn()
     Core.bind(LocalPlayer.CharacterAdded:Connect(function(char)
         Move.stopTween()
         char:WaitForChild("HumanoidRootPart", 15)
         task.wait(Config.Farming.RespawnWait)
-        -- activeController est recree a chaque respawn : sans ce re-init,
-        -- le fast attack cesse silencieusement de fonctionner apres une mort.
+        -- activeController is recreated on every respawn: without this re-init,
+        -- the fast attack silently stops working after a death.
         Attack.init()
         Attack.hookAnimations()
         if State.selectedWeapon then Attack.equip(State.selectedWeapon) end
@@ -2207,26 +2197,26 @@ end
 
 
 --=============================================================================
--- ANTI-DETECTION — bloque la telemetrie de detection/ban/kick du jeu
+-- ANTI-DETECTION — blocks the game's detection/ban/kick telemetry
 --=============================================================================
---  Blox Fruits fait remonter des signaux d'anti-triche au serveur via des
---  remotes taggees (TeleportDetect, CHECKER, BANREMOTE, KICKREMOTE...). Ce
---  module intercepte le __namecall de `game` et avale ces appels sortants
---  avant qu'ils n'atteignent le serveur, tout en laissant passer le reste.
+--  Blox Fruits reports anti-cheat signals to the server through tagged remotes
+--  (TeleportDetect, CHECKER, BANREMOTE, KICKREMOTE...). This module intercepts
+--  `game`'s __namecall and swallows those outgoing calls before they reach the
+--  server, while letting everything else through.
 --
---  Repris du hook de repeat.lua, mais rendu REVERSIBLE : la metamethode
---  d'origine est memorisee et restauree par disable()/Unload(). On ne touche
---  a rien d'hostile envers le joueur ; on empeche seulement l'auto-signalement.
+--  Taken from repeat.lua's hook, but made REVERSIBLE: the original metamethod
+--  is stored and restored by disable()/Unload(). Nothing hostile to the player
+--  is touched; only the self-reporting is prevented.
 --
---  Limite : ne garantit pas l'absence de ban (le serveur a d'autres controles).
---  Peut casser a une grosse MAJ -> tout est sous pcall, desactivable en 1 clic.
+--  Limitation: it does not guarantee no ban (the server has other checks).
+--  It can break on a major update -> everything is under pcall, off in one click.
 --=============================================================================
 local AntiDetection = {}
 
 local hooked = false
 local originalNamecall
 
--- Recherche insensible a la casse dans la liste des tags bloques.
+-- Case-insensitive lookup in the list of blocked tags.
 local function isBlocked(value)
     if value == nil then return false end
     local key = string.lower(tostring(value))
@@ -2239,7 +2229,7 @@ end
 function AntiDetection.enable()
     if hooked then return true end
     if not (getrawmetatable and setreadonly and newcclosure) then
-        State.antiDetectError = "executeur sans getrawmetatable/setreadonly"
+        State.antiDetectError = "executor without getrawmetatable/setreadonly"
         Util.log(State.antiDetectError)
         return false
     end
@@ -2252,7 +2242,7 @@ function AntiDetection.enable()
         mt.__namecall = newcclosure(function(self, ...)
             if Config.AntiDetection.Enabled then
                 local args = { ... }
-                -- Bloque si le tag (1er argument) OU le nom du remote correspond.
+                -- Block if the tag (first argument) OR the remote name matches.
                 if isBlocked(args[1]) then return end
                 local okName, name = pcall(function() return self.Name end)
                 if okName and isBlocked(name) then return end
@@ -2267,7 +2257,7 @@ function AntiDetection.enable()
         hooked = true
         AntiDetection.startFFlags()
     else
-        State.antiDetectError = "echec du hook __namecall"
+        State.antiDetectError = "__namecall hook failed"
         Util.log(State.antiDetectError)
     end
     return ok
@@ -2284,7 +2274,7 @@ function AntiDetection.disable()
     hooked = false
 end
 
--- Coupe les captures d'ecran du systeme de rapport d'abus (une seule boucle).
+-- Disables abuse-report screenshots (a single loop).
 function AntiDetection.startFFlags()
     if not Config.AntiDetection.DisableAbuseScreenshots then return end
     if type(setfflag) ~= "function" then return end
@@ -2359,33 +2349,33 @@ function Events.setSeaBeast(value)
 end
 
 --=============================================================================
--- FAST ATTACK — cadence libre + option sans animation
+-- FAST ATTACK — free rate plus an optional no-animation mode
 --=============================================================================
---  Principe : ne PAS passer par CombatController:Attack(), qui joue
---  l'animation et dont RunHitDetection boucle tant que celle-ci tourne
---  (`while elapsed < length and track.IsPlaying`). La cadence est alors celle
---  de l'animation, soit celle d'un clic normal.
+--  Principle: do NOT go through CombatController:Attack(), which plays the
+--  animation and whose RunHitDetection loops while that animation runs
+--  (`while elapsed < length and track.IsPlaying`). The rate is then the
+--  animation's, i.e. that of a normal click.
 --
---  On envoie donc directement les deux messages que cette chaine finit par
---  produire :
---      RE/RegisterAttack(delai, combo)          -> declare le coup
---      Global.SendHitsToServer(part, extras)    -> applique les degats
+--  So we send directly the two messages that chain ends up producing:
 --
---  Composants : Configuration · TargetManager · WeaponAdapter
---               · AnimationController · AttackController
+--      RE/RegisterAttack(delay, combo)           -> declares the blow
+--      Global.SendHitsToServer(part, extras)     -> applies the damage
+--
+--  Components: Configuration · TargetManager · WeaponAdapter
+--              · AnimationController · AttackController
 --=============================================================================
 local FastAttack = {}
 
 ------------------------------------------------------------------ Configuration
--- Les valeurs vivent dans Config.FastAttack (configuration centrale).
+-- The values live in Config.FastAttack (central configuration).
 local function cfg() return Config.FastAttack end
 
 ------------------------------------------------------------------ TargetManager
 local TargetManager = {}
 FastAttack.TargetManager = TargetManager
 
--- Noms de parties acceptes par le jeu (liste blanche de CombatUtil) : une
--- touche envoyee sur une autre partie est ignoree par le serveur.
+-- Part names the game accepts (CombatUtil's allow-list): a hit sent on any
+-- other part is ignored by the server.
 local VALID_PARTS = {
     "UpperTorso", "LowerTorso", "Head", "ModelHitbox", "Torso",
     "RightUpperArm", "RightLowerArm", "RightHand",
@@ -2411,9 +2401,9 @@ function TargetManager:IsValid(rig, origin, range)
     return (root.Position - origin).Magnitude <= range
 end
 
--- Renvoie { first = BasePart, extras = { {rig, part}, ... }, count = n }
--- `first` et `extras` correspondent exactement aux deux premiers arguments
--- attendus par RegisterHit.
+-- Returns { first = BasePart, extras = { {rig, part}, ... }, count = n }
+-- `first` and `extras` map exactly onto the first two arguments RegisterHit
+-- expects.
 function TargetManager:FindTargets()
     local t0 = Diagnostics.start()
     local hrp = Core.hrp()
@@ -2448,13 +2438,13 @@ function TargetManager:FindTargets()
     return { first = first, extras = extras, count = count }
 end
 
--- Cible unique la plus proche (utilisee par le farm pour se positionner).
+-- Single nearest target (used by the farm to position itself).
 function TargetManager:FindNearest(name)
     return Enemies.nearest(name, cfg().Range)
 end
 
 ------------------------------------------------------------------ WeaponAdapter
--- Interface commune : l'AttackController ne connait aucune arme en particulier.
+-- Common interface: the AttackController knows no weapon in particular.
 local WeaponAdapter = {}
 FastAttack.WeaponAdapter = WeaponAdapter
 
@@ -2465,7 +2455,7 @@ function WeaponAdapter:GetTool()
     if not char then return nil end
     local tool = char:FindFirstChildOfClass("Tool")
     if tool then return tool end
-    -- Repli : outil tagge par le jeu (GetEquippedWeaponTool de CombatUtil).
+    -- Fallback: tool tagged by the game (CombatUtil's GetEquippedWeaponTool).
     for _, child in ipairs(char:GetChildren()) do
         if child:IsA("Tool")
             and (child:HasTag("MeleeTool") or child:HasTag("GunTool")) then
@@ -2482,8 +2472,8 @@ function WeaponAdapter:GetWeaponType()
     return ok and t or nil
 end
 
--- Validation deleguee au jeu quand elle est disponible : CanAttack verifie
--- Stun, Busy, Sit et le cooldown global (Global.tapCooldown).
+-- Validation delegated to the game when available: CanAttack checks Stun,
+-- Busy, Sit and the global cooldown (Global.tapCooldown).
 function WeaponAdapter:CanAttack()
     local char = Core.character()
     local hum = Core.humanoid()
@@ -2495,17 +2485,17 @@ function WeaponAdapter:CanAttack()
         local ok, allowed = pcall(function()
             return cu:CanAttack(char, self:GetWeaponType())
         end)
-        -- CanAttack renvoie true, ou rien du tout si l'attaque est refusee.
+        -- CanAttack returns true, or nothing at all if the attack is refused.
         if ok and not allowed then return false end
     end
     return true
 end
 
--- Declenche une attaque sur les cibles fournies. Renvoie true si le couple
--- (declaration + touches) a bien ete envoye.
--- Sonde en LECTURE SEULE : releve ce que le jeu declare pour l'arme equipee,
--- afin d'identifier la source de verite du delai envoye a RegisterAttack.
--- N'est executee que si Diagnostics est actif, et une seule fois par arme.
+-- Triggers an attack on the given targets. Returns true when the pair
+-- (declaration + hits) was sent.
+-- READ-ONLY probe: records what the game declares for the equipped weapon, to
+-- identify the source of truth for the delay sent to RegisterAttack.
+-- Runs only when Diagnostics is on, and once per weapon.
 function WeaponAdapter:ProbeWeapon(tool)
     if not Diagnostics.isEnabled() or not tool then return end
     local cu = CF.combatUtil
@@ -2554,20 +2544,20 @@ function WeaponAdapter:Attack(targets)
     self:ProbeWeapon(tool)
     Diagnostics.count("ModernCombatCalls")
 
-    -- Le cooldown est porte par l'outil : on le libere pour enchainer.
+    -- The cooldown lives on the tool: release it to chain blows.
     pcall(function() tool:SetAttribute("Cooldown", 0) end)
 
     comboIndex = comboIndex % 4 + 1
 
     local sent = false
-    -- 1) Declaration du coup (sans animation : on n'appelle pas Attack()).
+    -- 1) Declare the blow (no animation: we do not call Attack()).
     if CF.registerAttack then
         sent = pcall(function()
             CF.registerAttack:FireServer(cfg().SwingDelay, comboIndex)
         end)
     end
 
-    -- 2) Enregistrement des touches : c'est ce qui inflige les degats.
+    -- 2) Register the hits: this is what deals the damage.
     local G = CF.globalMod
     if G and type(G.SendHitsToServer) == "function" then
         Diagnostics.count("GlobalSendHits_Modern")
@@ -2580,23 +2570,23 @@ function WeaponAdapter:Attack(targets)
 end
 
 ------------------------------------------------------------ AnimationController
--- Masque les animations de combat cote client uniquement. La logique de
--- combat n'est pas modifiee : seules les pistes sont arretees a la lecture.
+-- Hides combat animations client-side only. The combat logic is untouched:
+-- only the tracks are stopped as they start playing.
 local AnimationController = {}
 FastAttack.AnimationController = AnimationController
 
 local animConn, animatorConn
 local enabled = false
 
--- Une animation appartient au systeme de combat si son nom suit la convention
--- posee par CombatUtil.ToggleLoadMovesetAnims : "<arme>-basic<N>" ou
--- "<arme>-<cle>". On ne devine aucun nom en dur.
+-- An animation belongs to the combat system when its name follows the
+-- convention set by CombatUtil.ToggleLoadMovesetAnims: "<weapon>-basic<N>" or
+-- "<weapon>-<key>". No name is hardcoded.
 local function isCombatAnim(track)
     local ok, name = pcall(function() return track.Animation.Name end)
     if not ok or not name then return false end
     if string.find(name, "-basic", 1, true) then return true end
 
-    -- Verification via le cache de moveset du jeu, quand il est accessible.
+    -- Checked against the game's moveset cache, when reachable.
     local cu = CF.combatUtil
     local hum = Core.humanoid()
     if cu and hum and type(cu.GetMovesetAnimCache) == "function" then
@@ -2619,7 +2609,7 @@ local function bindAnimator()
     if not animator then return end
     if animConn then animConn:Disconnect() end
     animConn = animator.AnimationPlayed:Connect(silence)
-    -- Coupe aussi celles deja en cours.
+    -- Also stop the ones already running.
     pcall(function()
         for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
             silence(track)
@@ -2631,7 +2621,7 @@ function AnimationController:Enable()
     if enabled then return end
     enabled = true
     bindAnimator()
-    -- Le personnage change au respawn : on se rebranche.
+    -- The character changes on respawn: rebind.
     if not animatorConn then
         animatorConn = Core.bind(LocalPlayer.CharacterAdded:Connect(function()
             task.wait(1)
@@ -2668,8 +2658,8 @@ function AttackController:Stop()
     refusals = 0
 end
 
--- Une iteration : verifie l'etat, cherche une cible, attaque.
--- Renvoie le delai a respecter avant la prochaine tentative.
+-- One iteration: check state, look for a target, attack.
+-- Returns the delay to respect before the next attempt.
 function AttackController:Step()
     if busy then return cfg().Interval end
     busy = true
@@ -2679,7 +2669,7 @@ function AttackController:Step()
         if not WeaponAdapter:CanAttack() then
             Diagnostics.count("state.AttackRefused")
             refusals = refusals + 1
-            -- Refus repetes : on ralentit au lieu de marteler le serveur.
+            -- Repeated refusals: slow down instead of hammering the server.
             backoff = math.min(cfg().MaxBackoff, backoff + cfg().Interval)
             delay = cfg().Interval + backoff
             return
@@ -2687,7 +2677,7 @@ function AttackController:Step()
 
         local targets = TargetManager:FindTargets()
         if not targets then
-            -- Rien a frapper : on respire, sans considerer cela comme un refus.
+            -- Nothing to hit: take a breath, without treating it as a refusal.
             delay = cfg().IdleInterval
             return
         end
@@ -2749,522 +2739,11 @@ function FastAttack:IsReady()
 end
 
 --=============================================================================
--- UI — bibliotheque native embarquee (aucun telechargement)
+-- INTERFACE SUPPORT
 --=============================================================================
-local UI = {}
-local T = Config.Theme
-
-local function new(class, props, children)
-    local inst = Instance.new(class)
-    for k, v in pairs(props or {}) do
-        if k ~= "Parent" then inst[k] = v end
-    end
-    for _, child in ipairs(children or {}) do child.Parent = inst end
-    if props and props.Parent then inst.Parent = props.Parent end
-    return inst
-end
-
-local function corner(radius, parent)
-    return new("UICorner", { CornerRadius = UDim.new(0, radius or 6), Parent = parent })
-end
-
--- Ordre d'affichage explicite : sans LayoutOrder distinct, l'ordre des
--- controles dans un UIListLayout n'est pas garanti.
-local orderCounters = setmetatable({}, { __mode = "k" })
-local function nextOrder(container)
-    local n = (orderCounters[container] or 0) + 1
-    orderCounters[container] = n
-    return n
-end
-
-local function padding(px, parent)
-    return new("UIPadding", {
-        PaddingLeft = UDim.new(0, px), PaddingRight = UDim.new(0, px),
-        PaddingTop = UDim.new(0, px), PaddingBottom = UDim.new(0, px),
-        Parent = parent,
-    })
-end
-
--- Rend un cadre deplacable au doigt / a la souris.
-local function makeDraggable(frame, handle)
-    local dragging, dragStart, startPos
-    handle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = frame.Position
-        end
-    end)
-    handle.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch) then
-            local delta = input.Position - dragStart
-            frame.Position = UDim2.new(
-                startPos.X.Scale, startPos.X.Offset + delta.X,
-                startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        end
-    end)
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
-end
-
-function UI.createWindow(title, subtitle)
-    local parent = (gethui and gethui())
-        or LocalPlayer:FindFirstChildOfClass("PlayerGui")
-        or game:GetService("CoreGui")
-
-    local screen = new("ScreenGui", {
-        Name = "StrawberryHubUI",
-        ResetOnSpawn = false,
-        IgnoreGuiInset = true,
-        DisplayOrder = 500,
-        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-        Parent = parent,
-    })
-    table.insert(State.guis, screen)
-
-    -- Bouton flottant pour rouvrir quand la fenetre est reduite (essentiel mobile).
-    local openBtn = new("TextButton", {
-        Name = "Open",
-        Size = UDim2.fromOffset(52, 52),
-        Position = UDim2.new(0, 12, 0, 120),
-        BackgroundColor3 = T.Accent,
-        Text = "SH",
-        TextColor3 = Color3.fromRGB(20, 20, 20),
-        Font = Enum.Font.GothamBold,
-        TextSize = 16,
-        Visible = false,
-        Parent = screen,
-    })
-    corner(26, openBtn)
-    makeDraggable(openBtn, openBtn)
-
-    local root = new("Frame", {
-        Name = "Root",
-        Size = UDim2.fromOffset(600, 400),
-        Position = UDim2.new(0.5, -300, 0.5, -200),
-        BackgroundColor3 = T.Bg,
-        BorderSizePixel = 0,
-        Active = true,
-        Parent = screen,
-    })
-    corner(10, root)
-
-    -- Taille adaptee aux petits ecrans (mobile).
-    local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize
-    if viewport and viewport.X < 700 then
-        local w = math.min(560, viewport.X - 40)
-        local h = math.min(380, viewport.Y - 80)
-        root.Size = UDim2.fromOffset(w, h)
-        root.Position = UDim2.new(0.5, -w / 2, 0.5, -h / 2)
-    end
-
-    local header = new("Frame", {
-        Size = UDim2.new(1, 0, 0, 46),
-        BackgroundColor3 = T.Sidebar,
-        BorderSizePixel = 0,
-        Parent = root,
-    })
-    corner(10, header)
-    makeDraggable(root, header)
-
-    new("TextLabel", {
-        Size = UDim2.new(1, -110, 1, 0),
-        Position = UDim2.fromOffset(14, 0),
-        BackgroundTransparency = 1,
-        Text = title,
-        TextColor3 = T.Text,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        Font = Enum.Font.GothamBold,
-        TextSize = 16,
-        Parent = header,
-    })
-    new("TextLabel", {
-        Size = UDim2.new(1, -110, 0, 14),
-        Position = UDim2.fromOffset(14, 26),
-        BackgroundTransparency = 1,
-        Text = subtitle,
-        TextColor3 = T.TextDim,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        Font = Enum.Font.Gotham,
-        TextSize = 11,
-        Parent = header,
-    })
-
-    local minBtn = new("TextButton", {
-        Size = UDim2.fromOffset(34, 30),
-        Position = UDim2.new(1, -78, 0, 8),
-        BackgroundColor3 = T.Panel,
-        Text = "—",
-        TextColor3 = T.Text,
-        Font = Enum.Font.GothamBold,
-        TextSize = 16,
-        Parent = header,
-    })
-    corner(6, minBtn)
-
-    local closeBtn = new("TextButton", {
-        Size = UDim2.fromOffset(34, 30),
-        Position = UDim2.new(1, -40, 0, 8),
-        BackgroundColor3 = Color3.fromRGB(180, 60, 60),
-        Text = "X",
-        TextColor3 = T.Text,
-        Font = Enum.Font.GothamBold,
-        TextSize = 14,
-        Parent = header,
-    })
-    corner(6, closeBtn)
-
-    minBtn.MouseButton1Click:Connect(function()
-        root.Visible = false
-        openBtn.Visible = true
-    end)
-    openBtn.MouseButton1Click:Connect(function()
-        root.Visible = true
-        openBtn.Visible = false
-    end)
-    closeBtn.MouseButton1Click:Connect(function()
-        if getgenv().StrawberryHub then getgenv().StrawberryHub.Unload() end
-    end)
-
-    local sidebar = new("ScrollingFrame", {
-        Size = UDim2.new(0, 132, 1, -46),
-        Position = UDim2.fromOffset(0, 46),
-        BackgroundColor3 = T.Sidebar,
-        BorderSizePixel = 0,
-        ScrollBarThickness = 3,
-        CanvasSize = UDim2.new(),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        Parent = root,
-    })
-    new("UIListLayout", { Padding = UDim.new(0, 4), Parent = sidebar })
-    padding(8, sidebar)
-
-    local content = new("Frame", {
-        Size = UDim2.new(1, -132, 1, -46),
-        Position = UDim2.fromOffset(132, 46),
-        BackgroundTransparency = 1,
-        Parent = root,
-    })
-
-    local window = { screen = screen, tabs = {}, current = nil }
-
-    function window:AddTab(name)
-        local page = new("ScrollingFrame", {
-            Size = UDim2.fromScale(1, 1),
-            BackgroundTransparency = 1,
-            BorderSizePixel = 0,
-            ScrollBarThickness = 4,
-            CanvasSize = UDim2.new(),
-            AutomaticCanvasSize = Enum.AutomaticSize.Y,
-            Visible = false,
-            Parent = content,
-        })
-        new("UIListLayout", { Padding = UDim.new(0, 6), Parent = page })
-        padding(10, page)
-
-        local btn = new("TextButton", {
-            Size = UDim2.new(1, 0, 0, 32),
-            BackgroundColor3 = T.Panel,
-            BackgroundTransparency = 1,
-            Text = name,
-            TextColor3 = T.TextDim,
-            Font = Enum.Font.GothamMedium,
-            TextSize = 12,
-            LayoutOrder = nextOrder(sidebar),
-            Parent = sidebar,
-        })
-        corner(6, btn)
-
-        local tab = { page = page, button = btn, name = name }
-
-        btn.MouseButton1Click:Connect(function() window:Select(tab) end)
-        table.insert(window.tabs, tab)
-        if not window.current then window:Select(tab) end
-
-        ------------------------------------------------------------- controles
-        function tab:AddLabel(text)
-            local lbl = new("TextLabel", {
-                Size = UDim2.new(1, 0, 0, 22),
-                BackgroundTransparency = 1,
-                Text = text,
-                TextColor3 = T.TextDim,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                TextWrapped = true,
-                Font = Enum.Font.Gotham,
-                TextSize = 12,
-                LayoutOrder = nextOrder(page),
-                Parent = page,
-            })
-            return {
-                Set = function(_, t) lbl.Text = t end,
-            }
-        end
-
-        function tab:AddButton(text, callback)
-            local b = new("TextButton", {
-                Size = UDim2.new(1, 0, 0, 34),
-                BackgroundColor3 = T.Panel,
-                Text = text,
-                TextColor3 = T.Text,
-                Font = Enum.Font.GothamMedium,
-                TextSize = 13,
-                AutoButtonColor = true,
-                LayoutOrder = nextOrder(page),
-                Parent = page,
-            })
-            corner(6, b)
-            b.MouseButton1Click:Connect(function() Util.try(callback) end)
-            return b
-        end
-
-        function tab:AddToggle(text, default, callback)
-            local holder = new("TextButton", {
-                Size = UDim2.new(1, 0, 0, 34),
-                BackgroundColor3 = T.Panel,
-                Text = "",
-                AutoButtonColor = false,
-                LayoutOrder = nextOrder(page),
-                Parent = page,
-            })
-            corner(6, holder)
-            new("TextLabel", {
-                Size = UDim2.new(1, -60, 1, 0),
-                Position = UDim2.fromOffset(10, 0),
-                BackgroundTransparency = 1,
-                Text = text,
-                TextColor3 = T.Text,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                TextWrapped = true,
-                Font = Enum.Font.Gotham,
-                TextSize = 12,
-                Parent = holder,
-            })
-            local pill = new("Frame", {
-                Size = UDim2.fromOffset(40, 20),
-                Position = UDim2.new(1, -50, 0.5, -10),
-                BackgroundColor3 = default and T.On or T.Off,
-                Parent = holder,
-            })
-            corner(10, pill)
-            local knob = new("Frame", {
-                Size = UDim2.fromOffset(16, 16),
-                Position = default and UDim2.fromOffset(22, 2) or UDim2.fromOffset(2, 2),
-                BackgroundColor3 = Color3.fromRGB(245, 245, 245),
-                Parent = pill,
-            })
-            corner(8, knob)
-
-            local value = default and true or false
-            local function apply(v, fire)
-                value = v and true or false
-                pill.BackgroundColor3 = value and T.On or T.Off
-                TweenService:Create(knob, TweenInfo.new(0.12), {
-                    Position = value and UDim2.fromOffset(22, 2) or UDim2.fromOffset(2, 2),
-                }):Play()
-                if fire then Util.try(callback, value) end
-            end
-
-            holder.MouseButton1Click:Connect(function() apply(not value, true) end)
-            return { Set = function(_, v) apply(v, false) end, Get = function() return value end }
-        end
-
-        function tab:AddSlider(text, default, min, max, callback)
-            local holder = new("Frame", {
-                Size = UDim2.new(1, 0, 0, 48),
-                BackgroundColor3 = T.Panel,
-                LayoutOrder = nextOrder(page),
-                Parent = page,
-            })
-            corner(6, holder)
-            local lbl = new("TextLabel", {
-                Size = UDim2.new(1, -20, 0, 20),
-                Position = UDim2.fromOffset(10, 4),
-                BackgroundTransparency = 1,
-                Text = text .. " : " .. tostring(default),
-                TextColor3 = T.Text,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                Font = Enum.Font.Gotham,
-                TextSize = 12,
-                Parent = holder,
-            })
-            local bar = new("Frame", {
-                Size = UDim2.new(1, -20, 0, 6),
-                Position = UDim2.fromOffset(10, 30),
-                BackgroundColor3 = T.Off,
-                Parent = holder,
-            })
-            corner(3, bar)
-            local fill = new("Frame", {
-                Size = UDim2.fromScale((default - min) / (max - min), 1),
-                BackgroundColor3 = T.Accent,
-                BorderSizePixel = 0,
-                Parent = bar,
-            })
-            corner(3, fill)
-
-            local dragging = false
-            local function setFromX(x)
-                local rel = math.clamp((x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
-                local v = math.floor(min + (max - min) * rel + 0.5)
-                fill.Size = UDim2.fromScale(rel, 1)
-                lbl.Text = text .. " : " .. tostring(v)
-                Util.try(callback, v)
-            end
-            bar.InputBegan:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1
-                    or input.UserInputType == Enum.UserInputType.Touch then
-                    dragging = true
-                    setFromX(input.Position.X)
-                end
-            end)
-            bar.InputChanged:Connect(function(input)
-                if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-                    or input.UserInputType == Enum.UserInputType.Touch) then
-                    setFromX(input.Position.X)
-                end
-            end)
-            UserInputService.InputEnded:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1
-                    or input.UserInputType == Enum.UserInputType.Touch then
-                    dragging = false
-                end
-            end)
-        end
-
-        -- Liste deroulante : s'ouvre en panneau scrollable, valeurs rafraichissables.
-        function tab:AddDropdown(text, values, callback, default)
-            local holder = new("TextButton", {
-                Size = UDim2.new(1, 0, 0, 34),
-                BackgroundColor3 = T.Panel,
-                Text = "",
-                AutoButtonColor = false,
-                LayoutOrder = nextOrder(page),
-                Parent = page,
-            })
-            corner(6, holder)
-            local lbl = new("TextLabel", {
-                Size = UDim2.new(1, -20, 1, 0),
-                Position = UDim2.fromOffset(10, 0),
-                BackgroundTransparency = 1,
-                Text = text .. " : —",
-                TextColor3 = T.Text,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                TextTruncate = Enum.TextTruncate.AtEnd,
-                Font = Enum.Font.Gotham,
-                TextSize = 12,
-                Parent = holder,
-            })
-            local list = new("ScrollingFrame", {
-                Size = UDim2.new(1, 0, 0, 0),
-                BackgroundColor3 = T.Sidebar,
-                BorderSizePixel = 0,
-                ScrollBarThickness = 3,
-                CanvasSize = UDim2.new(),
-                AutomaticCanvasSize = Enum.AutomaticSize.Y,
-                Visible = false,
-                LayoutOrder = nextOrder(page),
-                Parent = page,
-            })
-            new("UIListLayout", { Padding = UDim.new(0, 2), Parent = list })
-
-            local api = { value = nil }
-            local open = false
-
-            local function rebuild(vals)
-                for _, c in ipairs(list:GetChildren()) do
-                    if c:IsA("TextButton") then c:Destroy() end
-                end
-                for _, v in ipairs(vals) do
-                    local item = new("TextButton", {
-                        Size = UDim2.new(1, 0, 0, 28),
-                        BackgroundColor3 = T.Panel,
-                        Text = tostring(v),
-                        TextColor3 = T.Text,
-                        Font = Enum.Font.Gotham,
-                        TextSize = 12,
-                        LayoutOrder = nextOrder(list),
-                        Parent = list,
-                    })
-                    corner(4, item)
-                    item.MouseButton1Click:Connect(function()
-                        api.value = v
-                        lbl.Text = text .. " : " .. tostring(v)
-                        open = false
-                        list.Visible = false
-                        list.Size = UDim2.new(1, 0, 0, 0)
-                        Util.try(callback, v)
-                    end)
-                end
-            end
-
-            holder.MouseButton1Click:Connect(function()
-                open = not open
-                list.Visible = open
-                list.Size = open and UDim2.new(1, 0, 0, 120) or UDim2.new(1, 0, 0, 0)
-            end)
-
-            function api:SetValues(vals) rebuild(vals or {}) end
-            function api:Get() return api.value end
-
-            rebuild(values or {})
-            -- Affiche d'emblee la valeur courante plutot qu'un tiret trompeur.
-            local initial = default or (values and values[1])
-            if initial ~= nil then
-                api.value = initial
-                lbl.Text = text .. " : " .. tostring(initial)
-            end
-            return api
-        end
-
-        return tab
-    end
-
-    function window:Select(tab)
-        for _, t in ipairs(window.tabs) do
-            t.page.Visible = false
-            t.button.BackgroundTransparency = 1
-            t.button.TextColor3 = T.TextDim
-        end
-        tab.page.Visible = true
-        tab.button.BackgroundTransparency = 0
-        tab.button.TextColor3 = T.Text
-        window.current = tab
-    end
-
-    function window:Notify(text, seconds)
-        task.spawn(function()
-            local toast = new("TextLabel", {
-                Size = UDim2.new(0, 280, 0, 46),
-                Position = UDim2.new(1, -292, 0, 12),
-                BackgroundColor3 = T.Panel,
-                Text = text,
-                TextColor3 = T.Text,
-                TextWrapped = true,
-                Font = Enum.Font.GothamMedium,
-                TextSize = 12,
-                Parent = screen,
-            })
-            corner(8, toast)
-            task.wait(seconds or 5)
-            toast:Destroy()
-        end)
-    end
-
-    return window
-end
-
---=============================================================================
--- CONSTRUCTION DE L'INTERFACE
---=============================================================================
--- Choix d'arme propose : "Auto", puis les 4 types de combat du jeu, puis
--- les armes precises reellement possedees. Selectionner un TYPE est le mode
--- recommande : il continue de fonctionner quand on change d'epee ou de fruit.
+-- Weapon choices offered: "Auto", then the game's four combat types, then the
+-- specific weapons actually owned. Selecting a TYPE is the recommended mode:
+-- it keeps working when you change sword or fruit.
 local function listWeapons()
     local out = { Attack.AUTO }
     for _, kind in ipairs(Attack.TYPES) do
@@ -3277,8 +2756,8 @@ local function listWeapons()
             for _, t in ipairs(src:GetChildren()) do
                 if t:IsA("Tool") and not seen[t.Name] then
                     seen[t.Name] = true
-                    -- On n'ajoute pas un nom identique a un type, pour eviter
-                    -- deux entrees indistinguables dans la liste.
+                    -- A name identical to a type is not added, to avoid two
+                    -- indistinguishable entries in the list.
                     if not Attack.isType(t.Name) then
                         table.insert(out, t.Name)
                     end
@@ -3289,373 +2768,27 @@ local function listWeapons()
     return out
 end
 
-local function buildUI()
-    local window = UI.createWindow("Strawberry Hub",
-        ("Blox Fruits  ·  Sea %d  ·  Lv %d"):format(State.sea, Core.level()))
-
-    -- Panneau de diagnostic toujours visible (meme fenetre reduite). Sert a
-    -- voir en un coup d'oeil ce qui est resolu et si les coups portent.
-    local diagLabel
-    do
-        local parent = (gethui and gethui())
-            or LocalPlayer:FindFirstChildOfClass("PlayerGui")
-            or game:GetService("CoreGui")
-        local sg = Instance.new("ScreenGui")
-        sg.Name = "StrawberryDiag"
-        sg.ResetOnSpawn = false
-        sg.IgnoreGuiInset = true
-        sg.DisplayOrder = 1000
-        diagLabel = Instance.new("TextLabel")
-        diagLabel.Size = UDim2.new(0, 380, 0, 62)
-        diagLabel.Position = UDim2.new(0.5, -190, 0, 6)
-        diagLabel.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
-        diagLabel.BackgroundTransparency = 0.15
-        diagLabel.TextColor3 = Color3.fromRGB(120, 230, 140)
-        diagLabel.Font = Enum.Font.Code
-        diagLabel.TextSize = 13
-        diagLabel.TextWrapped = true
-        diagLabel.Text = "diagnostic..."
-        local c = Instance.new("UICorner")
-        c.CornerRadius = UDim.new(0, 6)
-        c.Parent = diagLabel
-        diagLabel.Parent = sg
-        sg.Parent = parent
-        table.insert(State.guis, sg)
-    end
-
-    ----------------------------------------------------------------- Farm
-    local farm = window:AddTab("Auto Farm")
-    local weapons = listWeapons()
-    State.selectedWeapon = Config.Farming.WeaponType or Attack.AUTO
-
-    local weaponDrop = farm:AddDropdown("Arme / Type", weapons, function(v)
-        State.selectedWeapon = v
-        Config.Farming.WeaponType = v
-        Persist.save()
-    end, State.selectedWeapon)
-    farm:AddButton("Rafraichir les armes", function()
-        weaponDrop:SetValues(listWeapons())
-    end)
-    farm:AddDropdown("Mode", { "Quest", "No Quest" }, function(v)
-        Config.Farming.Mode = v
-        Persist.save()
-    end, Config.Farming.Mode)
-    farm:AddToggle("Auto Farm Level", false, function(v) Farming.set(v) end)
-    -- Bascule entre l'AutomationCore (detection dynamique, machine a etats,
-    -- recuperation) et la boucle historique basee sur la table de CFrame.
-    -- Utile pour comparer les deux sans recharger le script.
-    farm:AddToggle("Automation Core (detection dynamique)",
-        Config.Farming.UseAutomationCore, function(v)
-        Config.Farming.UseAutomationCore = v
-        if not v and StrawberryHub.AutomationCore then
-            -- On rend la main proprement : sans cela l'ancre et le pilote de
-            -- bring resteraient poses alors que le core ne tourne plus.
-            pcall(function() StrawberryHub.AutomationCore:stop() end)
-        end
-        Persist.save()
-    end)
-    farm:AddSlider("Vitesse de deplacement (max 200)",
-        Config.Farming.TweenSpeed, 50, 200, function(v)
-        Config.Farming.TweenSpeed = math.min(v, Config.Farming.MaxTweenSpeed)
-        Persist.save()
-    end)
-    farm:AddSlider("Hauteur au-dessus du mob", Config.Farming.AttackHeight, 0, 40, function(v)
-        Config.Farming.AttackHeight = v
-        Persist.save()
-    end)
-    farm:AddToggle("Bring Mob (les mobs viennent a toi)",
-        Config.Farming.BringMob, function(v)
-        Config.Farming.BringMob = v
-        if not v then Attack.releaseHold() end
-        Persist.save()
-    end)
-    farm:AddToggle("Bring : mobs de la quete uniquement",
-        Config.Farming.BringQuestOnly, function(v)
-        Config.Farming.BringQuestOnly = v
-        Persist.save()
-    end)
-    farm:AddSlider("Rayon de bring", Config.Farming.BringDistance, 50, 1000, function(v)
-        Config.Farming.BringDistance = v
-        Persist.save()
-    end)
-    farm:AddSlider("Hauteur de bring", Config.Farming.BringHeight, 2, 40, function(v)
-        Config.Farming.BringHeight = v
-        Persist.save()
-    end)
-    farm:AddToggle("Auto Buso Haki", Config.Player.AutoHaki, function(v)
-        Config.Player.AutoHaki = v
-        Persist.save()
-    end)
-    farm:AddToggle("Mode sur (ne touche pas aux mobs)",
-        Config.Farming.SafeMode, function(v)
-        Config.Farming.SafeMode = v
-        Persist.save()
-    end)
-    farm:AddSlider("Recul lateral", Config.Farming.SafeDistance, 0, 15, function(v)
-        Config.Farming.SafeDistance = v
-        Persist.save()
-    end)
-
-    local statusLabel = farm:AddLabel("Cible : —")
-    local engineLabel = farm:AddLabel(Attack.ready()
-        and "Moteur de combat : OK"
-        or ("Moteur de combat : ECHEC — " .. tostring(State.attackError)))
-    local toolLabel = farm:AddLabel("Arme en main : —")
-
-    ----------------------------------------------------------------- Combat
-    local combat = window:AddTab("Combat")
-    local targetDrop = combat:AddDropdown("Cible", Enemies.listNames(), function(v)
-        Config.Combat.SelectedTarget = v
-    end)
-    combat:AddButton("Rafraichir les cibles", function()
-        targetDrop:SetValues(Enemies.listNames())
-    end)
-    combat:AddToggle("Farm cible selectionnee", false, function(v) Combat.setTarget(v) end)
-    combat:AddToggle("Kill Aura", false, function(v) Combat.setKillAura(v) end)
-    combat:AddSlider("Portee Kill Aura", Config.Combat.AuraRange, 20, 250, function(v)
-        Config.Combat.AuraRange = v
-    end)
-    combat:AddToggle("Fast Attack", Config.FastAttack.Enabled, function(v)
-        Config.FastAttack.Enabled = v
-        if not v then FastAttack:Stop() end
-        Persist.save()
-    end)
-    combat:AddToggle("Sans animation", Config.FastAttack.NoAnimation, function(v)
-        FastAttack:SetNoAnimation(v)
-        Persist.save()
-    end)
-    combat:AddSlider("Cadence (ms)",
-        math.floor(Config.FastAttack.Interval * 1000), 20, 500, function(v)
-        Config.FastAttack.Interval = v / 1000
-        Persist.save()
-    end)
-    combat:AddSlider("Portee Fast Attack", Config.FastAttack.Range, 10, 200, function(v)
-        Config.FastAttack.Range = v
-        Persist.save()
-    end)
-    combat:AddSlider("Cibles simultanees", Config.FastAttack.MaxTargets, 1, 30, function(v)
-        Config.FastAttack.MaxTargets = v
-        Persist.save()
-    end)
-
-    combat:AddDropdown("Methode de repli", Attack.METHODS, function(v)
-        Config.Combat.Method = v
-        Persist.save()
-    end, Config.Combat.Method)
-    combat:AddSlider("Portee hitbox (joueur)", Config.Combat.HitboxRange, 20, 250, function(v)
-        Config.Combat.HitboxRange = v
-        Persist.save()
-    end)
-    combat:AddButton("Reparer les mobs deformes", function()
-        local n = Attack.repairMobs()
-        window:Notify(("Mobs remis d'aplomb : %d"):format(n), 5)
-    end)
-    combat:AddSlider("Delai entre attaques (ms)",
-        math.floor(Config.Combat.AttackDelay * 1000), 30, 500, function(v)
-        Config.Combat.AttackDelay = v / 1000
-        Persist.save()
-    end)
-    combat:AddButton("Relancer la calibration", function()
-        State.workingMethod = nil
-        State.damageSeen = 0
-        State.attackCount = 0
-        window:Notify("Calibration relancee : le script teste chaque strategie.", 6)
-    end)
-    combat:AddButton("Reinitialiser le moteur de combat", function()
-        Attack.init()
-        Attack.hookAnimations()
-        window:Notify(Attack.ready() and "Moteur de combat : OK"
-            or ("Echec : " .. tostring(State.attackError)), 6)
-    end)
-
-    ----------------------------------------------------------------- Materials
-    local mats = window:AddTab("Materiaux")
-    for _, name in ipairs(Util.keys(Config.Materials)) do
-        mats:AddToggle(name, false, function(v) Materials.set(name, v) end)
-    end
-
-    ----------------------------------------------------------------- Teleport
-    local tp = window:AddTab("Teleport")
-    local islandDrop = tp:AddDropdown("Ile", Teleport.listIslands(), function(v)
-        State.selectedIsland = v
-    end)
-    tp:AddButton("Rafraichir les iles", function()
-        islandDrop:SetValues(Teleport.listIslands())
-    end)
-    tp:AddButton("Aller a l'ile", function()
-        if State.selectedIsland then Teleport.toIsland(State.selectedIsland) end
-    end)
-    tp:AddButton("First Sea", function() Teleport.toSea(1) end)
-    tp:AddButton("Second Sea", function() Teleport.toSea(2) end)
-    tp:AddButton("Third Sea", function() Teleport.toSea(3) end)
-
-    ----------------------------------------------------------------- Shop
-    local shop = window:AddTab("Shop")
-    shop:AddButton("Redeem tous les codes", Shop.redeemAll)
-    shop:AddButton("Reroll Race", Shop.rerollRace)
-    shop:AddButton("Reset Stats", Shop.resetStats)
-    for _, ab in ipairs(Config.Abilities) do
-        shop:AddButton("Acheter " .. ab.name, function() Shop.buyAbility(ab) end)
-    end
-    for _, style in ipairs(Config.FightingStyles) do
-        shop:AddToggle("Auto " .. style.name, false, function(v)
-            Shop.setFightingStyle(style, v)
-        end)
-    end
-
-    ----------------------------------------------------------------- Player
-    local player = window:AddTab("Joueur")
-    for _, key in ipairs(Util.keys(Config.Player.Stats)) do
-        player:AddToggle("Stat " .. key, Config.Player.Stats[key], function(v)
-            Config.Player.Stats[key] = v
-            Persist.save()
-        end)
-    end
-    player:AddSlider("Points par tick", Config.Player.StatsPerTick, 1, 20, function(v)
-        Config.Player.StatsPerTick = v
-    end)
-    player:AddToggle("Activer Auto Stats", false, function(v) Player.setStats(v) end)
-    player:AddToggle("Anti AFK", Config.Player.AntiAFK, function(v)
-        Config.Player.AntiAFK = v
-        Persist.save()
-    end)
-
-    ----------------------------------------------------------------- Serveur
-    local server = window:AddTab("Serveur")
-    server:AddLabel("Job ID : " .. tostring(game.JobId))
-    server:AddButton("Rejoindre le meme serveur", Server.rejoin)
-    server:AddButton("Server Hop", function() Server.hop(false) end)
-    server:AddButton("Hop serveur le moins peuple", function() Server.hop(true) end)
-
-    ----------------------------------------------------------------- Divers
-    local misc = window:AddTab("Divers")
-    misc:AddToggle("Auto Sea Beast", false, function(v) Events.setSeaBeast(v) end)
-    misc:AddButton("FPS Boost", Performance.fpsBoost)
-    misc:AddButton("Retirer le brouillard", Performance.removeFog)
-    misc:AddButton("TOUT ARRETER", function()
-        Core.stopAll()
-        Move.stopTween()
-        window:Notify("Toutes les fonctions ont ete arretees.", 4)
-    end)
-    misc:AddToggle("Logs de debug", Config.Debug, function(v)
-        Config.Debug = v
-        Persist.save()
-    end)
-    misc:AddButton("Decharger le hub", function()
-        if getgenv().StrawberryHub then getgenv().StrawberryHub.Unload() end
-    end)
-
-    ----------------------------------------------------------------- Diagnostics
-    local diagTab = window:AddTab("Diagnostics")
-    diagTab:AddLabel("Instrumentation temporaire. Desactivee = cout nul.")
-    local diagState = diagTab:AddLabel("Etat : inactif")
-    diagTab:AddToggle("Activer la mesure", Config.Diagnostics.Enabled, function(v)
-        Config.Diagnostics.Enabled = v
-        Diagnostics.setEnabled(v)
-        Persist.save()
-    end)
-    diagTab:AddButton("Exporter le rapport", function()
-        Diagnostics.Export()
-        window:Notify("Rapport copie + StrawberryHub/diagnostics.txt", 6)
-    end)
-    diagTab:AddButton("Remettre les compteurs a zero", function()
-        Diagnostics.reset()
-        window:Notify("Compteurs remis a zero.", 4)
-    end)
-
-    ----------------------------------------------------------------- Protection
-    local prot = window:AddTab("Protection")
-    prot:AddLabel("Bloque la telemetrie de detection / ban / kick du jeu.")
-    local protStatus = prot:AddLabel("Etat : —")
-    prot:AddToggle("Anti-detection", Config.AntiDetection.Enabled, function(v)
-        Config.AntiDetection.Enabled = v
-        if v then AntiDetection.enable() else
-            -- On garde le hook en place (retrait complet = risque), mais il
-            -- laisse tout passer quand Enabled est faux : desactivation douce.
-            window:Notify("Anti-detection en pause (le hook laisse tout passer).", 4)
-        end
-        Persist.save()
-    end)
-    prot:AddToggle("Bloquer captures rapport d'abus",
-        Config.AntiDetection.DisableAbuseScreenshots, function(v)
-        Config.AntiDetection.DisableAbuseScreenshots = v
-        if v then AntiDetection.startFFlags() end
-        Persist.save()
-    end)
-    prot:AddButton("Reappliquer les hooks", function()
-        AntiDetection.enable()
-        window:Notify(AntiDetection.isActive()
-            and "Anti-detection active."
-            or ("Echec : " .. tostring(State.antiDetectError)), 5)
-    end)
-
-    -- Rafraichissement du statut (une seule boucle, pas une par label).
-    State.flags.Status = true
-    Core.loop("Status", 1, function()
-        local q = Quests.current()
-        statusLabel:Set(q and ("Cible : " .. q.Name .. "  (Lv " .. Core.level() .. ")")
-            or "Cible : —")
-        engineLabel:Set(Attack.ready()
-            and "Moteur de combat : OK"
-            or ("Moteur de combat : ECHEC — " .. tostring(State.attackError)))
-        diagState:Set(Diagnostics.isEnabled()
-            and "Etat : MESURE EN COURS — pense a exporter"
-            or "Etat : inactif (cout nul)")
-        protStatus:Set(("Etat : %s   |   Remotes bloques : %d")
-            :format(AntiDetection.isActive()
-                and (Config.AntiDetection.Enabled and "ACTIF" or "en pause (hook pose)")
-                or ("INACTIF - " .. tostring(State.antiDetectError or "non pose")),
-                #Config.AntiDetection.Remotes))
-
-        local char = Core.character()
-        local held = char and char:FindFirstChildOfClass("Tool")
-        local tip = "-"
-        if held then
-            local okTip, t = pcall(function() return held.ToolTip end)
-            if okTip and t and t ~= "" then tip = t end
-        end
-        toolLabel:Set(("%s (%s) | Lame: %s | %s%s | Hits:%d | Degats:%d")
-            :format(held and held.Name or "poings", tip,
-                Attack.bladeName() or "aucune",
-                Attack.currentStrategy(),
-                State.workingMethod and " OK" or " ?",
-                State.attackCount or 0, State.damageSeen or 0))
-
-        -- Panneau de diagnostic : booleens de resolution + preuve de degats.
-        State.diag = State.diag or {}
-        State.diag.controller = (Attack.controller() ~= nil)
-        local d = State.diag
-        local function yn(b) return b and "OK" or "NON" end
-        local NL = string.char(10)
-        diagLabel.Text =
-            ("HIT:%s CC:%s REGATK:%s ctrl:%s"):format(
-                yn(d.sendHits), yn(d.rigLib), yn(d.registerAttack), yn(d.controller))
-            .. NL .. ("FA:%s%s  Hits:%d  DEGATS:%d"):format(
-                FastAttack.AttackController:IsRunning() and "ON" or "off",
-                FastAttack.AnimationController:IsEnabled() and " noanim" or "",
-                State.attackCount or 0, State.damageSeen or 0)
-            .. NL .. ("Arme:%s(%s) Lame:%s"):format(
-                held and held.Name or "poings", tip, Attack.bladeName() or "-")
-        diagLabel.TextColor3 = (State.damageSeen or 0) > 0
-            and Color3.fromRGB(120, 230, 140) or Color3.fromRGB(240, 200, 90)
-    end)
-
-    return window
-end
 
 --=============================================================================
 -- INIT
 --=============================================================================
 StrawberryHub = { Config = Config, State = State, Loaded = false }
 
--- Primitives exposees a l'AutomationCore. Le core ne touche a rien d'autre :
--- c'est la seule surface de contact entre l'ancien monolithe et la nouvelle
--- architecture, ce qui permet de la tester et de la remplacer isolement.
+-- Primitives exposed to the AutomationCore and to Runtime.Interface. This is
+-- the only contact surface between the engine and everything built on top of
+-- it, which is what lets either side be tested or replaced on its own.
+--
+-- PlayerModule is the runtime's player feature set; Player is the Roblox
+-- LocalPlayer instance. Two different things, so two different names.
 StrawberryHub.Internal = {
     Config = Config, State = State, Util = Util, Core = Core,
     Remote = Remote, Move = Move, Attack = Attack, Enemies = Enemies,
-    Quests = Quests, Farming = Farming, Server = Server,
-    Teleport = Teleport, Diagnostics = Diagnostics, Player = LocalPlayer,
+    Quests = Quests, Farming = Farming, Combat = Combat, Server = Server,
+    Teleport = Teleport, Materials = Materials, Shop = Shop,
+    Performance = Performance, AntiDetection = AntiDetection,
+    Events = Events, FastAttack = FastAttack, Diagnostics = Diagnostics,
+    Persist = Persist, PlayerModule = Player, Player = LocalPlayer,
+    listWeapons = listWeapons,
 }
 
 function StrawberryHub.Unload()
@@ -3679,10 +2812,10 @@ end
 getgenv().StrawberryHub = StrawberryHub
 
 Persist.load()
-Util.log("Demarrage — Place:", game.PlaceId, "Sea:", State.sea,
-    "Executeur:", (identifyexecutor and identifyexecutor()) or "inconnu")
+Util.log("Startup — Place:", game.PlaceId, "Sea:", State.sea,
+    "Executor:", (identifyexecutor and identifyexecutor()) or "unknown")
 
--- Active en tout premier : la protection doit couvrir aussi la phase d'init.
+-- Enabled first of all: the protection must cover the init phase too.
 if Config.AntiDetection.Enabled then AntiDetection.enable() end
 
 Player.initAntiAFK()
@@ -3691,14 +2824,14 @@ Player.initRespawn()
 Attack.init()
 Attack.hookAnimations()
 
--- Le jeu remet la hitbox et les temporisations a leurs valeurs par defaut
--- en permanence : on les reforce tant qu'une fonction de combat est active.
--- C'est ICI que l'attaque est reellement portee. Le jeu remet les
--- temporisations du controleur a chaque frame : il faut donc frapper depuis
--- Stepped, en continu, tant qu'une fonction de combat est active.
--- Superviseur du Fast Attack : demarre/arrete la boucle du module selon
--- qu'une fonction de combat est active. Le module gere lui-meme sa cadence,
--- son ralentissement en cas de refus et l'arret propre.
+-- The game resets the hitbox and the timings to their defaults constantly: we
+-- re-force them while a combat feature is active.
+-- THIS is where the attack is actually delivered. The game resets the
+-- controller's timings every frame, so we have to strike from Stepped,
+-- continuously, while a combat feature is active.
+-- Fast Attack supervisor: starts/stops the module's loop depending on whether
+-- a combat feature is active. The module handles its own rate, its slowdown on
+-- refusals and its clean shutdown.
 Core.bind(RunService.Heartbeat:Connect(function()
     if not State.alive then return end
     local want = Config.FastAttack.Enabled and Attack.active()
@@ -3710,8 +2843,8 @@ Core.bind(RunService.Heartbeat:Connect(function()
     end
 end))
 
--- Repli : si le module n'est pas disponible (remotes introuvables), on
--- retombe sur l'ancienne rotation de strategies, pilotee par Stepped.
+-- Fallback: when the module is unavailable (remotes not found), we drop back
+-- to the old strategy rotation, driven by Stepped.
 local lastPulse = 0
 Core.bind(RunService.Stepped:Connect(function()
     if not State.alive or not Attack.active() then return end
@@ -3731,33 +2864,9 @@ Core.bind(RunService.Heartbeat:Connect(function()
     if Attack.active() then Move.hold() end
 end))
 
-local ok, result = xpcall(buildUI, function(err)
-    return tostring(err) .. "\n" .. debug.traceback("", 2)
-end)
-
-if not ok then
-    warn("[StrawberryHub] Erreur UI : " .. tostring(result))
-    -- Message de secours visible en jeu, meme si l'UI principale a echoue.
-    pcall(function()
-        local sg = Instance.new("ScreenGui")
-        sg.IgnoreGuiInset = true
-        local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(0.9, 0, 0, 120)
-        lbl.Position = UDim2.new(0.05, 0, 0.05, 0)
-        lbl.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-        lbl.TextColor3 = Color3.fromRGB(255, 120, 120)
-        lbl.Font = Enum.Font.Gotham
-        lbl.TextSize = 13
-        lbl.TextWrapped = true
-        lbl.Text = "[Strawberry Hub] Erreur UI :\n" .. tostring(result)
-        lbl.Parent = sg
-        sg.Parent = (gethui and gethui()) or LocalPlayer:FindFirstChildOfClass("PlayerGui")
-    end)
-    return StrawberryHub
-end
-
-StrawberryHub.Window = result
+-- The window itself is built by Runtime.Interface, on top of the StrawberryUI
+-- library. This module now stops at the engine: it exposes primitives and
+-- owns no presentation code.
 StrawberryHub.Loaded = true
-result:Notify("Strawberry Hub charge — Sea " .. State.sea, 5)
 
 return StrawberryHub

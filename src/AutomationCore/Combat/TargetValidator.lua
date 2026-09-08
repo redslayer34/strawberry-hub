@@ -1,27 +1,27 @@
 --=============================================================================
--- TARGET VALIDATOR — la seule autorite qui decide qu'un mob est frappable
+-- TARGET VALIDATOR — the only authority on whether a mob may be hit
 --=============================================================================
---  Aucun autre module n'a le droit de conclure qu'une entite est une cible.
---  BringController, AttackController et les modes de farm recoivent des
---  listes DEJA validees ; ils ne refont pas le tri, ils ne l'assouplissent
---  pas.
+--  No other module is allowed to conclude that an entity is a target.
+--  BringController, AttackController and the farming modes receive lists that
+--  are ALREADY filtered; they do not redo the sorting, and they do not relax
+--  it.
 --
---  Dix controles, dans cet ordre (du moins cher au plus cher) :
+--  Ten checks, in this order (cheapest first):
 --
---    1. l'entite existe et est encore dans le Workspace
---    2. elle possede un Humanoid exploitable
---    3. elle possede une partie racine manipulable
---    4. elle est vivante
---    5. ce n'est pas un joueur
---    6. ce n'est pas un PNJ de quete
---    7. son nom correspond EXACTEMENT a la cible normalisee
---    8. ce n'est pas un boss, sauf si la quete le designe explicitement
---    9. elle appartient a la region de spawn retenue
---   10. sa reference est encore fraiche (ni detruite, ni deplacee hors jeu)
+--    1. the entity exists and is still in the Workspace
+--    2. it has a usable Humanoid
+--    3. it has a manipulable root part
+--    4. it is alive
+--    5. it is not a player
+--    6. it is not a quest NPC
+--    7. its name matches the normalised target EXACTLY
+--    8. it is not a boss, unless the quest names it explicitly
+--    9. it belongs to the chosen spawn region
+--   10. its reference is still fresh (neither destroyed nor moved off-world)
 --
---  Le point 7 est le coeur du systeme : egalite de formes canoniques, jamais
---  `string.find`, jamais "le nom contient un mot proche". C'est ce qui
---  empeche "Bandit" d'aspirer "Desert Bandit", et inversement.
+--  Check 7 is the heart of the system: equality of canonical forms, never
+--  `string.find`, never "the name contains a close word". That is what stops
+--  "Bandit" pulling in "Desert Bandit", and the reverse.
 --=============================================================================
 
 local Log = require("AutomationCore.Log")
@@ -32,8 +32,8 @@ local Players = game:GetService("Players")
 
 local TargetValidator = {}
 
--- Comptage des refus par motif. Sans cela, "0 cible valide" n'apprend rien :
--- avec, on sait si les mobs sont absents, hors zone, ou tous morts.
+-- Rejection counts by reason. Without them "0 valid targets" teaches nothing;
+-- with them you know whether mobs are absent, out of zone, or all dead.
 local rejections = {}
 
 local function reject(reason)
@@ -54,9 +54,9 @@ function TargetValidator.resetStats() table.clear(rejections) end
 -- Boss
 ---------------------------------------------------------------------------
 
--- Un boss se reconnait a sa reserve de vie, pas a son nom : aucune liste a
--- maintenir, et une mise a jour qui ajoute un boss est couverte d'office.
--- L'attribut explicite, quand le jeu en pose un, prime sur l'heuristique.
+-- A boss is recognised by its health pool, not its name: no list to maintain,
+-- and an update that adds a boss is covered automatically. An explicit
+-- attribute, where the game sets one, wins over the heuristic.
 function TargetValidator.isBoss(ctx, entry)
     local model = entry.model
     local flagged = model:GetAttribute("IsBoss")
@@ -69,14 +69,14 @@ function TargetValidator.isBoss(ctx, entry)
 end
 
 ---------------------------------------------------------------------------
--- PNJ de quete
+-- Quest NPC
 ---------------------------------------------------------------------------
 
 local function isQuestNPC(ctx, model)
     local npcs = ctx.world.npcs()
     if npcs and model:IsDescendantOf(npcs) then return true end
 
-    -- Un mob ne porte jamais d'invite d'interaction ; un donneur de quete si.
+    -- A mob never carries an interaction prompt; a quest giver does.
     for _, node in ipairs(model:GetChildren()) do
         if node:IsA("ProximityPrompt") or node:IsA("ClickDetector") then return true end
     end
@@ -87,13 +87,13 @@ end
 -- Validation
 ---------------------------------------------------------------------------
 
--- entry : entree d'EnemyScanner, ou modele brut (normalise ici).
--- quest : QuestState. quest.AllowBoss n'est pose que par BossFarm, qui
---         demande explicitement un boss.
--- Renvoie true, ou false + motif.
+-- entry : an EnemyScanner entry, or a raw model (normalised here).
+-- quest : QuestState. quest.AllowBoss is set only by BossFarm, which asks for
+--         a boss explicitly.
+-- Returns true, or false plus a reason.
 function TargetValidator.isValidQuestTarget(ctx, entry, quest)
-    -- Tolere un modele brut : le validateur doit pouvoir etre appele depuis
-    -- n'importe ou, y compris sur une reference gardee par un appelant.
+    -- Tolerates a raw model: the validator must be callable from anywhere,
+    -- including on a reference a caller has been holding.
     if typeof(entry) == "Instance" then
         entry = {
             model = entry,
@@ -105,62 +105,62 @@ function TargetValidator.isValidQuestTarget(ctx, entry, quest)
 
     -- 1. existence
     local model = entry and entry.model
-    if not model or not model.Parent then return reject("disparu") end
+    if not model or not model.Parent then return reject("gone") end
 
     -- 2. Humanoid
     local humanoid = entry.humanoid or model:FindFirstChildOfClass("Humanoid")
-    if not humanoid or not humanoid.Parent then return reject("sans humanoid") end
+    if not humanoid or not humanoid.Parent then return reject("no humanoid") end
 
-    -- 3. partie racine
+    -- 3. root part
     local root = entry.root
     if not root or not root.Parent or not root:IsA("BasePart") then
-        return reject("sans racine")
+        return reject("no root")
     end
 
-    -- 4. vivant
-    if humanoid.Health <= 0 then return reject("mort") end
+    -- 4. alive
+    if humanoid.Health <= 0 then return reject("dead") end
 
-    -- 5. pas un joueur
-    if Players:GetPlayerFromCharacter(model) then return reject("joueur") end
+    -- 5. not a player
+    if Players:GetPlayerFromCharacter(model) then return reject("player") end
 
-    -- 6. pas un PNJ de quete
-    if isQuestNPC(ctx, model) then return reject("pnj de quete") end
+    -- 6. not a quest NPC
+    if isQuestNPC(ctx, model) then return reject("quest npc") end
 
-    -- 7. correspondance stricte avec l'objectif de la quete
+    -- 7. strict match against the quest objective
     if not quest or not quest.TargetName then
-        -- Pas d'objectif lisible = aucune cible autorisee. On prefere ne rien
-        -- faire plutot que de frapper au hasard : c'est ce trou qui faisait
-        -- aspirer toute la zone entre deux cibles.
-        return reject("objectif inconnu")
+        -- No readable objective means no target is allowed. Better to do
+        -- nothing than to hit at random: that gap is what used to vacuum up
+        -- the whole zone between two targets.
+        return reject("unknown objective")
     end
     local canonical = entry.canonical or Names.normalize(entry.name or model.Name)
-    if canonical ~= quest.TargetName then return reject("nom different") end
+    if canonical ~= quest.TargetName then return reject("name mismatch") end
 
     -- 8. boss
     if TargetValidator.isBoss(ctx, entry) then
-        -- Le nom correspond deja (point 7). Il faut EN PLUS que la quete
-        -- active designe bien un boss, sinon c'est un homonyme costaud qu'on
-        -- n'a aucune raison d'engager.
+        -- The name already matches (check 7). On top of that the active quest
+        -- must actually name a boss, otherwise this is a beefy namesake we
+        -- have no reason to engage.
         if not (quest.AllowBoss or quest.IsBossQuest) then
-            return reject("boss non demande")
+            return reject("boss not requested")
         end
     end
 
-    -- 9. region de spawn
+    -- 9. spawn region
     local position = root.Position
     if ctx.region and not SpawnClusterResolver.contains(ctx, ctx.region, position) then
-        return reject("hors region")
+        return reject("outside region")
     end
 
-    -- 10. reference encore exploitable
-    if position.Y ~= position.Y then return reject("position invalide") end
-    if humanoid.Health ~= humanoid.Health then return reject("vie invalide") end
+    -- 10. reference still usable
+    if position.Y ~= position.Y then return reject("invalid position") end
+    if humanoid.Health ~= humanoid.Health then return reject("invalid health") end
 
     return true
 end
 
--- Filtre une liste de candidats. C'est la SEULE fabrique de listes de cibles
--- de tout le systeme : le flux impose est
+-- Filters a candidate list. This is the ONLY producer of target lists in the
+-- whole system: the mandated flow is
 --     QuestDetector -> TargetSelector -> TargetValidator -> BringController
 function TargetValidator.filter(ctx, candidates, quest)
     local valid = {}
@@ -172,8 +172,8 @@ function TargetValidator.filter(ctx, candidates, quest)
     return valid
 end
 
--- Revalidation d'une cible gardee d'un tour a l'autre. Appelee avant CHAQUE
--- operation sur un mob : jamais d'action sur une reference qui a vieilli.
+-- Revalidation of a target held from one turn to the next. Called before EVERY
+-- operation on a mob: never act on a reference that has aged.
 function TargetValidator.stillValid(ctx, entry, quest)
     return TargetValidator.isValidQuestTarget(ctx, entry, quest)
 end
@@ -185,7 +185,7 @@ function TargetValidator.logRejections(tag)
     for i = 1, math.min(4, #stats) do
         parts[#parts + 1] = stats[i].reason .. "=" .. stats[i].count
     end
-    Log.write(tag or "Target", "refus :", table.concat(parts, ", "))
+    Log.write(tag or "Target", "rejections:", table.concat(parts, ", "))
     TargetValidator.resetStats()
 end
 

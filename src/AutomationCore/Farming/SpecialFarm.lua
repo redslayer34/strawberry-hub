@@ -1,20 +1,20 @@
 --=============================================================================
--- SPECIAL FARM — objectifs ponctuels et quetes d'evenement
+-- SPECIAL FARM — one-off objectives and event quests
 --=============================================================================
---  Sert de socle aux objectifs qui ne suivent pas le cycle de quete normal :
---  quetes d'evenement, chasses limitees dans le temps, etapes scenarisees.
---  CDKController est le premier client de cette interface.
+--  The base for objectives that do not follow the normal quest cycle: event
+--  quests, time-limited hunts, scripted sequences. CDKController is this
+--  interface's first client.
 --
---  Un objectif expose quatre choses et rien d'autre :
+--  An objective exposes four things and nothing else:
 --
---      :requirements() -> ok, motif      -- pre-conditions verifiables
---      :step()         -> statut         -- un pas, non bloquant
---      :describe()     -> texte          -- pour le journal
---      :stop()                           -- liberation propre
+--      :requirements() -> ok, reason     -- verifiable preconditions
+--      :step()         -> status         -- one step, non-blocking
+--      :describe()     -> text           -- for the journal
+--      :stop()                           -- clean release
 --
---  Le statut rendu par :step() vaut "running", "done" ou "failed". Le core
---  ne connait que ces trois valeurs, ce qui permet de brancher un objectif
---  arbitraire sans toucher a la machine a etats.
+--  :step() returns "running", "done" or "failed". The core knows only those
+--  three values, which is what lets an arbitrary objective be plugged in
+--  without touching the state machine.
 --=============================================================================
 
 local Log = require("AutomationCore.Log")
@@ -32,12 +32,12 @@ function SpecialFarm.new(ctx)
     }, SpecialFarm)
 end
 
--- L'objectif doit satisfaire l'interface decrite plus haut. On le verifie a
--- l'inscription plutot que de decouvrir un champ manquant en plein farm.
+-- The objective must satisfy the interface described above. We check that on
+-- registration rather than discover a missing field mid-farm.
 function SpecialFarm:setObjective(name, objective)
     if objective ~= nil then
         assert(type(objective.step) == "function",
-            "objectif special : step() est obligatoire")
+            "special objective: step() is required")
     end
     self.objective = objective
     self.name = name
@@ -45,27 +45,27 @@ function SpecialFarm:setObjective(name, objective)
     self.checked = false
 
     if objective then
-        Log.write("Core", "objectif special arme :", tostring(name))
+        Log.write("Core", "special objective armed:", tostring(name))
     end
     return true
 end
 
 function SpecialFarm:active() return self.objective ~= nil end
 
--- Renvoie "running" | "done" | "failed" | "idle".
+-- Returns "running" | "done" | "failed" | "idle".
 function SpecialFarm:step()
     local objective = self.objective
     if not objective then return "idle" end
 
-    -- Les pre-conditions sont verifiees une fois, a la premiere execution :
-    -- les revalider a chaque pas couterait cher pour rien.
+    -- Preconditions are checked once, on the first run: revalidating on every
+    -- step would cost a lot for nothing.
     if not self.checked then
         self.checked = true
         if objective.requirements then
             local ok, reason = objective:requirements()
             if not ok then
-                Log.write("Core", "objectif", tostring(self.name),
-                    "abandonne :", tostring(reason))
+                Log.write("Core", "objective", tostring(self.name),
+                    "abandoned:", tostring(reason))
                 self.objective = nil
                 return "failed"
             end
@@ -74,13 +74,13 @@ function SpecialFarm:step()
 
     local ok, status = pcall(function() return objective:step() end)
     if not ok then
-        Log.write("Core", "objectif", tostring(self.name), "a leve :", status)
+        Log.write("Core", "objective", tostring(self.name), "raised:", status)
         self:stop()
         return "failed"
     end
 
     if status == "done" or status == "failed" then
-        Log.write("Core", "objectif", tostring(self.name), "termine :", status)
+        Log.write("Core", "objective", tostring(self.name), "finished:", status)
         self.objective = nil
         return status
     end
@@ -97,7 +97,7 @@ function SpecialFarm:stop()
 end
 
 function SpecialFarm:describe()
-    if not self.objective then return "aucun objectif special" end
+    if not self.objective then return "no special objective" end
     if self.objective.describe then
         local ok, text = pcall(function() return self.objective:describe() end)
         if ok and text then return text end

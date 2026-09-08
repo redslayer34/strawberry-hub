@@ -1,51 +1,95 @@
 --=============================================================================
--- MAIN — point d'entree du bundle
+-- MAIN — bundle entry point
 --=============================================================================
---  Ordre volontaire : le runtime historique se charge et construit son UI en
---  premier, l'AutomationCore se branche ensuite. Le core n'est qu'un pilote
---  de la boucle de farm ; si sa construction echoue, le hub reste utilisable
---  et retombe sur la boucle historique.
+--  Deliberate order: the engine loads first, the AutomationCore attaches to
+--  it, then the interface is built on top of both. Each step is guarded, and
+--  a failure at one step leaves the previous ones working:
+--
+--      engine only        -> the hub is inert but loaded
+--      engine + core      -> farming works, no window
+--      engine + core + UI -> everything
 --=============================================================================
 
 local hub = require("Runtime.Legacy")
 
--- Le runtime rend son objet meme quand la construction de l'UI a echoue. Sans
--- ses primitives internes, le core n'a rien a piloter.
+-- The runtime returns its table even when initialisation partly failed.
+-- Without its internals there is nothing to drive.
 if type(hub) ~= "table" or type(hub.Internal) ~= "table" then
-    warn("[Strawberry Hub] runtime indisponible -- AutomationCore non branche")
+    warn("[Strawberry Hub] runtime unavailable -- nothing attached")
     return hub
 end
 
-local ok, result = xpcall(function()
+local function guard(label, fn)
+    local ok, result = xpcall(fn, function(err)
+        return tostring(err) .. "\n" .. debug.traceback("", 2)
+    end)
+    if not ok then
+        warn("[Strawberry Hub] " .. label .. " failed: " .. tostring(result))
+        return nil
+    end
+    return result
+end
+
+---------------------------------------------------------------------------
+-- Automation core
+---------------------------------------------------------------------------
+
+local core = guard("AutomationCore", function()
     local AutomationCore = require("AutomationCore")
     return AutomationCore.new(hub.Internal)
-end, function(err)
-    return tostring(err) .. "\n" .. debug.traceback("", 2)
 end)
 
-if not ok then
-    warn("[Strawberry Hub] AutomationCore indisponible : " .. tostring(result))
-    warn("[Strawberry Hub] le farm utilise la boucle historique.")
-    return hub
+if core then
+    hub.AutomationCore = core
+    hub.Log = require("AutomationCore.Log")
+
+    -- This is what replaces the body of Farming.tick. The
+    -- Config.Farming.UseAutomationCore flag, exposed in the interface, falls
+    -- back to the legacy loop without reloading the script.
+    hub.FarmDriver = function() core:update() end
+else
+    warn("[Strawberry Hub] farming falls back to the legacy loop.")
 end
 
-local core = result
-hub.AutomationCore = core
-hub.Log = require("AutomationCore.Log")
+---------------------------------------------------------------------------
+-- Interface
+---------------------------------------------------------------------------
 
--- C'est ce branchement qui remplace le corps de Farming.tick. Le drapeau
--- Config.Farming.UseAutomationCore, expose dans l'UI, permet de revenir a
--- l'ancienne boucle sans recharger le script.
-hub.FarmDriver = function()
-    core:update()
+local UI = guard("UI library", function() return require("UI") end)
+
+local window = UI and guard("interface", function()
+    local Interface = require("Runtime.Interface")
+    return Interface.build(hub.Internal, hub)
+end)
+
+if window then
+    hub.Window = window
+    hub.UI = UI
+elseif UI then
+    -- The window failed to build but the library loaded: a notification is
+    -- still the clearest way to say so in game.
+    pcall(function()
+        UI:Notify({
+            Title = "Strawberry Hub",
+            Content = "Interface failed to build -- check the console",
+            Duration = 10,
+        })
+    end)
 end
 
--- L'arret du hub doit relacher l'ancre et le pilote de bring : sans cela le
--- runtime continuerait d'appeler un pilote dont le contexte a disparu.
+---------------------------------------------------------------------------
+-- Teardown
+---------------------------------------------------------------------------
+
+-- Unloading must release the anchor, the bring driver and every UI instance:
+-- otherwise the runtime keeps calling a driver whose context is gone, and the
+-- window survives the hub that owned it.
 local previousUnload = hub.Unload
 hub.Unload = function()
-    pcall(function() core:stop() end)
+    if core then pcall(function() core:stop() end) end
+    if UI then pcall(function() UI:Destroy() end) end
     hub.FarmDriver = nil
+    hub.Window = nil
     return previousUnload()
 end
 

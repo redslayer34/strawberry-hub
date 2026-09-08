@@ -1,14 +1,13 @@
 --=============================================================================
--- TRAVEL CONTROLLER — se rendre quelque part, et savoir qu'on n'y arrive pas
+-- TRAVEL CONTROLLER — getting somewhere, and knowing when you are not
 --=============================================================================
---  Le deplacement lui-meme reste celui du runtime (tween borne en vitesse,
---  teleport court en deca du seuil). Ce qui manquait, c'est la surveillance :
---  un tween lance vers un point devenu inatteignable ne se signalait jamais,
---  et le farm restait bloque a mi-chemin sans qu'aucun timeout ne s'en
---  apercoive.
+--  The movement itself is still the runtime's (speed-capped tween, short
+--  teleport below the threshold). What was missing is supervision: a tween
+--  launched at a point that has become unreachable never reported it, and the
+--  farm sat stuck halfway with no timeout noticing.
 --
---  Ici chaque voyage a une cible, une distance de depart et un chrono. S'il
---  n'avance plus, il le dit ; la machine a etats s'en occupe.
+--  Here every journey has a target, a starting distance and a clock. If it
+--  stops making progress, it says so; the state machine handles it.
 --=============================================================================
 
 local Log = require("AutomationCore.Log")
@@ -25,7 +24,7 @@ local function toVector(target)
 end
 
 ---------------------------------------------------------------------------
--- Surveillance
+-- Supervision
 ---------------------------------------------------------------------------
 
 local function tracker(ctx)
@@ -43,9 +42,9 @@ function TravelController.reset(ctx)
     ctx.travel = nil
 end
 
--- Vrai si le joueur n'a pas progresse depuis StuckWindow secondes.
--- On mesure le RAPPROCHEMENT de la cible, pas le deplacement brut : tourner
--- en rond autour d'un obstacle deplace beaucoup sans avancer du tout.
+-- True when the player has made no progress for StuckWindow seconds. We
+-- measure CLOSING ON the target, not raw movement: circling an obstacle moves
+-- a lot while getting nowhere.
 function TravelController.isStuck(ctx)
     local state = tracker(ctx)
     if not state.target then return false end
@@ -59,7 +58,7 @@ function TravelController.elapsed(ctx)
 end
 
 ---------------------------------------------------------------------------
--- Deplacement
+-- Movement
 ---------------------------------------------------------------------------
 
 function TravelController.distanceTo(ctx, target)
@@ -74,22 +73,23 @@ function TravelController.arrived(ctx, target, tolerance)
         <= (tolerance or ctx.cfg.Travel.ArriveDistance)
 end
 
--- Un pas de voyage. A appeler a chaque tour de la machine a etats, pas une
--- fois pour toutes : le tween se relance seul si la destination bouge.
--- opts.validate : refuse une destination invalide (sous la carte, dans l'eau).
--- opts.lift     : hauteur ajoutee a la destination.
+-- One step of a journey. Call it on every turn of the state machine, not once
+-- and for all: the tween restarts itself when the destination moves.
+-- opts.validate : refuses an invalid destination (under the map, in water).
+-- opts.lift     : height added to the destination.
 function TravelController.step(ctx, target, opts)
     opts = opts or {}
     local goal = toVector(target)
-    if not goal then return false, "destination nulle" end
+    if not goal then return false, "nil destination" end
 
     if opts.lift then goal = goal + Vector3.new(0, opts.lift, 0) end
 
     if opts.validate then
         local ok, reason = SafeCombatAnchor.validatePosition(ctx, goal, opts.region)
         if not ok then
-            -- On ne renonce pas au voyage : on vise le meme point, plus haut.
-            -- Une destination au sol invalide reste souvent atteignable en vol.
+            -- We do not abandon the journey: we aim at the same point, higher.
+            -- A ground destination that is invalid is often still reachable in
+            -- flight.
             local lifted = goal + Vector3.new(0, ctx.cfg.Anchor.Height, 0)
             if SafeCombatAnchor.validatePosition(ctx, lifted, opts.region) then
                 goal = lifted
@@ -101,18 +101,18 @@ function TravelController.step(ctx, target, opts)
 
     local state = tracker(ctx)
     local here = ctx:pos()
-    if not here then return false, "joueur absent" end
+    if not here then return false, "no player" end
 
     local distance = (goal - here).Magnitude
 
-    -- Nouvelle destination : on repart d'un chrono neuf.
+    -- New destination: start from a fresh clock.
     if not state.target or (state.target - goal).Magnitude > ctx.cfg.Travel.ArriveDistance then
         state.target = goal
         state.startedAt = os.clock()
         state.lastProgressAt = os.clock()
         state.bestDistance = distance
     elseif distance < state.bestDistance - ctx.cfg.Travel.StuckDistance then
-        -- Progression reelle : le chrono d'immobilite repart.
+        -- Real progress: the stall clock restarts.
         state.bestDistance = distance
         state.lastProgressAt = os.clock()
     end
@@ -128,13 +128,12 @@ function TravelController.stop(ctx)
     TravelController.reset(ctx)
 end
 
--- Passage vers une zone lointaine (Fishman, Sky, Ship). Le jeu expose une
--- entree dediee : tenter d'y aller en tween traverserait des dizaines de
--- milliers de studs.
+-- Passage to a distant area (Fishman, Sky, Ship). The game exposes a dedicated
+-- entrance: trying to tween there would cross tens of thousands of studs.
 function TravelController.requestEntrance(ctx, entrance)
     if not entrance then return false end
     local ok = pcall(function() ctx.remote.invoke("requestEntrance", entrance) end)
-    if ok then Log.Travel("passage par requestEntrance") end
+    if ok then Log.Travel("entering through requestEntrance") end
     return ok
 end
 

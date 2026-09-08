@@ -1,14 +1,14 @@
 --=============================================================================
--- BOSS FARM — un boss se demande, il ne se ramasse pas au passage
+-- BOSS FARM — a boss is asked for, never picked up in passing
 --=============================================================================
---  Regle non negociable : un boss n'entre JAMAIS dans un bring ordinaire.
---  C'est ce qui desynchronisait les combats — un boss aspire au milieu d'un
---  paquet de mobs normaux, avec sa vie et ses degats, bloquait le farm sans
---  que rien ne le signale.
+--  Non-negotiable rule: a boss NEVER enters an ordinary bring. That is what
+--  used to desync fights -- a boss vacuumed into the middle of a pack of
+--  normal mobs, with its health and its damage, blocking the farm with
+--  nothing reporting it.
 --
---  L'autorisation passe par un objectif synthetique portant AllowBoss, seul
---  drapeau que TargetValidator accepte pour lever l'exclusion. Aucun autre
---  module ne le pose.
+--  Authorisation goes through a synthetic objective carrying AllowBoss, the
+--  only flag TargetValidator accepts to lift the exclusion. No other module
+--  sets it.
 --=============================================================================
 
 local AttackController = require("AutomationCore.Combat.AttackController")
@@ -39,12 +39,12 @@ function BossFarm.new(ctx, perception, recovery)
     return self
 end
 
--- Le boss doit etre nomme explicitement. Sans appel a setBoss, ce module ne
--- fait rien du tout.
+-- The boss must be named explicitly. Without a call to setBoss, this module
+-- does nothing at all.
 function BossFarm:setBoss(name)
     local canonical = Names.normalize(name)
     if not canonical then
-        Log.Boss("nom de boss invalide :", tostring(name))
+        Log.Boss("invalid boss name:", tostring(name))
         return false
     end
 
@@ -58,10 +58,10 @@ function BossFarm:setBoss(name)
         CurrentCount = 0,
         Remaining = 1,
         IsBossQuest = true,
-        -- Le seul endroit du systeme qui pose ce drapeau.
+        -- The only place in the system that sets this flag.
         AllowBoss = true,
     }
-    Log.Boss("cible :", name)
+    Log.Boss("target:", name)
     return true
 end
 
@@ -84,10 +84,10 @@ function BossFarm:defineStates()
             end,
         },
 
-        -- Recherche sur le serveur courant. Un boss absent n'est pas une
-        -- panne locale : il est mort et pas encore reapparu, ou il n'existe
-        -- pas ici. C'est le seul cas ou le changement de serveur est le bon
-        -- reflexe plutot qu'un pis-aller.
+        -- Search on the current server. An absent boss is not a local fault:
+        -- it is dead and not yet respawned, or it does not exist here. This is
+        -- the one case where changing server is the right reflex rather than a
+        -- stopgap.
         SEARCH = {
             timeout = 20,
             onTimeout = "AWAIT_RESPAWN",
@@ -95,7 +95,7 @@ function BossFarm:defineStates()
                 perception:update(true)
                 local found = self:candidates()
                 if #found > 0 then
-                    Log.Boss("trouve --", #found, "instance(s)")
+                    Log.Boss("found --", #found, "instance(s)")
                     return "TRAVEL"
                 end
                 return nil
@@ -128,8 +128,8 @@ function BossFarm:defineStates()
         },
 
         COMBAT = {
-            -- Genereux : un boss encaisse longtemps. Le vrai garde-fou est
-            -- l'absence de degats, gere par AttackController.
+            -- Generous: a boss soaks damage for a long time. The real
+            -- safeguard is the absence of damage, handled by AttackController.
             timeout = 300,
             onTimeout = "SEARCH",
             enter = function() perception:setCombat(true) end,
@@ -150,9 +150,9 @@ function BossFarm:defineStates()
 
                 if status == "killed" then return "CONFIRM_KILL" end
                 if status == "idle" then
-                    -- Plus aucun boss valide alors qu'on en engageait un :
-                    -- soit il est mort, soit il a disparu. CONFIRM_KILL
-                    -- tranche sur une observation, pas sur une supposition.
+                    -- No valid boss left while we were engaging one: either it
+                    -- died or it vanished. CONFIRM_KILL settles it on an
+                    -- observation, not an assumption.
                     return "CONFIRM_KILL"
                 end
                 if status == "timeout" then return "SEARCH" end
@@ -160,8 +160,8 @@ function BossFarm:defineStates()
             end,
         },
 
-        -- On ne declare pas un boss mort parce qu'il a disparu de l'index :
-        -- on verifie qu'aucune instance vivante ne subsiste, apres un delai.
+        -- We do not declare a boss dead because it left the index: we check no
+        -- living instance remains, after a delay.
         CONFIRM_KILL = {
             timeout = 10,
             onTimeout = "SEARCH",
@@ -173,11 +173,11 @@ function BossFarm:defineStates()
 
                 perception:update(true)
                 if #self:candidates() > 0 then
-                    Log.Boss("encore vivant -- reprise du combat")
+                    Log.Boss("still alive -- resuming combat")
                     return "COMBAT"
                 end
 
-                Log.Boss("mort confirmee")
+                Log.Boss("kill confirmed")
                 return "AWAIT_RESPAWN"
             end,
         },
@@ -189,7 +189,7 @@ function BossFarm:defineStates()
                 if self.machine:elapsed() % ctx.cfg.Boss.RespawnPoll > 0.5 then return nil end
                 perception:update(true)
                 if #self:candidates() > 0 then
-                    Log.Boss("reapparu")
+                    Log.Boss("respawned")
                     return "TRAVEL"
                 end
                 return nil
@@ -200,17 +200,17 @@ function BossFarm:defineStates()
             timeout = 30,
             onTimeout = "IDLE",
             enter = function()
-                Log.Boss("absent de ce serveur -- changement")
+                Log.Boss("absent from this server -- changing")
                 ctx.map:clear("boss absent")
                 pcall(function() ctx.server.hop(true) end)
             end,
             update = function() return nil end,
         },
 
-        -- Atteint par la machine a etats quand un update leve une erreur.
-        -- Le controleur de recuperation raisonne en etats de QuestFarm : il
-        -- FAUT les ramener sur ceux d'ici, sinon goTo retombe sur RECOVERY
-        -- (etat inconnu) et la machine tourne en rond sans jamais avancer.
+        -- Reached by the state machine when an update raises. The recovery
+        -- controller thinks in QuestFarm states: they MUST be mapped back onto
+        -- this machine's, otherwise goTo falls back to RECOVERY (unknown
+        -- state) and the machine spins without ever advancing.
         RECOVERY = {
             update = function()
                 local resume = self.recovery:step()
@@ -222,7 +222,7 @@ function BossFarm:defineStates()
         },
     })
 
-    self.machine:goTo("IDLE", "demarrage")
+    self.machine:goTo("IDLE", "startup")
 end
 
 function BossFarm:update()
@@ -232,11 +232,11 @@ function BossFarm:update()
 end
 
 function BossFarm:stop()
-    self.attack:clear("arret")
+    self.attack:clear("stop")
     TravelController.stop(self.ctx)
     self.objective = nil
     self.bossName = nil
-    self.machine:goTo("IDLE", "arret")
+    self.machine:goTo("IDLE", "stop")
 end
 
 function BossFarm:describe()

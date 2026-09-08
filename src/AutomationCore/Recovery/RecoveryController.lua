@@ -1,20 +1,20 @@
 --=============================================================================
--- RECOVERY CONTROLLER — remettre le farm en marche, sans repartir de zero
+-- RECOVERY CONTROLLER — get the farm running again, without starting over
 --=============================================================================
---  Un vrai controleur de recuperation, pas un `return` qui laisse la boucle
---  retomber sur ses pieds au tour suivant.
+--  A real recovery controller, not a `return` that lets the loop land on its
+--  feet next turn.
 --
---  Echelle d'escalade, toujours dans cet ordre :
+--  The escalation ladder, always in this order:
 --
---      1. rescan local          -- l'index est peut-etre juste perime
---      2. recalcul des donnees  -- region, ancre, affectations
---      3. reprise de l'etat courant si la cause a disparu
---      4. retour a la detection (DETECT_*) si elle persiste
---      5. changement de serveur, uniquement en dernier recours
+--      1. local rescan       -- the index may simply be stale
+--      2. recompute data     -- region, anchor, slot assignments
+--      3. resume the current state if the cause is gone
+--      4. fall back to detection (DETECT_*) if it persists
+--      5. change server, only as a last resort
 --
---  Le changement de serveur coute une minute de chargement : il n'intervient
---  qu'apres avoir epuise les barreaux precedents, et jamais pour une cause
---  qui se resout localement (un mob mort pendant le bring, par exemple).
+--  A server hop costs a minute of loading: it happens only once the earlier
+--  rungs are exhausted, and never for a cause that resolves locally (a mob
+--  dying mid-bring, for instance).
 --=============================================================================
 
 local Log = require("AutomationCore.Log")
@@ -24,8 +24,8 @@ local TravelController = require("AutomationCore.Movement.TravelController")
 local RecoveryController = {}
 RecoveryController.__index = RecoveryController
 
--- Classification des causes. `local` = se resout sur place ; `detect` =
--- impose une redetection ; `fatal` = seul cas ou le serveur est en cause.
+-- Cause classification. `local` = resolves in place; `detect` = forces a
+-- re-detection; `fatal` = the only case where the server is genuinely at fault.
 local CAUSES = {
     quest_lost            = { class = "detect", resume = "DETECT_QUEST" },
     quest_not_taken       = { class = "detect", resume = "FIND_QUEST_GIVER" },
@@ -58,9 +58,9 @@ function RecoveryController.new(ctx, perception)
     }, RecoveryController)
 end
 
--- Declare la cause avant d'entrer dans l'etat RECOVERY. Une cause differente
--- de la precedente remet les compteurs a zero : deux pannes distinctes ne
--- doivent pas s'additionner jusqu'au server hop.
+-- Declares the cause before entering the RECOVERY state. A cause different
+-- from the previous one resets the counters: two distinct faults must not add
+-- up towards a server hop.
 function RecoveryController:begin(cause)
     cause = CAUSES[cause] and cause or "unknown"
     if cause ~= self.cause then
@@ -70,7 +70,7 @@ function RecoveryController:begin(cause)
     end
     self.enteredAt = os.clock()
     self.ctx.stats.recoveries = self.ctx.stats.recoveries + 1
-    Log.Recovery("cause :", cause)
+    Log.Recovery("cause:", cause)
 end
 
 function RecoveryController:reset()
@@ -81,33 +81,33 @@ function RecoveryController:reset()
 end
 
 ---------------------------------------------------------------------------
--- Barreaux
+-- Rungs
 ---------------------------------------------------------------------------
 
--- 1 et 2 : rescan et recalcul. Toujours tentes, quelle que soit la cause.
+-- 1 and 2: rescan and recompute. Always attempted, whatever the cause.
 function RecoveryController:localRepair(profile)
     local ctx = self.ctx
 
     if profile.wipe then
-        ctx.map:clear("recuperation apres changement de serveur")
+        ctx.map:clear("recovery after a server change")
     end
     if profile.invalidateAnchor then
-        SafeCombatAnchor.invalidate(ctx, "recuperation")
+        SafeCombatAnchor.invalidate(ctx, "recovery")
     end
     if profile.resetTravel then
         TravelController.stop(ctx)
     end
     if profile.invalidateGiver then
-        ctx.map:invalidate("QuestGivers", nil, "recuperation")
+        ctx.map:invalidate("QuestGivers", nil, "recovery")
         ctx.questGiver = nil
     end
 
-    -- Le rescan force ignore la cadence : on a besoin d'une image fraiche
-    -- maintenant, pas au prochain intervalle.
-    self.perception:rescan("recuperation (" .. tostring(self.cause) .. ")")
+    -- The forced rescan ignores the pacing: we need a fresh picture now, not
+    -- at the next interval.
+    self.perception:rescan("recovery (" .. tostring(self.cause) .. ")")
 end
 
--- 3 : la cause a-t-elle disparu ?
+-- 3: has the cause gone away?
 function RecoveryController:resolved()
     local ctx = self.ctx
     local cause = self.cause
@@ -136,8 +136,8 @@ end
 -- Cycle
 ---------------------------------------------------------------------------
 
--- Un pas de recuperation. Renvoie l'etat a rejoindre, ou nil pour rester
--- dans RECOVERY encore un tour.
+-- One recovery step. Returns the state to move to, or nil to stay in RECOVERY
+-- for another turn.
 function RecoveryController:step()
     local ctx = self.ctx
     local cfg = ctx.cfg.Recovery
@@ -149,47 +149,47 @@ function RecoveryController:step()
 
     self.attempts = self.attempts + 1
 
-    -- Le joueur mort n'est pas une panne : on attend le respawn, sans rien
-    -- recalculer (tout serait a refaire apres).
+    -- A dead player is not a fault: wait for the respawn without recomputing
+    -- anything (it would all have to be redone afterwards).
     if self.cause == "player_dead" then
         if ctx.player.alive() then
-            Log.Recovery("joueur reapparu -- reprise")
+            Log.Recovery("player respawned -- resuming")
             self:reset()
             return profile.resume
         end
         return nil
     end
 
-    -- Barreaux 1 et 2.
+    -- Rungs 1 and 2.
     self:localRepair(profile)
 
-    -- Barreau 3 : reprise sur place.
+    -- Rung 3: resume in place.
     if self:resolved() then
-        Log.Recovery("resolu apres", self.attempts, "tentative(s) -- reprise en", profile.resume)
+        Log.Recovery("resolved after", self.attempts, "attempt(s) -- resuming at", profile.resume)
         self:reset()
         return profile.resume
     end
 
-    -- Barreau 4 : redetection complete.
+    -- Rung 4: full re-detection.
     if self.attempts >= cfg.MaxLocalAttempts then
         self.redetects = self.redetects + 1
         self.attempts = 0
         self.failures = self.failures + 1
 
         if self.redetects <= cfg.MaxRedetects then
-            Log.Recovery("rescan insuffisant -- redetection complete")
-            ctx.map:clear("redetection")
+            Log.Recovery("rescan insufficient -- full re-detection")
+            ctx.map:clear("re-detection")
             ctx.region = nil
             ctx.questGiver = nil
             return "DETECT_SEA"
         end
     end
 
-    -- Barreau 5 : changement de serveur. Reserve aux causes qui ne peuvent
-    -- pas se resoudre ici — typiquement un boss absent de ce serveur.
+    -- Rung 5: server change. Reserved for causes that cannot resolve here --
+    -- typically a boss absent from this server.
     local hopWorthy = profile.class == "fatal" or self.failures >= cfg.HopAfterFailures
     if hopWorthy then
-        Log.Recovery("epuise localement (" .. tostring(self.cause) .. ") -- changement de serveur")
+        Log.Recovery("exhausted locally (" .. tostring(self.cause) .. ") -- changing server")
         self:reset()
         return "SERVER_HOP"
     end
@@ -197,8 +197,8 @@ function RecoveryController:step()
     return nil
 end
 
--- Detecte les causes que personne n'a signalees explicitement. Appelee a
--- chaque tour du core, avant la machine a etats.
+-- Detects causes nobody reported explicitly. Called on every core turn, before
+-- the state machine.
 function RecoveryController:detectImplicit(ctx)
     if not ctx.player.alive() then return "player_dead" end
     if not ctx.world.enemies() then return "map_not_loaded" end

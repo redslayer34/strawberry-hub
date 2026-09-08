@@ -1,22 +1,21 @@
 --=============================================================================
--- COMBAT POSITION CONTROLLER — ou se tenir pour frapper
+-- COMBAT POSITION CONTROLLER — where to stand to hit
 --=============================================================================
---  Se placer AU-DESSUS et EN RETRAIT met hors de portee des attaques au corps
---  a corps du mob tout en restant dans la portee d'envoi des touches. La
---  position est recalculee a chaque pas : une position de combat gardee d'un
---  tour a l'autre suit un mob qui n'est plus la.
+--  Standing ABOVE and BEHIND puts you out of reach of the mob's melee while
+--  staying inside hit-send range. The position is recomputed on every step: a
+--  combat position held from one turn to the next follows a mob that is no
+--  longer there.
 --
---  ValidatePosition est appelee avant chaque ecriture. Une position refusee
---  n'est pas forcee : on prend la variante haute, et a defaut on ne bouge pas.
+--  ValidatePosition runs before every write. A refused position is not forced:
+--  we take the high variant, and failing that we do not move.
 --=============================================================================
 
 local SafeCombatAnchor = require("AutomationCore.Movement.SafeCombatAnchor")
 
 local CombatPositionController = {}
 
--- Point de frappe pour une cible : en retrait horizontal, en hauteur, oriente
--- vers elle. Le M1 melee est directionnel cote serveur : sans orientation, le
--- coup ne porte pas.
+-- Strike point for a target: horizontally offset, raised, facing it. Melee M1
+-- is directional server-side: without the facing, the blow does not land.
 function CombatPositionController.stanceFor(ctx, entry)
     local root = entry and entry.root
     if not root or not root.Parent then return nil end
@@ -27,8 +26,8 @@ function CombatPositionController.stanceFor(ctx, entry)
     local legacyFarming = ctx.legacyConfig.Farming
     local targetPos = root.Position
 
-    -- Direction depuis laquelle on aborde : celle d'ou l'on vient deja, pour
-    -- ne pas tourner autour du mob a chaque frame.
+    -- The direction we approach from: the one we are already coming from, so
+    -- we do not orbit the mob every frame.
     local away = Vector3.new(here.X - targetPos.X, 0, here.Z - targetPos.Z)
     if away.Magnitude < 0.1 then away = Vector3.new(0, 0, 1) end
 
@@ -36,8 +35,8 @@ function CombatPositionController.stanceFor(ctx, entry)
         + away.Unit * (legacyFarming.SafeDistance or 4)
         + Vector3.new(0, legacyFarming.AttackHeight or 10, 0)
 
-    -- Deux points confondus donnent un CFrame.lookAt NaN, qui ejecte le
-    -- personnage hors de la carte.
+    -- Two coincident points give a NaN CFrame.lookAt, which throws the
+    -- character off the map.
     if (stance - targetPos).Magnitude < 0.5 then
         stance = targetPos + Vector3.new(0, 3, 3)
     end
@@ -45,23 +44,23 @@ function CombatPositionController.stanceFor(ctx, entry)
     return stance, targetPos
 end
 
--- Place le joueur en position de frappe. Renvoie true si le deplacement a eu
--- lieu, false + motif sinon.
+-- Puts the player in the strike position. Returns true when the move
+-- happened, false plus a reason otherwise.
 function CombatPositionController.hold(ctx, entry)
     local stance, lookAt = CombatPositionController.stanceFor(ctx, entry)
-    if not stance then return false, "cible sans racine" end
+    if not stance then return false, "target has no root" end
 
     local ok, reason = SafeCombatAnchor.validatePosition(ctx, stance)
     if not ok then
-        -- On tente la meme position plus haut avant de renoncer : sous un
-        -- pont ou dans une grotte, la variante haute passe souvent.
+        -- Try the same position higher before giving up: under a bridge or in
+        -- a cave, the high variant usually works.
         stance = stance + Vector3.new(0, ctx.cfg.Anchor.Height, 0)
         ok, reason = SafeCombatAnchor.validatePosition(ctx, stance)
         if not ok then return false, reason end
     end
 
     local hrp = ctx.player.hrp()
-    if not hrp then return false, "joueur absent" end
+    if not hrp then return false, "no player" end
 
     hrp.CFrame = CFrame.lookAt(stance, lookAt)
     hrp.AssemblyLinearVelocity = Vector3.zero
@@ -69,12 +68,12 @@ function CombatPositionController.hold(ctx, entry)
     return true
 end
 
--- Etat de combat exploitable : joueur vivant, moteur d'attaque pret.
--- Appelee avant chaque attaque.
+-- Usable combat state: player alive, attack engine ready. Called before every
+-- attack.
 function CombatPositionController.validateCombatState(ctx)
-    if not ctx.player.alive() then return false, "joueur mort" end
-    if not ctx.player.hrp() then return false, "joueur sans racine" end
-    if not ctx.attack.ready() then return false, "moteur de combat indisponible" end
+    if not ctx.player.alive() then return false, "player dead" end
+    if not ctx.player.hrp() then return false, "player has no root" end
+    if not ctx.attack.ready() then return false, "combat engine unavailable" end
     return true
 end
 

@@ -1,29 +1,27 @@
 --=============================================================================
--- SPAWN CLUSTER RESOLVER — ou se trouve reellement le paquet de mobs
+-- SPAWN CLUSTER RESOLVER — where the pack of mobs actually is
 --=============================================================================
---  Les mobs d'une meme quete ne sont pas repartis uniformement : ils forment
---  des paquets, parfois tres eloignes les uns des autres, et une mise a jour
---  redistribue ces paquets. Choisir "le plus proche" un par un fait traverser
---  la zone en permanence ; choisir un centre fixe rate le paquet des que le
---  jeu le deplace.
+--  Mobs from the same quest are not spread evenly: they form packs, sometimes
+--  far apart, and an update redistributes those packs. Picking "the nearest"
+--  one at a time means crossing the zone constantly; picking a fixed centre
+--  misses the pack the moment the game moves it.
 --
---  On regroupe donc les cibles reellement presentes, on note chaque groupe,
---  et on retient le meilleur comme SpawnRegion. La region est une donnee
---  vivante : elle expire, se recalcule, et ne survit ni a un changement d'ile
---  ni a un changement d'objectif.
+--  So we group the targets actually present, score each group, and keep the
+--  best as the SpawnRegion. The region is live data: it expires, it is
+--  recomputed, and it survives neither an island change nor an objective
+--  change.
 --
---  La region sert ensuite de filtre geographique dans TargetValidator : c'est
---  ce qui empeche d'aspirer les mobs de la zone voisine.
+--  The region then acts as a geographic filter in TargetValidator: that is
+--  what stops the neighbouring zone's mobs from being pulled in.
 --=============================================================================
 
 local Log = require("AutomationCore.Log")
 
 local SpawnClusterResolver = {}
 
--- Regroupement glouton par proximite. Choisi pour son cout : O(n * groupes),
--- avec n borne par le budget de scan et un nombre de groupes tres faible en
--- pratique. Un k-means serait plus juste et bien plus cher, pour un gain nul
--- sur des paquets aussi nets.
+-- Greedy proximity grouping. Chosen for its cost: O(n * groups), with n bounded
+-- by the scan budget and the group count very small in practice. K-means would
+-- be more correct and far more expensive, for no gain on packs this distinct.
 local function cluster(entries, radius)
     local groups = {}
     local radiusSq = radius * radius
@@ -33,8 +31,8 @@ local function cluster(entries, radius)
         for _, group in ipairs(groups) do
             if (entry.position - group.center).Magnitude <= radius then
                 group.members[#group.members + 1] = entry
-                -- Moyenne incrementale : le centre suit le paquet au fur et a
-                -- mesure, sans second passage.
+                -- Incremental mean: the centre tracks the pack as we go, with
+                -- no second pass.
                 local n = #group.members
                 group.center = group.center + (entry.position - group.center) / n
                 placed = true
@@ -49,7 +47,7 @@ local function cluster(entries, radius)
         end
     end
 
-    -- Rayon reel de chaque groupe : distance du membre le plus excentre.
+    -- Real radius of each group: distance to the most outlying member.
     for _, group in ipairs(groups) do
         local spread = 0
         for _, member in ipairs(group.members) do
@@ -64,20 +62,20 @@ local function cluster(entries, radius)
     return groups
 end
 
--- Note d'un groupe. Densite en positif, eloignement en negatif : un gros
--- paquet un peu plus loin bat un mob isole a cote.
+-- Score for a group. Density positive, distance negative: a big pack slightly
+-- further away beats a lone mob nearby.
 local function score(ctx, group, reference)
     local cfg = ctx.cfg.Cluster
     local distance = reference and (group.center - reference).Magnitude or 0
-    -- Echelle de 1000 studs : au-dela, l'eloignement domine la densite.
+    -- 1000-stud scale: past that, distance dominates density.
     local penalty = 1 + cfg.DistanceWeight * (distance / 1000)
     return (cfg.DensityWeight * group.count) / penalty, distance
 end
 
--- entries : cibles DEJA validees (voir TargetValidator). Ce module ne filtre
--- pas, il regroupe : lui donner des mobs non valides produirait une region
--- centree sur les mauvais ennemis.
--- reference : point d'interet (donneur de quete si connu, sinon joueur).
+-- entries : targets ALREADY validated (see TargetValidator). This module does
+-- not filter, it groups: handing it invalid mobs would produce a region
+-- centred on the wrong enemies.
+-- reference : point of interest (quest giver when known, else the player).
 function SpawnClusterResolver.resolve(ctx, entries, reference)
     if #entries == 0 then return nil end
 
@@ -106,8 +104,8 @@ function SpawnClusterResolver.resolve(ctx, entries, reference)
     }
 end
 
--- Une region reste valable tant qu'elle est fraiche, qu'elle contient encore
--- des cibles, et que l'objectif n'a pas change.
+-- A region holds as long as it is fresh, still contains targets, and the
+-- objective has not changed.
 function SpawnClusterResolver.isStale(ctx, region)
     if not region then return true end
     if os.clock() - region.stamp > ctx.cfg.Cluster.RefreshInterval then return true end
@@ -124,7 +122,7 @@ function SpawnClusterResolver.update(ctx, entries, reference)
     local region = SpawnClusterResolver.resolve(ctx, entries, reference)
     if not region then
         if current then
-            Log.Target("region de spawn perdue (aucune cible valide)")
+            Log.Target("spawn region lost (no valid targets)")
         end
         ctx.region = nil
         return nil
@@ -133,20 +131,20 @@ function SpawnClusterResolver.update(ctx, entries, reference)
     local moved = current and (region.center - current.center).Magnitude or math.huge
     ctx.region = region
 
-    -- On ne journalise qu'un vrai deplacement de paquet, pas la derive de
-    -- quelques studs due aux mobs qui bougent.
+    -- Only a genuine pack relocation is logged, not the few studs of drift
+    -- caused by mobs milling about.
     if moved > ctx.cfg.Cluster.Radius then
         Log.Target(string.format(
-            "region de spawn : %d cibles sur %d groupe(s), a %.0f studs",
+            "spawn region: %d targets across %d group(s), %.0f studs away",
             region.count, region.groups, region.distance or 0))
     end
 
     return region
 end
 
--- Vrai si une position appartient a la region retenue. RegionSlack laisse une
--- marge : un mob qui poursuit le joueur sort du rayon strict sans pour autant
--- appartenir a une autre zone.
+-- True when a position belongs to the chosen region. RegionSlack leaves margin:
+-- a mob chasing the player leaves the strict radius without thereby belonging
+-- to another zone.
 function SpawnClusterResolver.contains(ctx, region, position)
     if not region or not position then return true end
     local limit = region.radius * ctx.cfg.Targets.RegionSlack

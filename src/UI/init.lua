@@ -1,13 +1,13 @@
 --=============================================================================
--- UI — point d'entree de la bibliotheque
+-- UI — library entry point
 --=============================================================================
---  Une bibliotheque, pas un singleton cache : la table renvoyee garde la
---  liste de ses fenetres pour pouvoir tout liberer d'un appel, ce qui est
---  indispensable quand un hub se recharge par-dessus lui-meme.
+--  A library, not a hidden singleton: the returned table keeps the list of its
+--  windows so everything can be released in one call, which matters when a hub
+--  reloads over itself.
 --
---  Dependances : aucune. Uniquement des services Roblox standards
---  (TweenService, UserInputService, Players). `gethui` est utilise s'il
---  existe, avec repli sur PlayerGui.
+--  Dependencies: none. Standard Roblox services only (TweenService,
+--  UserInputService, Players). `gethui` is used when it exists, with a
+--  PlayerGui fallback.
 --=============================================================================
 
 local Notification = require("UI.Notification")
@@ -30,8 +30,8 @@ function UI:CreateWindow(opts)
     return window
 end
 
--- Le gestionnaire de notifications est cree a la premiere utilisation :
--- un hub qui n'en emet jamais ne paie pas un ScreenGui pour rien.
+-- The notification manager is created on first use: a hub that never emits one
+-- does not pay for a ScreenGui.
 function UI:Notify(opts)
     if not notifier or notifier.destroyed then
         notifier = Notification.new()
@@ -43,8 +43,8 @@ function UI:ClearNotifications()
     if notifier then notifier:Clear() end
 end
 
--- Applique une palette a chaud. Aucun composant n'est reconstruit : l'etat
--- des toggles, l'onglet actif et la position de la fenetre sont conserves.
+-- Applies a palette live. Nothing is rebuilt: toggle values, the active tab
+-- and the window position are preserved.
 function UI:SetTheme(newTheme)
     return Theme.set(newTheme)
 end

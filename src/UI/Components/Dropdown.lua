@@ -1,16 +1,16 @@
 --=============================================================================
 -- DROPDOWN
 --=============================================================================
---  Le menu n'est PAS un enfant de la ligne. Il est place dans une couche
---  superieure, a la racine de l'interface, pour deux raisons :
+--  The menu is NOT a child of the row. It lives in a layer above, at the root
+--  of the interface, for two reasons:
 --
---    * une liste enfant serait rognee par le ScrollingFrame de la section,
---      et la derniere entree d'un menu ouvert en bas de page serait coupee ;
---    * seule une position ecran absolue permet de garantir que le menu ne
---      deborde jamais, quitte a s'ouvrir vers le haut.
+--    * as a child it would be clipped by the section's ScrollingFrame, and the
+--      last entry of a menu opened near the bottom would be cut off;
+--    * only an absolute screen position lets us guarantee the menu never
+--      overflows, opening upward when it has to.
 --
---  Le menu se ferme a la selection et au clic exterieur. La connexion qui
---  surveille le clic exterieur n'existe que pendant l'ouverture.
+--  It closes on selection and on an outside click. The connection watching for
+--  that outside click exists only while the menu is open.
 --=============================================================================
 
 local Input = require("UI.Input")
@@ -49,8 +49,8 @@ function Dropdown.new(parent, opts, order, context)
     self.maid = maid
     maid:give(self.itemMaid)
 
-    -- La valeur choisie s'affiche sous le titre, comme dans la reference :
-    -- le titre dit ce que le reglage est, la ligne du dessous ce qu'il vaut.
+    -- The chosen value sits under the title, as in the reference: the title
+    -- says what the setting is, the line below says what it currently is.
     local selected = Utility.new("TextLabel", {
         Name = "Selected",
         Size = UDim2.new(1, -22, 0, 13),
@@ -121,8 +121,8 @@ function Dropdown.new(parent, opts, order, context)
         menu.BackgroundColor3 = theme.Background
         menuStroke.Color = theme.Border
         scroller.ScrollBarImageColor3 = theme.Border
-        -- Les items vivent hors de la ligne : ils ne sont pas couverts par
-        -- le peintre du Row et doivent etre repeints ici.
+        -- Items live outside the row, so the Row painter does not cover them
+        -- and they have to be repainted here.
         self:paintSelection()
     end)
     maid:give(function() Theme.unregister(painterId) end)
@@ -141,9 +141,9 @@ end
 -- Placement
 ---------------------------------------------------------------------------
 
--- Calcule la position et la taille du menu de facon a ne jamais sortir de
--- l'ecran : ouverture vers le bas si la place le permet, vers le haut sinon,
--- et hauteur bornee (le ScrollingFrame prend le relais).
+-- Works out position and size so the menu never leaves the screen: opening
+-- downward when there is room, upward otherwise, with a bounded height (the
+-- ScrollingFrame takes over from there).
 function Dropdown:place()
     local row = self.row.container
     local camera = workspace.CurrentCamera
@@ -163,7 +163,7 @@ function Dropdown:place()
     if below + height <= viewport.Y - 4 then
         y = below
     else
-        -- Pas la place en dessous : on ouvre vers le haut.
+        -- No room below: open upward.
         local above = origin.Y - height - GAP
         y = above >= 4 and above or Utility.clamp(viewport.Y - height - 4, 4, viewport.Y)
     end
@@ -172,7 +172,7 @@ function Dropdown:place()
 end
 
 ---------------------------------------------------------------------------
--- Ouverture / fermeture
+-- Open / close
 ---------------------------------------------------------------------------
 
 function Dropdown:Open()
@@ -187,8 +187,8 @@ function Dropdown:Open()
     Utility.tween(self.menu, { Size = UDim2.fromOffset(size.X.Offset, height) })
     Utility.tween(self.chevron, { Rotation = 180 })
 
-    -- Ouverte seulement pendant l'ouverture du menu : rien ne surveille les
-    -- clics quand aucun menu n'est deroule.
+    -- Open only while the menu is: nothing watches for clicks when no menu is
+    -- expanded.
     self.outsideConnection = Input.onOutsideClick(
         { self.menu, self.row.container },
         function() self:Close() end)
@@ -209,8 +209,8 @@ function Dropdown:Close()
     local tween = Utility.tween(self.menu, { Size = UDim2.fromOffset(width, 0) })
     Utility.tween(self.chevron, { Rotation = 0 })
 
-    -- Masque seulement une fois l'animation finie, sinon le menu disparait
-    -- d'un coup au lieu de se replier.
+    -- Hide only once the animation is done, otherwise the menu vanishes
+    -- instead of folding away.
     local connection
     connection = tween.Completed:Connect(function()
         connection:Disconnect()
@@ -228,11 +228,11 @@ end
 function Dropdown:IsOpen() return self.open end
 
 ---------------------------------------------------------------------------
--- Valeurs
+-- Values
 ---------------------------------------------------------------------------
 
--- Reconstruit la liste d'items. Les anciens sont liberes par un Maid dedie :
--- un Refresh repete ne doit pas empiler des connexions mortes.
+-- Rebuilds the item list. The old items are released by a dedicated Maid: a
+-- repeated Refresh must not pile up dead connections.
 function Dropdown:Refresh(values, silent)
     if self.destroyed then return self end
 
@@ -241,12 +241,12 @@ function Dropdown:Refresh(values, silent)
     self.itemMaid = Utility.maid()
     self.maid:give(self.itemMaid)
 
-    -- Chaque bouton garde SA valeur. Retrouver la selection en comparant le
-    -- texte affiche casserait des qu'une valeur contient une mise en forme.
+    -- Each button keeps ITS value. Finding the selection by comparing the
+    -- displayed text would break the moment a value carries any formatting.
     self.items = {}
 
-    -- La valeur courante n'existe plus dans la nouvelle liste : on la lache
-    -- plutot que d'afficher un choix devenu impossible.
+    -- The current value no longer exists in the new list: drop it rather than
+    -- display a choice that can no longer be made.
     local stillValid = false
     for _, value in ipairs(self.values) do
         if value == self.value then
@@ -296,8 +296,8 @@ function Dropdown:Refresh(values, silent)
         end))
     end
 
-    -- Reconstruire n'est pas choisir : on rafraichit l'affichage sans
-    -- declencher le callback, la valeur n'ayant pas change du fait du Refresh.
+    -- Rebuilding is not choosing: refresh the display without firing the
+    -- callback, since the value did not change as a result of the refresh.
     self.selectedLabel.Text = tostring(self.value or "-")
     self:paintSelection()
     return self
@@ -305,8 +305,8 @@ end
 
 function Dropdown:SetValues(values, silent) return self:Refresh(values, silent) end
 
--- Repeint la selection sans reconstruire : moins couteux, et un menu ouvert
--- ne clignote pas au changement de valeur.
+-- Repaints the selection without rebuilding: cheaper, and an open menu does
+-- not flicker when the value changes.
 function Dropdown:paintSelection()
     local theme = Theme.get()
     for _, entry in ipairs(self.items or {}) do
@@ -327,7 +327,7 @@ function Dropdown:SetValue(value, silent)
 
     if changed and not silent and self.callback then
         local ok, err = pcall(self.callback, value)
-        if not ok then warn("[UI] Dropdown callback : " .. tostring(err)) end
+        if not ok then warn("[UI] Dropdown callback: " .. tostring(err)) end
     end
     return self
 end

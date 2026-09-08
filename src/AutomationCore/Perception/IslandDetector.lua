@@ -1,14 +1,13 @@
 --=============================================================================
--- ISLAND DETECTOR — sur quelle ile sommes-nous, et ou sont les autres
+-- ISLAND DETECTOR — which island we are on, and where the others are
 --=============================================================================
---  Le jeu publie lui-meme la position de chaque ile dans
---  workspace._WorldOrigin.Locations. C'est la donnee qui remplace les tables
---  de CFrame : quand une mise a jour deplace une ile, ce dossier bouge avec
---  elle et la detection suit, sans aucune modification du script.
+--  The game publishes each island's position itself, in
+--  workspace._WorldOrigin.Locations. This is the data that replaces coordinate
+--  tables: when an update moves an island, that folder moves with it and
+--  detection follows, with no change to the script.
 --
---  On ne memorise donc PAS une position d'ile. On lit le dossier a la
---  demande, et le cache n'existe que pour eviter de le relire soixante fois
---  par seconde.
+--  So we do NOT memorise an island position. The folder is read on demand, and
+--  the cache exists only to avoid re-reading it sixty times a second.
 --=============================================================================
 
 local Log = require("AutomationCore.Log")
@@ -28,8 +27,8 @@ local function positionOf(node)
     return attachment and attachment.Position or nil
 end
 
--- Liste { name, position } de toutes les iles publiees. Rendue telle quelle,
--- sans filtrage : c'est la seule verite disponible sur la geographie.
+-- List of { name, position } for every published island. Returned as-is,
+-- unfiltered: it is the only truth available about the geography.
 function IslandDetector.all(ctx)
     local folder = ctx.world.locations()
     if not folder then return {} end
@@ -44,8 +43,8 @@ function IslandDetector.all(ctx)
     return out
 end
 
--- Position publiee d'une ile, par nom. Comparaison sur forme canonique :
--- "Frozen Village" et "frozen village" designent la meme ile.
+-- Published position of an island, by name. Compared on canonical form:
+-- "Frozen Village" and "frozen village" name the same island.
 function IslandDetector.positionOf(ctx, islandName)
     local wanted = Names.normalize(islandName)
     if not wanted then return nil end
@@ -55,9 +54,9 @@ function IslandDetector.positionOf(ctx, islandName)
 
     for _, island in ipairs(IslandDetector.all(ctx)) do
         if Names.normalize(island.name) == wanted then
-            -- Validateur : l'entree reste bonne tant que l'instance vit et
-            -- n'a pas bouge. Une ile deplacee par une mise a jour invalide
-            -- le cache d'elle-meme au tour suivant.
+            -- Validator: the entry holds as long as the instance lives and has
+            -- not moved. An island relocated by an update invalidates its own
+            -- cache entry on the next pass.
             local instance, origin = island.instance, island.position
             ctx.map:put("Islands", wanted, origin, { name = island.name }, function()
                 if not instance or not instance.Parent then return false end
@@ -70,8 +69,8 @@ function IslandDetector.positionOf(ctx, islandName)
     return nil
 end
 
--- Ile la plus proche du joueur. C'est la definition operationnelle de "ou je
--- suis" : aucune zone codee en dur, aucune bounding box a maintenir.
+-- Island nearest the player. That is the operational definition of "where I
+-- am": no hardcoded zones, no bounding boxes to maintain.
 function IslandDetector.current(ctx)
     local here = ctx:pos()
     if not here then return nil end

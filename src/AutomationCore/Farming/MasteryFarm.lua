@@ -1,15 +1,14 @@
 --=============================================================================
--- MASTERY FARM — monter la maitrise d'une arme precise
+-- MASTERY FARM — raise the mastery of one specific weapon
 --=============================================================================
---  Couvre les quatre modes demandes (SwordMastery, FruitMastery,
---  FightingStyleMastery, GunMastery) : ce sont le meme farm, avec une arme
---  differente equipee. Un module par arme n'aurait duplique que la chaine de
---  caracteres.
+--  Covers the four requested modes (SwordMastery, FruitMastery,
+--  FightingStyleMastery, GunMastery): they are the same farm with a different
+--  weapon equipped. One module per weapon would have duplicated nothing but a
+--  string.
 --
---  La cible reste choisie par une quete active ou une selection explicite —
---  jamais "le mob le plus proche". Sans l'un ou l'autre, le mode ne fait
---  rien, ce qui est le comportement correct : on ne devine pas ce que
---  l'utilisateur veut farmer.
+--  The target still comes from an active quest or an explicit selection --
+--  never "the nearest mob". Without either, the mode does nothing, which is
+--  the correct behaviour: we do not guess what the user wants to farm.
 --=============================================================================
 
 local Log = require("AutomationCore.Log")
@@ -18,7 +17,7 @@ local TargetedFarm = require("AutomationCore.Farming.TargetedFarm")
 local MasteryFarm = {}
 MasteryFarm.__index = MasteryFarm
 
--- Correspondance mode -> selection d'arme comprise par le runtime.
+-- Mode -> weapon selection understood by the runtime.
 MasteryFarm.WEAPONS = {
     Sword = "Sword",
     Fruit = "Blox Fruit",
@@ -38,8 +37,8 @@ function MasteryFarm.new(ctx, perception, recovery)
         return self:pickTarget()
     end)
 
-    -- L'arme est reequipee a chaque engagement : le jeu la remet en main par
-    -- defaut apres une mort ou un changement de zone.
+    -- The weapon is re-equipped on every engagement: the game puts the default
+    -- one back in hand after a death or a zone change.
     self.engine.onEngage = function() self:equip() end
 
     return self
@@ -49,20 +48,20 @@ end
 function MasteryFarm:setWeapon(kind)
     local selection = MasteryFarm.WEAPONS[kind]
     if not selection then
-        Log.Mastery("arme inconnue :", tostring(kind))
+        Log.Mastery("unknown weapon:", tostring(kind))
         return false
     end
     self.weapon = selection
-    Log.Mastery("arme =", selection)
+    Log.Mastery("weapon =", selection)
     return true
 end
 
--- Cible imposee par l'utilisateur. Prioritaire sur la quete : c'est un choix
--- explicite, il ne doit pas etre ecrase par ce que le jeu propose.
+-- A target imposed by the user. Takes priority over the quest: it is an
+-- explicit choice and must not be overridden by whatever the game offers.
 function MasteryFarm:setTarget(name)
     self.explicitTarget = name
     self.ctx.region = nil
-    if name then Log.Mastery("cible imposee :", name) end
+    if name then Log.Mastery("target set:", name) end
 end
 
 function MasteryFarm:equip()
@@ -70,7 +69,7 @@ function MasteryFarm:equip()
     pcall(function() self.ctx.attack.equip(self.weapon) end)
 end
 
--- Selection explicite d'abord, quete active ensuite. Rien sinon.
+-- Explicit selection first, active quest second. Nothing otherwise.
 function MasteryFarm:pickTarget()
     if self.explicitTarget then return self.explicitTarget end
 
@@ -88,7 +87,7 @@ function MasteryFarm:stop()
     return self.engine:stop()
 end
 function MasteryFarm:describe()
-    return self.engine:describe() .. " arme=" .. tostring(self.weapon)
+    return self.engine:describe() .. " weapon=" .. tostring(self.weapon)
 end
 
 return MasteryFarm

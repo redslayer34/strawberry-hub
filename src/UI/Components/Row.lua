@@ -1,15 +1,14 @@
 --=============================================================================
--- ROW — le gabarit commun a tous les composants d'une section
+-- ROW — the shared template behind every component in a section
 --=============================================================================
---  Bouton, Toggle, Dropdown et Slider partagent exactement la meme carcasse :
---  un fond, un titre, une description facultative, une zone a droite pour le
---  controle, et un corps facultatif en dessous. Les factoriser ici garantit
---  que l'alignement, les marges et le survol restent identiques partout —
---  c'est ce qui donne une liste reguliere plutot qu'un empilement d'elements
---  aux hauteurs legerement differentes.
+--  Button, Toggle, Dropdown and Slider share exactly the same shell: a
+--  background, a title, an optional description, a slot on the right for the
+--  control, and an optional body underneath. Factoring it here guarantees that
+--  alignment, padding and hover stay identical everywhere — which is what
+--  makes a list read as one thing rather than a stack of near-matching rows.
 --
---  La hauteur est automatique : une description ou une barre de slider
---  agrandit la ligne sans qu'aucun nombre n'ait a etre recalcule ailleurs.
+--  Height is automatic: a description or a slider bar grows the row without
+--  any number needing to be recalculated elsewhere.
 --=============================================================================
 
 local Input = require("UI.Input")
@@ -18,8 +17,8 @@ local Utility = require("UI.Utility")
 
 local Row = {}
 
--- opts.interactive : cree un TextButton (donc `Activated`) plutot qu'un Frame.
--- opts.rightWidth  : largeur reservee au controle a droite.
+-- opts.interactive : builds a TextButton (so `Activated` exists) instead of a
+-- Frame. opts.rightWidth : width reserved for the control on the right.
 function Row.new(opts)
     local maid = Utility.maid()
     local rightWidth = opts.rightWidth or 0
@@ -43,7 +42,7 @@ function Row.new(opts)
     Utility.padding(container, 8, 8, 11, 11)
     Utility.list(container, 3)
 
-    -- En-tete : titre a gauche, controle a droite, sur une seule ligne.
+    -- Header: title on the left, control on the right, on one line.
     local header = Utility.new("Frame", {
         Name = "Header",
         Size = UDim2.new(1, 0, 0, 18),
@@ -92,7 +91,7 @@ function Row.new(opts)
         })
     end
 
-    -- Corps facultatif : utilise par le Slider pour sa barre.
+    -- Optional body, used by the Slider for its bar.
     local body
     if opts.body then
         body = Utility.new("Frame", {
@@ -116,8 +115,8 @@ function Row.new(opts)
         pressed = false,
     }
 
-    -- Un seul peintre pour toute la ligne : le changement de theme met a jour
-    -- fond, bordure et textes d'un coup, sans que le composant s'en occupe.
+    -- One painter for the whole row: a theme change updates background, border
+    -- and text at once, without the component having to care.
     local painterId = Theme.register(function(theme)
         container.BackgroundColor3 = self.hovered and theme.ElementHover or theme.Element
         stroke.Color = theme.Border
@@ -128,8 +127,8 @@ function Row.new(opts)
 
     self.painterId = painterId
 
-    -- Survol et appui. Sur mobile il n'y a pas de survol : l'appui fournit
-    -- seul le retour, d'ou les deux mecanismes en parallele.
+    -- Hover and press. There is no hover on mobile, so the press provides the
+    -- only feedback there — hence both mechanisms side by side.
     if opts.interactive and not opts.noFeedback then
         for _, connection in ipairs(Input.onHover(container,
             function()

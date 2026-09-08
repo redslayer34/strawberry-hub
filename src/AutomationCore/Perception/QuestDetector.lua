@@ -1,22 +1,21 @@
 --=============================================================================
--- QUEST DETECTOR — lit l'objectif REEL de la quete en cours
+-- QUEST DETECTOR — reads the REAL objective of the active quest
 --=============================================================================
---  Regle absolue de l'architecture : la quete active est la source de verite
---  pour choisir les mobs. Ce module est donc le sommet de la hierarchie de
---  confiance ; tout le reste en decoule.
+--  The architecture's absolute rule: the active quest is the source of truth
+--  for choosing mobs. This module therefore sits at the top of the trust
+--  hierarchy; everything else follows from it.
 --
---  L'ancienne boucle se contentait de lire le titre pour verifier qu'il
---  contenait le nom attendu, le nom venant d'une table figee indexee par
---  niveau. Ici c'est l'inverse : on extrait l'objectif du jeu, et la table
---  figee ne sert plus qu'a proposer une quete a prendre quand aucune n'est
---  active.
+--  The old loop merely read the title to check it contained the expected name,
+--  the name coming from a frozen table indexed by level. This is the reverse:
+--  the objective is extracted from the game, and the frozen table now only
+--  suggests a quest to pick up when none is active.
 --
 --      "Defeat 8 Desert Bandits"  ->  TargetName = "desert bandit"
 --                                     RequiredCount = 8
 --
---  Le nom extrait est une forme CANONIQUE, pas un nom d'instance. La
---  correspondance avec l'entite reelle est faite par EnemyScanner, qui seul
---  sait ce qui existe vraiment dans le Workspace.
+--  The extracted name is a CANONICAL form, not an instance name. Matching it
+--  to the real entity is EnemyScanner's job -- only it knows what actually
+--  exists in the Workspace.
 --=============================================================================
 
 local Log = require("AutomationCore.Log")
@@ -24,15 +23,15 @@ local Names = require("AutomationCore.Names")
 
 local QuestDetector = {}
 
--- Etat de quete neutre. Toujours la meme forme : aucun appelant n'a besoin
--- de tester l'existence des champs.
+-- Neutral quest state. Always the same shape, so no caller has to test for the
+-- existence of a field.
 function QuestDetector.blank()
     return {
         Active = false,
-        QuestName = nil,       -- titre affiche ("Bandit Hunter")
-        TargetRaw = nil,       -- objectif tel qu'ecrit ("Desert Bandits")
-        TargetName = nil,      -- forme canonique ("desert bandit")
-        ResolvedName = nil,    -- nom d'instance reel, rempli par EnemyScanner
+        QuestName = nil,       -- displayed title ("Bandit Hunter")
+        TargetRaw = nil,       -- objective as written ("Desert Bandits")
+        TargetName = nil,      -- canonical form ("desert bandit")
+        ResolvedName = nil,    -- real instance name, filled in by EnemyScanner
         RequiredCount = 0,
         CurrentCount = 0,
         Remaining = 0,
@@ -44,12 +43,12 @@ function QuestDetector.blank()
 end
 
 ---------------------------------------------------------------------------
--- Lecture du texte
+-- Reading the text
 ---------------------------------------------------------------------------
 
--- Le chemin connu d'abord (rapide, une seule indirection), le balayage
--- ensuite (robuste a une refonte de l'UI). Une mise a jour qui deplace le
--- label ralentit la lecture, elle ne la casse pas.
+-- Known path first (fast, one indirection), scan second (robust to a UI
+-- rework). An update that moves the label slows the read down; it does not
+-- break it.
 local function knownPathText(frame)
     local ok, text = pcall(function()
         return frame.Container.QuestTitle.Title.Text
@@ -107,9 +106,9 @@ function QuestDetector.isActive(ctx)
     return frame ~= nil and frame.Visible == true
 end
 
--- Lit l'etat de quete courant. Ne devine rien : si l'objectif n'est pas
--- lisible, RequiredCount reste 0 et TargetName reste nil, ce qui bloque le
--- bring en amont plutot que de laisser passer un filtre vide.
+-- Reads the current quest state. Guesses nothing: if the objective is not
+-- readable, RequiredCount stays 0 and TargetName stays nil, which blocks the
+-- bring upstream rather than letting an empty filter through.
 function QuestDetector.read(ctx)
     local state = QuestDetector.blank()
     local frame = ctx.world.questFrame()
@@ -128,12 +127,12 @@ function QuestDetector.read(ctx)
 
     state.QuestName = title or texts[1]
 
-    -- Objectif : premier texte qui exprime "N cibles a battre".
+    -- Objective: the first text expressing "N targets to defeat".
     for _, text in ipairs(texts) do
         local count, target = matchObjective(text, cfg.Patterns)
         if count then
-            -- L'objectif porte parfois sa propre progression :
-            -- "Defeat 8 Desert Bandits [3/8]". On la retire du nom.
+            -- The objective sometimes carries its own progress:
+            -- "Defeat 8 Desert Bandits [3/8]". Strip it from the name.
             target = target:gsub("%[.-%]", ""):gsub("%(.-%)", "")
             target = target:gsub("%d+%s*/%s*%d+", "")
             state.RequiredCount = count
@@ -143,8 +142,8 @@ function QuestDetector.read(ctx)
         end
     end
 
-    -- Progression : on privilegie la paire dont le total correspond a
-    -- l'objectif deja lu, sinon la premiere rencontree.
+    -- Progress: prefer the pair whose total matches the objective already
+    -- read, otherwise the first one found.
     local fallbackCurrent, fallbackRequired
     for _, text in ipairs(texts) do
         local current, required = matchProgress(text, cfg.ProgressPatterns)
@@ -167,16 +166,16 @@ function QuestDetector.read(ctx)
 
     state.Remaining = math.max(0, state.RequiredCount - state.CurrentCount)
 
-    -- Indice de quete de boss. Confirme seulement quand l'entite reelle
-    -- porte une vie de boss : ici on ne fait que le signaler, la decision
-    -- d'autoriser un boss appartient a TargetValidator.
+    -- Boss-quest hint. Only confirmed when the real entity carries boss-level
+    -- health: here we merely flag it, the decision to allow a boss belongs to
+    -- TargetValidator.
     state.IsBossQuest = state.RequiredCount == 1
 
     return state
 end
 
--- Vrai si deux etats designent le meme objectif. Sert a detecter un
--- changement de quete sans reconstruire toute la chaine de decision.
+-- True when two states name the same objective. Used to detect a quest change
+-- without rebuilding the whole decision chain.
 function QuestDetector.sameObjective(a, b)
     if not a or not b then return false end
     if not a.Active or not b.Active then return a.Active == b.Active end
@@ -184,17 +183,17 @@ function QuestDetector.sameObjective(a, b)
 end
 
 function QuestDetector.describe(state)
-    if not state or not state.Active then return "aucune quete active" end
+    if not state or not state.Active then return "no active quest" end
     if not state.TargetName then
-        return "quete active, objectif illisible (" .. tostring(state.QuestName) .. ")"
+        return "quest active, objective unreadable (" .. tostring(state.QuestName) .. ")"
     end
     return string.format("%s -- %s %d/%d",
         tostring(state.QuestName), state.TargetRaw or state.TargetName,
         state.CurrentCount, state.RequiredCount)
 end
 
--- Trace uniquement les changements : la lecture tourne plusieurs fois par
--- seconde, le journal doit rester lisible.
+-- Logs changes only: the read runs several times a second and the journal has
+-- to stay readable.
 function QuestDetector.logChange(previous, current)
     if QuestDetector.sameObjective(previous, current) then
         if previous and current and previous.CurrentCount ~= current.CurrentCount then
@@ -205,14 +204,14 @@ function QuestDetector.logChange(previous, current)
     end
 
     if not current.Active then
-        Log.Quest("quete perdue")
+        Log.Quest("quest lost")
         return
     end
     if current.TargetName then
         Log.Quest("Target =", current.TargetRaw or current.TargetName)
         Log.Quest("Progress =", current.CurrentCount .. "/" .. current.RequiredCount)
     else
-        Log.Quest("objectif illisible --", tostring(current.QuestName))
+        Log.Quest("objective unreadable --", tostring(current.QuestName))
     end
 end
 

@@ -1,15 +1,14 @@
 --=============================================================================
--- AUTOMATION CORE — assemblage
+-- AUTOMATION CORE — assembly
 --=============================================================================
---  Un seul contexte, une seule perception, une seule recuperation, partages
---  par tous les modes de farm. C'est ce qui repond a "permettre a chaque
---  systeme de farm d'utiliser le meme AutomationCore" : passer de QuestFarm
---  a MaterialFarm ne reconstruit ni l'index des ennemis, ni la memoire de
---  carte, ni l'echelle de recuperation.
+--  One context, one perception, one recovery, shared by every farming mode.
+--  That is the answer to "let each farming system use the same
+--  AutomationCore": switching from QuestFarm to MaterialFarm rebuilds neither
+--  the enemy index, nor the map memory, nor the recovery ladder.
 --
---  Un seul mode est actif a la fois. Le changement de mode arrete proprement
---  le precedent — sans quoi deux machines a etats se disputeraient la
---  position du joueur.
+--  Only one mode is active at a time. Changing mode stops the previous one
+--  cleanly -- without that, two state machines would fight over the player's
+--  position.
 --=============================================================================
 
 local BossFarm = require("AutomationCore.Farming.BossFarm")
@@ -52,11 +51,11 @@ function AutomationCore.new(internal)
         Special = SpecialFarm.new(ctx),
     }
 
-    -- CDK delegue son boss final a BossFarm : on lui donne la meme instance
-    -- plutot qu'une seconde, qui se battrait pour le meme personnage.
+    -- CDK delegates its final boss to BossFarm: hand it the same instance
+    -- rather than a second one, which would fight over the same character.
     ctx.bossFarm = self.modes.Boss
 
-    Log.write("Core", "AutomationCore pret --", #AutomationCore.MODES, "modes")
+    Log.write("Core", "AutomationCore ready --", #AutomationCore.MODES, "modes")
     return self
 end
 
@@ -70,13 +69,13 @@ end
 
 function AutomationCore:setMode(mode)
     if not self.modes[mode] then
-        Log.write("Core", "mode inconnu :", tostring(mode))
+        Log.write("Core", "unknown mode:", tostring(mode))
         return false
     end
     if mode == self.mode then return true end
 
-    -- Arret explicite : l'ancien mode doit relacher l'ancre, le pilote de
-    -- bring et sa cible avant que le suivant ne touche au personnage.
+    -- Explicit stop: the old mode must release the anchor, the bring driver
+    -- and its target before the next one touches the character.
     local previous = self:active()
     if previous and previous.stop then previous:stop() end
 
@@ -86,7 +85,7 @@ function AutomationCore:setMode(mode)
 end
 
 ---------------------------------------------------------------------------
--- Raccourcis de configuration
+-- Configuration shorthands
 ---------------------------------------------------------------------------
 
 function AutomationCore:farmBoss(name)
@@ -110,14 +109,14 @@ function AutomationCore:farmQuest()
     return self:setMode("Quest")
 end
 
--- CDK est un objectif special : il se branche et se debranche sans que
--- QuestFarm en sache quoi que ce soit.
+-- CDK is a special objective: it plugs in and out without QuestFarm knowing
+-- anything about it.
 function AutomationCore:startCDK()
     local controller = CDKController.new(self.ctx, self.perception, self.recovery)
 
     local ok, reason = controller:requirements()
     if not ok then
-        Log.CDK("refuse :", reason)
+        Log.CDK("refused:", reason)
         return false, reason
     end
 
@@ -134,21 +133,21 @@ end
 -- Cycle
 ---------------------------------------------------------------------------
 
--- Point d'entree unique, appele par la boucle de farm du runtime.
+-- Single entry point, called by the runtime's farming loop.
 function AutomationCore:update()
     local mode = self:active()
     if not mode then return end
 
     local ok, err = pcall(function() mode:update() end)
     if not ok then
-        -- Une erreur ne doit jamais tuer la boucle : on la trace et on
-        -- laisse la recuperation reprendre au tour suivant.
-        Log.write("Core", "erreur dans le mode", self.mode, ":", err)
+        -- An error must never kill the loop: log it and let recovery pick up
+        -- next turn.
+        Log.write("Core", "error in mode", self.mode, ":", err)
         self.recovery:begin("unknown")
     end
 
-    -- Bilan periodique : etat courant et motifs de refus de cibles. C'est ce
-    -- qui permet de diagnostiquer un "0 cible valide" sans rallumer de logs.
+    -- Periodic summary: current state and target rejection reasons. This is
+    -- what lets a "0 valid targets" be diagnosed without turning logs back on.
     local now = os.clock()
     if now - self.lastReport > 20 then
         self.lastReport = now

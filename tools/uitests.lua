@@ -470,6 +470,180 @@ task.setDeferred(false)
 task.flushDeferred()
 
 ---------------------------------------------------------------------------
+-- Interface du hub — l'UI reelle, montee sur des primitives simulees
+---------------------------------------------------------------------------
+--  Verifie que le remplacement de l'ancienne interface est fonctionnel :
+--  chaque onglet existe, et un controle pris au hasard atteint bien la
+--  fonction du runtime qu'il est cense piloter.
+
+local calls = { farming = 0, farmingValue = nil, sea = nil, stopAll = 0, loops = {} }
+
+local internal = {
+    Config = {
+        Debug = false,
+        Farming = {
+            Mode = "Quest", WeaponType = "Melee", TweenSpeed = 200,
+            MaxTweenSpeed = 200, AttackHeight = 10, SafeDistance = 4,
+            SafeMode = true, BringMob = false, BringQuestOnly = true,
+            BringDistance = 250, BringHeight = 12, UseAutomationCore = true,
+        },
+        Combat = { AuraRange = 60, HitboxRange = 60, AttackDelay = 0.1, Method = "Auto" },
+        FastAttack = { Enabled = true, NoAnimation = true, Interval = 0.05,
+            Range = 50, MaxTargets = 15 },
+        Player = { Stats = { Melee = false, Defense = false }, StatsPerTick = 3,
+            AntiAFK = true, AutoHaki = true },
+        Materials = { Leather = { mobs = {} }, Bones = { mobs = {} } },
+        Abilities = { { name = "Geppo", args = {} } },
+        FightingStyles = { { name = "Black Leg", npc = "Dark Step Teacher" } },
+        Diagnostics = { Enabled = false },
+        AntiDetection = { Enabled = true, DisableAbuseScreenshots = false, Remotes = { "a", "b" } },
+    },
+    State = {
+        sea = 1, flags = {}, selectedWeapon = nil, selectedIsland = nil,
+        attackError = nil, antiDetectError = nil, workingMethod = nil,
+        attackCount = 0, damageSeen = 0,
+    },
+    Core = {
+        level = function() return 75 end,
+        character = function() return nil end,
+        stopAll = function() calls.stopAll = calls.stopAll + 1 end,
+        loop = function(name, interval, body)
+            calls.loops[#calls.loops + 1] = { name = name, interval = interval, body = body }
+        end,
+    },
+    Move = { stopTween = function() end },
+    Attack = {
+        AUTO = "Auto", TYPES = { "Melee", "Sword" }, METHODS = { "Auto", "Remote" },
+        ready = function() return true end,
+        releaseHold = function() end,
+        repairMobs = function() return 3 end,
+        init = function() end, hookAnimations = function() end,
+        bladeName = function() return "Katana" end,
+        currentStrategy = function() return "SendHits" end,
+    },
+    Enemies = { listNames = function() return { "Bandit", "Monkey" } end },
+    Quests = { current = function() return { Name = "Desert Bandit" } end },
+    Farming = {
+        set = function(value)
+            calls.farming = calls.farming + 1
+            calls.farmingValue = value
+        end,
+    },
+    Combat = { setTarget = function() end, setKillAura = function() end },
+    Materials = { set = function() end },
+    Teleport = {
+        toSea = function(sea) calls.sea = sea end,
+        toIsland = function() end,
+        listIslands = function() return { "Jungle", "Desert" } end,
+    },
+    Shop = {
+        redeemAll = function() end, rerollRace = function() end,
+        resetStats = function() end, buyAbility = function() end,
+        setFightingStyle = function() end,
+    },
+    PlayerModule = { setStats = function() end },
+    Performance = { fpsBoost = function() end, removeFog = function() end },
+    AntiDetection = {
+        enable = function() end, startFFlags = function() end,
+        isActive = function() return true end,
+    },
+    Server = { rejoin = function() end, hop = function() end },
+    Events = { setSeaBeast = function() end },
+    FastAttack = { Stop = function() end, SetNoAnimation = function() end },
+    Diagnostics = {
+        setEnabled = function() end, isEnabled = function() return false end,
+        Export = function() end, reset = function() end,
+    },
+    Persist = { save = function() end },
+    Util = {
+        keys = function(tbl)
+            local out = {}
+            for key in pairs(tbl) do out[#out + 1] = key end
+            table.sort(out)
+            return out
+        end,
+    },
+    listWeapons = function() return { "Auto", "Melee", "Sword" } end,
+}
+
+local fakeHub = { Internal = internal, AutomationCore = nil }
+
+local Interface = require("Runtime.Interface")
+local built, hubWindow = pcall(function()
+    return Interface.build(internal, fakeHub)
+end)
+
+check("interface du hub construite", built, not built and hubWindow or nil)
+
+if built then
+    eq("interface : titre", hubWindow.title.Text, "Strawberry Hub")
+
+    local expectedTabs = {
+        "Auto Farm", "Combat", "Materials", "Teleport", "Shop",
+        "Player", "Server", "Misc", "Diagnostics", "Protection",
+    }
+    eq("interface : nombre d'onglets", #hubWindow.tabs, #expectedTabs)
+    for _, name in ipairs(expectedTabs) do
+        check("interface : onglet " .. name, hubWindow:GetTab(name) ~= nil)
+    end
+
+    -- Retrouve un composant par le texte de son titre.
+    local function findComponent(window, tabName, title)
+        local tab = window:GetTab(tabName)
+        if not tab then return nil end
+        for _, sec in ipairs(tab.sections) do
+            for _, component in ipairs(sec.components) do
+                local row = component.row
+                if row and row.title and row.title.Text == title then
+                    return component
+                end
+            end
+        end
+        return nil
+    end
+
+    -- Un toggle doit reellement atteindre la fonction du runtime.
+    local farmToggle = findComponent(hubWindow, "Auto Farm", "Auto Farm Level")
+    check("interface : toggle Auto Farm present", farmToggle ~= nil)
+    if farmToggle then
+        farmToggle.row.container.Activated:Fire()
+        eq("interface : Farming.set atteint", calls.farming, 1)
+        eq("interface : Farming.set recoit true", calls.farmingValue, true)
+    end
+
+    -- Un bouton aussi.
+    local seaButton = findComponent(hubWindow, "Teleport", "Teleport to Sea 2")
+    check("interface : bouton Sea 2 present", seaButton ~= nil)
+    if seaButton then
+        seaButton.row.container.Activated:Fire()
+        eq("interface : Teleport.toSea atteint", calls.sea, 2)
+    end
+
+    -- La boucle de statut doit exister, et une seule.
+    eq("interface : une seule boucle de statut", #calls.loops, 1)
+    eq("interface : boucle nommee Status", calls.loops[1].name, "Status")
+    check("interface : corps de boucle executable", pcall(calls.loops[1].body))
+
+    -- Aucun texte francais ne doit subsister dans l'interface.
+    local frenchWords = {
+        "Arme", "Cible", "Ile", "Serveur", "Joueur", "Divers",
+        "Materiaux", "Rafraichir", "Vitesse", "Hauteur", "Portee",
+    }
+    local leaks = {}
+    for _, node in ipairs(hubWindow.gui:GetDescendants()) do
+        local text = rawget(node, "Text")
+        if type(text) == "string" and text ~= "" then
+            for _, word in ipairs(frenchWords) do
+                if text:find(word, 1, true) then
+                    leaks[#leaks + 1] = text
+                end
+            end
+        end
+    end
+    eq("interface : aucun texte francais", #leaks, 0, leaks[1])
+end
+
+---------------------------------------------------------------------------
 -- Destruction
 ---------------------------------------------------------------------------
 

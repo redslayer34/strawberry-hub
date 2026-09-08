@@ -1,14 +1,14 @@
 --=============================================================================
--- NOTIFICATION — pile en haut a droite
+-- NOTIFICATION — a stack in the top-right corner
 --=============================================================================
---  Les notifications s'empilent au lieu de se superposer. Le placement se
---  fait par un UIListLayout : quand la plus ancienne disparait, les suivantes
---  remontent d'elles-memes. Positionner chacune a la main obligerait a
---  recalculer toute la pile a chaque disparition.
+--  Notifications stack instead of overlapping. Placement is handled by a
+--  UIListLayout: when the oldest disappears the rest move up on their own.
+--  Positioning each one by hand would mean recomputing the whole stack on
+--  every dismissal.
 --
---  Chaque notification detient son propre Maid, et son minuteur est annulable :
---  detruire l'interface pendant qu'une notification est affichee ne doit pas
---  laisser un `task.delay` toucher une instance detruite.
+--  Each notification owns its Maid, and its timer is cancellable: destroying
+--  the interface while one is on screen must not leave a `task.delay` poking
+--  at destroyed instances.
 --=============================================================================
 
 local Theme = require("UI.Theme")
@@ -29,8 +29,8 @@ function Notification.new()
         Name = "StrawberryNotifications",
         IgnoreGuiInset = true,
         ResetOnSpawn = false,
-        -- Au-dessus de la fenetre : une notification masquee par l'interface
-        -- ne sert a rien.
+        -- Above the window: a notification hidden behind the interface is
+        -- useless.
         DisplayOrder = 200,
         Parent = Utility.screenParent(),
     })
@@ -81,8 +81,8 @@ function Notification:Notify(opts)
     Utility.padding(card, 9, 10, 11, 11)
     Utility.list(card, 3)
 
-    -- Filet d'accent a gauche : identifie la source d'un coup d'oeil sans
-    -- ajouter de couleur au texte.
+    -- Accent rule down the left edge: identifies the source at a glance
+    -- without colouring the text.
     local accent = Utility.new("Frame", {
         Name = "Accent",
         Size = UDim2.new(0, 2, 1, 0),
@@ -135,7 +135,7 @@ function Notification:Notify(opts)
     end)
     maid:give(function() Theme.unregister(painterId) end)
 
-    -- Entree : fondu simultane du fond et des textes.
+    -- Entrance: background and text fade in together.
     Utility.tween(card, { BackgroundTransparency = 0 }, Utility.SLOW)
     Utility.tween(accent, { BackgroundTransparency = 0 }, Utility.SLOW)
     Utility.tween(title, { TextTransparency = 0 }, Utility.SLOW)
@@ -166,9 +166,9 @@ function Notification:Notify(opts)
 
     entry.dismiss = dismiss
 
-    -- Le minuteur verifie que la notification n'a pas deja ete liberee :
-    -- sans ce garde, detruire l'interface avant l'echeance ferait toucher
-    -- des instances mortes.
+    -- The timer checks the notification has not already been released:
+    -- without that guard, destroying the interface before it fires would poke
+    -- at dead instances.
     local duration = tonumber(opts.Duration) or 3
     task.delay(duration, function()
         if not self.destroyed and not entry.dismissed then dismiss() end

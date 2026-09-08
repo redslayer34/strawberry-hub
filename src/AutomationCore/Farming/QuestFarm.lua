@@ -1,18 +1,17 @@
 --=============================================================================
--- QUEST FARM — la machine a etats du farm par quete
+-- QUEST FARM — the quest-farming state machine
 --=============================================================================
---  Chaque etat declare son entree, son timeout, sa condition de succes, sa
---  condition d'echec et son etat suivant. Aucun etat ne boucle sur place sans
---  limite : un blocage devient une transition vers RECOVERY, pas un gel.
+--  Each state declares its entry, timeout, success condition, failure
+--  condition and next state. No state loops in place without a limit: a block
+--  becomes a transition to RECOVERY, not a freeze.
 --
---  Le flux de selection des cibles est impose et ne peut pas etre court-
---  circuite :
+--  The target selection flow is mandated and cannot be short-circuited:
 --
 --      DETECT_QUEST -> SCAN_TARGETS -> BUILD_TARGET_GROUP -> BRING_TARGETS
 --          (QuestDetector) (EnemyScanner)  (TargetValidator)  (BringController)
 --
---  BringController ne recoit donc jamais autre chose qu'une liste deja
---  validee contre la quete active.
+--  BringController therefore never receives anything but a list already
+--  validated against the active quest.
 --=============================================================================
 
 local AttackController = require("AutomationCore.Combat.AttackController")
@@ -48,14 +47,14 @@ function QuestFarm:bringEnabled()
     return self.ctx.legacyConfig.Farming.BringMob == true
 end
 
--- Raccourci : demande une recuperation avec une cause explicite.
+-- Shorthand: request a recovery with an explicit cause.
 function QuestFarm:recover(cause)
     self.recovery:begin(cause)
     return "RECOVERY"
 end
 
 ---------------------------------------------------------------------------
--- Etats
+-- States
 ---------------------------------------------------------------------------
 
 function QuestFarm:defineStates()
@@ -73,8 +72,8 @@ function QuestFarm:defineStates()
         },
 
         -----------------------------------------------------------------
-        -- Verifie ce sans quoi rien d'autre n'a de sens. Mieux vaut
-        -- attendre ici que partir en detection sur un monde a moitie charge.
+        -- Checks what nothing else makes sense without. Better to wait here
+        -- than to start detecting against a half-loaded world.
         CHECK_REQUIREMENTS = {
             timeout = 30,
             onTimeout = function() return self:recover("map_not_loaded") end,
@@ -108,8 +107,8 @@ function QuestFarm:defineStates()
         },
 
         -----------------------------------------------------------------
-        -- Pivot de toute la machine. Une quete active et lisible court-
-        -- circuite toute la partie "aller prendre une quete".
+        -- The pivot of the whole machine. An active, readable quest skips the
+        -- entire "go and pick up a quest" branch.
         DETECT_QUEST = {
             timeout = 20,
             onTimeout = function() return self:recover("quest_lost") end,
@@ -121,16 +120,16 @@ function QuestFarm:defineStates()
                     return "SCAN_TARGETS"
                 end
 
-                -- Quete active mais objectif illisible : on ne devine pas.
-                -- On l'abandonne et on en reprend une proprement, plutot que
-                -- de farmer a l'aveugle.
+                -- Quest active but the objective is unreadable: we do not
+                -- guess. Abandon it and take a clean one, rather than farm
+                -- blind.
                 if quest.Active and not quest.TargetName then
-                    Log.Quest("objectif illisible -- abandon de la quete")
+                    Log.Quest("objective unreadable -- abandoning the quest")
                     QuestTravel.abandon(ctx)
                     return nil
                 end
 
-                -- Aucune quete : on en planifie une.
+                -- No quest: plan one.
                 if RoutePlanner.isStale(ctx, self.plan, perception.scanner) then
                     self.plan = RoutePlanner.plan(ctx, perception.scanner)
                 end
@@ -145,9 +144,8 @@ function QuestFarm:defineStates()
             onTimeout = function() return self:recover("quest_giver_missing") end,
             enter = function()
                 if not self.plan then return end
-                -- Le repli statique est passe au resolveur mais reste au
-                -- niveau de confiance le plus bas : il ne sert que si aucun
-                -- PNJ ne correspond.
+                -- The static fallback is handed to the resolver but stays at
+                -- the lowest trust level: it is used only if no NPC matches.
                 perception:setQuestGiverHints(self.plan.hints, self.plan.giverFallback)
             end,
             update = function()
@@ -164,8 +162,8 @@ function QuestFarm:defineStates()
             onTimeout = function() return self:recover("movement_blocked") end,
             exit = function() TravelController.reset(ctx) end,
             update = function()
-                -- Une quete apparue entre-temps (ramassee par un autre
-                -- moyen) rend le voyage inutile.
+                -- A quest that appeared meanwhile (picked up some other way)
+                -- makes the journey pointless.
                 if perception:detectQuest().Active then return "DETECT_QUEST" end
 
                 local status = QuestTravel.step(ctx, self.plan)
@@ -177,9 +175,9 @@ function QuestFarm:defineStates()
         },
 
         -----------------------------------------------------------------
-        -- La prise de quete n'est pas instantanee : on la demande, puis on
-        -- attend la confirmation par l'UI. Sans cette attente, l'ancien code
-        -- repartait immediatement et redemandait en boucle.
+        -- Accepting a quest is not instant: we request it, then wait for the
+        -- UI to confirm. Without that wait the old code immediately moved on
+        -- and re-requested in a loop.
         ACCEPT_QUEST = {
             timeout = 8,
             onTimeout = function() return self:recover("quest_not_taken") end,
@@ -190,8 +188,8 @@ function QuestFarm:defineStates()
                 local quest = perception:detectQuest(true)
                 if quest.Active then return "DETECT_QUEST" end
 
-                -- On re-demande une seule fois par seconde tant que le PNJ
-                -- est a portee : le remote echoue si l'on s'est eloigne.
+                -- Re-request once a second while the NPC is in range: the
+                -- remote fails if we have drifted away.
                 if self.machine:elapsed() > 2 then
                     QuestTravel.accept(ctx, self.plan)
                     self.machine.enteredAt = os.clock() - 2
@@ -215,14 +213,14 @@ function QuestFarm:defineStates()
                     return "BUILD_TARGET_GROUP"
                 end
 
-                -- Rien de valide : la zone n'est peut-etre pas active.
+                -- Nothing valid: the zone may not be active yet.
                 return "ACTIVATE_SPAWN"
             end,
         },
 
         -----------------------------------------------------------------
-        -- Beaucoup de spawns ne se declenchent qu'a l'approche du joueur.
-        -- Avant de conclure a l'absence, on va sur place.
+        -- Many spawns only trigger when the player gets close. Before
+        -- concluding they are absent, go there.
         ACTIVATE_SPAWN = {
             timeout = 35,
             onTimeout = function() return self:recover("target_missing") end,
@@ -230,17 +228,17 @@ function QuestFarm:defineStates()
             update = function()
                 local status = TargetTravel.step(ctx, self.plan)
 
-                -- Un rescan a chaque pas : des que la zone se peuple, on
-                -- repart sans attendre la fin du voyage.
+                -- A rescan on every step: as soon as the zone populates we
+                -- move on without waiting for the journey to finish.
                 perception:update(true)
                 if #ctx.targets > 0 then
-                    Log.Target("zone activee --", #ctx.targets, "cible(s)")
+                    Log.Target("zone activated --", #ctx.targets, "target(s)")
                     return "BUILD_TARGET_GROUP"
                 end
 
                 if status == "unknown" then
-                    -- Aucune destination : ni cible, ni region, ni ile. Le
-                    -- plan lui-meme est douteux.
+                    -- No destination at all: no target, no region, no island.
+                    -- The plan itself is suspect.
                     self.plan = nil
                     return self:recover("target_missing")
                 end
@@ -252,8 +250,8 @@ function QuestFarm:defineStates()
         },
 
         -----------------------------------------------------------------
-        -- Constitue le groupe a engager. C'est ici, et nulle part ailleurs,
-        -- que la liste transmise au bring est arretee.
+        -- Assembles the group to engage. Here, and nowhere else, is the list
+        -- handed to the bring settled.
         BUILD_TARGET_GROUP = {
             timeout = 8,
             onTimeout = "SCAN_TARGETS",
@@ -264,8 +262,8 @@ function QuestFarm:defineStates()
                 if #ctx.targets == 0 then return "SCAN_TARGETS" end
                 if ctx.quest.Remaining <= 0 then return "CHECK_PROGRESS" end
 
-                -- L'ancre doit exister avant le bring : sans elle, les mobs
-                -- seraient places sur une position non validee.
+                -- The anchor must exist before the bring: without it, mobs
+                -- would be placed on an unvalidated position.
                 if self:bringEnabled() then
                     local anchor = SafeCombatAnchor.compute(ctx, true)
                     if not anchor then return self:recover("invalid_position") end
@@ -306,8 +304,8 @@ function QuestFarm:defineStates()
                 local report = self.bring:update(ctx.targets, ctx.quest)
 
                 if report.status == "too_far" then
-                    -- PullLimit : on ne tire pas le mob a travers la carte,
-                    -- c'est le joueur qui se deplace, puis on recalcule.
+                    -- PullLimit: we do not drag the mob across the map, the
+                    -- player moves instead, then we recompute.
                     return "ACTIVATE_SPAWN"
                 end
                 if report.status == "no_anchor" then
@@ -317,8 +315,8 @@ function QuestFarm:defineStates()
                     return "SCAN_TARGETS"
                 end
 
-                -- Des qu'une cible est en place, on frappe. L'etat ATTACK
-                -- garde le bring actif : les deux tournent ensemble.
+                -- As soon as one target is in place, strike. The ATTACK state
+                -- keeps the bring running: the two work together.
                 if report.placed > 0 then return "ATTACK" end
                 return nil
             end,
@@ -330,8 +328,8 @@ function QuestFarm:defineStates()
             onTimeout = function() return self:recover("combat_interrupted") end,
             enter = function()
                 perception:setCombat(true)
-                -- Le bring reste actif pendant l'attaque quand il est
-                -- demande : sinon les mobs repartent des le premier coup.
+                -- The bring stays active during the attack when it is
+                -- requested: otherwise mobs scatter on the first blow.
                 if self:bringEnabled() then
                     ctx.bringActive = true
                     self.bring:attach()
@@ -358,15 +356,15 @@ function QuestFarm:defineStates()
                 if status == "killed" then return "CHECK_PROGRESS" end
                 if status == "idle" then return "SCAN_TARGETS" end
                 if status == "lost" then
-                    -- Cible perdue sans etre morte : elle est peut-etre
-                    -- repartie au spawn.
+                    -- Target lost without dying: it may have returned to its
+                    -- spawn.
                     return "BUILD_TARGET_GROUP"
                 end
                 if status == "timeout" then return self:recover("combat_interrupted") end
                 if status == "blocked" then return nil end
 
-                -- L'etat ATTACK ne se quitte pas apres chaque coup : on
-                -- reste ici tant qu'une cible valide est engagee.
+                -- The ATTACK state is not left after every blow: we stay here
+                -- as long as a valid target is engaged.
                 return nil
             end,
         },
@@ -379,8 +377,8 @@ function QuestFarm:defineStates()
                 local quest = perception:detectQuest(true)
 
                 if not quest.Active then
-                    -- La quete a disparu : soit elle vient d'etre validee,
-                    -- soit elle a ete perdue. DETECT_QUEST tranchera.
+                    -- The quest is gone: either it was just completed, or it
+                    -- was lost. DETECT_QUEST will settle it.
                     return "DETECT_QUEST"
                 end
 
@@ -394,9 +392,9 @@ function QuestFarm:defineStates()
         },
 
         -----------------------------------------------------------------
-        -- La plupart des quetes se valident seules au dernier kill. On
-        -- attend cette validation ; si elle ne vient pas, on retourne voir
-        -- le donneur, certaines quetes l'exigent.
+        -- Most quests complete on their own at the last kill. We wait for
+        -- that; if it does not come, we go back to the giver, since some
+        -- quests require it.
         TURN_IN = {
             timeout = 20,
             onTimeout = function() return self:recover("quest_lost") end,
@@ -408,7 +406,7 @@ function QuestFarm:defineStates()
                 local quest = perception:detectQuest(true)
 
                 if not quest.Active then
-                    Log.Quest("recompense validee")
+                    Log.Quest("reward confirmed")
                     self.plan = nil
                     return "DETECT_QUEST"
                 end
@@ -423,11 +421,11 @@ function QuestFarm:defineStates()
 
         -----------------------------------------------------------------
         RECOVERY = {
-            -- Pas de timeout : c'est le controleur qui decide de l'escalade,
-            -- y compris du moment ou il renonce.
+            -- No timeout: the controller decides the escalation, including
+            -- when to give up.
             enter = function()
                 perception:setCombat(false)
-                self.attack:clear("recuperation")
+                self.attack:clear("recovery")
                 self.bring:detach()
                 ctx.bringActive = false
             end,
@@ -441,9 +439,9 @@ function QuestFarm:defineStates()
             timeout = 30,
             onTimeout = "IDLE",
             enter = function()
-                Log.ServerHop("changement de serveur demande")
-                -- Tout ce qui a ete appris ici sera faux la-bas.
-                ctx.map:clear("changement de serveur")
+                Log.ServerHop("server change requested")
+                -- Everything learned here will be wrong over there.
+                ctx.map:clear("server change")
                 ctx.region = nil
                 ctx.questGiver = nil
                 self.plan = nil
@@ -453,9 +451,8 @@ function QuestFarm:defineStates()
         },
 
         -----------------------------------------------------------------
-        -- Point d'accroche des objectifs speciaux (CDK, quetes d'evenement).
-        -- Le core y bascule sur demande explicite ; QuestFarm ne s'y rend
-        -- jamais de lui-meme.
+        -- Hook for special objectives (CDK, event quests). The core switches
+        -- here on explicit request; QuestFarm never goes there on its own.
         SPECIAL_OBJECTIVE = {
             timeout = 600,
             onTimeout = "DETECT_QUEST",
@@ -472,7 +469,7 @@ function QuestFarm:defineStates()
         },
     })
 
-    self.machine:goTo("IDLE", "demarrage")
+    self.machine:goTo("IDLE", "startup")
 end
 
 ---------------------------------------------------------------------------
@@ -482,17 +479,17 @@ end
 function QuestFarm:update()
     local ctx = self.ctx
 
-    -- Arret par l'UI : on rend la main proprement, sans laisser d'ancre ni
-    -- de pilote de bring derriere nous.
+    -- Stopped from the interface: hand back cleanly, leaving no anchor and no
+    -- bring driver behind.
     if not ctx.flags.farming() then
         if not self.machine:is("IDLE") then
-            self.machine:goTo("IDLE", "farm arrete")
+            self.machine:goTo("IDLE", "farm stopped")
         end
         return
     end
 
-    -- Causes implicites, detectees avant la machine : le joueur mort ou la
-    -- carte non chargee court-circuitent l'etat courant.
+    -- Implicit causes, detected before the machine: a dead player or an
+    -- unloaded map short-circuits the current state.
     local implicit = self.recovery:detectImplicit(ctx)
     if implicit and not self.machine:is("RECOVERY") and not self.machine:is("SERVER_HOP") then
         self.recovery:begin(implicit)
@@ -506,9 +503,9 @@ end
 
 function QuestFarm:stop()
     self.bring:detach()
-    self.attack:clear("arret")
+    self.attack:clear("stop")
     TravelController.stop(self.ctx)
-    self.machine:goTo("IDLE", "arret")
+    self.machine:goTo("IDLE", "stop")
 end
 
 function QuestFarm:describe()

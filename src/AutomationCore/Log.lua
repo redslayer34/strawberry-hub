@@ -1,13 +1,13 @@
 --=============================================================================
--- LOG — journal categorise de l'AutomationCore
+-- LOG — categorised journal for the AutomationCore
 --=============================================================================
---  Un seul point de sortie, une categorie par sous-systeme. On peut couper
---  une categorie sans toucher au code qui l'emet, ce qui evite les `print`
---  laisses en place puis commentes.
+--  One output point, one category per subsystem. A category can be silenced
+--  without touching the code that emits it, which is what stops `print` calls
+--  from being added and then commented out again.
 --
---  Un tampon circulaire garde les dernieres lignes meme categories coupees :
---  quand le farm part en vrille, l'historique est deja la, sans avoir eu a
---  reactiver les logs avant que le probleme se produise.
+--  A ring buffer keeps the last lines even for silenced categories: when the
+--  farm goes wrong the history is already there, without having had to turn
+--  logging on before the problem happened.
 --=============================================================================
 
 local Log = {}
@@ -21,12 +21,12 @@ Log.TAGS = {
 local HISTORY_LIMIT = 200
 
 local enabled = true
-local muted = {}            -- tag -> true : categorie coupee
-local history = {}          -- tampon circulaire des dernieres lignes
+local muted = {}            -- tag -> true : category silenced
+local history = {}          -- ring buffer of recent lines
 local cursor = 0
-local sink = nil            -- destination optionnelle (UI, fichier)
-local lastLine = {}         -- tag -> derniere ligne, pour l'anti-repetition
-local repeats = {}          -- tag -> nombre de repetitions consecutives
+local sink = nil            -- optional destination (UI, file)
+local lastLine = {}         -- tag -> last line, for repeat suppression
+local repeats = {}          -- tag -> consecutive repeat count
 
 function Log.setEnabled(value) enabled = value and true or false end
 function Log.isEnabled() return enabled end
@@ -37,8 +37,8 @@ end
 
 function Log.setSink(fn) sink = fn end
 
--- Concatene en tolerant les nil au milieu des arguments : un log ne doit
--- jamais lever d'erreur dans un chemin de farm.
+-- Concatenates while tolerating nil arguments in the middle: a log call must
+-- never raise inside a farming path.
 local function join(...)
     local n = select("#", ...)
     local parts = table.create and table.create(n) or {}
@@ -58,8 +58,8 @@ function Log.write(tag, ...)
 
     if not enabled or muted[tag] then return end
 
-    -- Une machine a etats qui boucle emet la meme ligne des centaines de fois
-    -- par minute. On n'affiche que les changements, avec un compteur.
+    -- A looping state machine emits the same line hundreds of times a minute.
+    -- Only changes are printed, with a counter.
     if lastLine[tag] == text then
         repeats[tag] = (repeats[tag] or 0) + 1
         if repeats[tag] % 50 ~= 0 then return end
@@ -76,12 +76,12 @@ function Log.write(tag, ...)
     end
 end
 
--- Raccourcis : Log.Quest("Target =", name) se lit mieux que Log.write("Quest", ...)
+-- Shorthands: Log.Quest("Target =", name) reads better than Log.write("Quest", ...)
 for _, tag in ipairs(Log.TAGS) do
     Log[tag] = function(...) Log.write(tag, ...) end
 end
 
--- Lignes du tampon, de la plus ancienne a la plus recente.
+-- Buffered lines, oldest first.
 function Log.history()
     local out = {}
     local n = math.min(cursor, HISTORY_LIMIT)

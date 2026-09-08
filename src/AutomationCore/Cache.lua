@@ -1,24 +1,24 @@
 --=============================================================================
--- CACHE — valeur horodatee, expirable, invalidable
+-- CACHE — a timestamped value that can expire and be invalidated
 --=============================================================================
---  Regle de l'architecture : aucune donnee de carte n'est une verite
---  permanente. Une position n'est utilisable que si elle est ENCORE valide,
---  ce qui suppose trois choses qu'un simple `local pos = ...` ne donne pas :
+--  Architectural rule: no map data is ever a permanent truth. A position may
+--  only be used if it is STILL valid, which needs three things a plain
+--  `local pos = ...` does not give you:
 --
---    1. une date de peremption (le monde bouge sans nous prevenir) ;
---    2. un validateur (l'entite existe-t-elle toujours, au meme endroit ?) ;
---    3. une invalidation explicite sur echec (invalidate-on-failure).
+--    1. an expiry (the world moves without telling us);
+--    2. a validator (does the entity still exist, in the same place?);
+--    3. explicit invalidation on failure (invalidate-on-failure).
 --
---  `:get()` renvoie nil des qu'une des trois conditions tombe. Un appelant
---  qui ignore le nil retombe donc en rescan, jamais sur une donnee morte.
+--  `:get()` returns nil as soon as any of the three fails. A caller that
+--  ignores the nil therefore falls back to rescanning, never to dead data.
 --=============================================================================
 
 local Cache = {}
 Cache.__index = Cache
 
--- opts.ttl        : duree de vie en secondes (nil = pas d'expiration temporelle)
--- opts.validator  : function(value, meta) -> boolean, appele a chaque lecture
--- opts.name       : etiquette de journalisation
+-- opts.ttl        : lifetime in seconds (nil = no time-based expiry)
+-- opts.validator  : function(value, meta) -> boolean, called on every read
+-- opts.name       : label for logging
 function Cache.new(opts)
     opts = opts or {}
     return setmetatable({
@@ -45,7 +45,7 @@ function Cache:age()
     return os.clock() - self.stamp
 end
 
--- Valide sans consommer : utile pour decider d'un rafraichissement anticipe.
+-- Validates without consuming: useful to decide on an early refresh.
 function Cache:isValid()
     if self.value == nil then return false, "empty" end
     if self.ttl and self:age() > self.ttl then return false, "expired" end
@@ -57,8 +57,8 @@ function Cache:isValid()
     return true
 end
 
--- Unique lecture autorisee. Invalide au passage si la valeur est morte, pour
--- que l'entree ne soit pas re-testee a chaque frame.
+-- The only sanctioned read. Invalidates on the way out if the value is dead,
+-- so the entry is not re-tested on every frame.
 function Cache:get()
     local ok, reason = self:isValid()
     if ok then return self.value, self.meta end
@@ -66,9 +66,9 @@ function Cache:get()
     return nil
 end
 
--- Lecture explicitement degradee : rend la derniere valeur connue meme
--- perimee. Reservee aux replis de dernier recours, qui doivent tracer d'ou
--- vient la donnee (voir Trust).
+-- Explicitly degraded read: returns the last known value even when stale.
+-- Reserved for last-resort fallbacks, which must record where the data came
+-- from (see Trust).
 function Cache:peek()
     return self.value, self.meta, self:age()
 end

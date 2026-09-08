@@ -1,14 +1,13 @@
 --=============================================================================
--- QUEST TRAVEL — rejoindre le donneur de quete
+-- QUEST TRAVEL — reaching the quest giver
 --=============================================================================
---  La destination n'est jamais une constante : elle vient de
---  QuestGiverResolver, donc d'un PNJ reellement present. Ce module ne fait
---  que conduire jusqu'a la position qu'on lui donne, et signaler les cas ou
---  cette position se revele fausse.
+--  The destination is never a constant: it comes from QuestGiverResolver, so
+--  from an NPC actually present. This module only drives to the position it is
+--  given, and reports the cases where that position turns out to be wrong.
 --
---  Un donneur qu'on atteint sans que rien ne se passe est un donneur mal
---  identifie : on invalide, on relance la resolution. C'est la difference
---  entre "aller au bon endroit" et "aller a l'endroit d'hier".
+--  A giver you reach with nothing happening is a giver that was misidentified:
+--  invalidate, re-resolve. That is the difference between going to the right
+--  place and going to yesterday's place.
 --=============================================================================
 
 local Log = require("AutomationCore.Log")
@@ -17,7 +16,7 @@ local TravelController = require("AutomationCore.Movement.TravelController")
 
 local QuestTravel = {}
 
--- Renvoie "travelling" | "arrived" | "unreachable" | "unknown".
+-- Returns "travelling" | "arrived" | "unreachable" | "unknown".
 function QuestTravel.step(ctx, plan)
     local giver = ctx.questGiver
 
@@ -26,8 +25,8 @@ function QuestTravel.step(ctx, plan)
         return "unknown"
     end
 
-    -- Zone lointaine : le tween ne peut pas franchir la distance, le jeu
-    -- fournit une entree.
+    -- Distant area: the tween cannot cover the distance, the game provides an
+    -- entrance.
     if plan and plan.entrance then
         local distance = TravelController.distanceTo(ctx, giver)
         if distance > ctx.cfg.Travel.FarEntranceDistance then
@@ -42,14 +41,14 @@ function QuestTravel.step(ctx, plan)
 
     local ok, reason = TravelController.step(ctx, giver, { lift = 4 })
     if not ok then
-        Log.Travel("destination du donneur refusee :", reason)
+        Log.Travel("giver destination refused:", reason)
         return "unreachable"
     end
 
     if TravelController.isStuck(ctx) then
-        -- Bloque en chemin : la position vient probablement d'un cache
-        -- perime ou d'un repli statique.
-        QuestGiverResolver.markFailed(ctx, plan and plan.hints or {}, "trajet bloque")
+        -- Stuck on the way: the position most likely came from a stale cache
+        -- or a static fallback.
+        QuestGiverResolver.markFailed(ctx, plan and plan.hints or {}, "route blocked")
         TravelController.reset(ctx)
         return "unreachable"
     end
@@ -57,23 +56,23 @@ function QuestTravel.step(ctx, plan)
     return "travelling"
 end
 
--- Prise de quete. Le remote est le seul moyen fiable : etre a cote du PNJ ne
--- suffit pas, et cliquer n'est pas reproductible.
+-- Accepting the quest. The remote is the only reliable route: standing next to
+-- the NPC is not enough, and clicking is not reproducible.
 function QuestTravel.accept(ctx, plan)
-    if not plan or not plan.questId then return false, "quete inconnue" end
+    if not plan or not plan.questId then return false, "unknown quest" end
 
     local ok = pcall(function()
         ctx.remote.invoke("StartQuest", plan.questId, plan.questLevel or 1)
     end)
-    if not ok then return false, "remote refuse" end
+    if not ok then return false, "remote refused" end
 
-    Log.Quest("prise de quete :", plan.questId, "niveau", plan.questLevel or 1)
+    Log.Quest("accepting quest:", plan.questId, "level", plan.questLevel or 1)
     return true
 end
 
 function QuestTravel.abandon(ctx)
     pcall(function() ctx.remote.invoke("AbandonQuest") end)
-    Log.Quest("quete abandonnee")
+    Log.Quest("quest abandoned")
 end
 
 return QuestTravel

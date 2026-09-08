@@ -1,9 +1,9 @@
 --=============================================================================
 -- BUTTON
 --=============================================================================
---  Ligne cliquable, avec description et chevron facultatifs. Le chevron sert
---  a signaler une action qui emmene ailleurs (un teleport, un sous-menu) par
---  opposition a une action qui s'execute sur place.
+--  A clickable row, with optional description and chevron. The chevron marks
+--  an action that takes you elsewhere (a teleport, a submenu) as opposed to
+--  one that runs in place.
 --=============================================================================
 
 local Input = require("UI.Input")
@@ -37,8 +37,8 @@ function Button.new(parent, opts, order)
             Size = UDim2.new(1, 0, 1, 0),
             BackgroundTransparency = 1,
             Font = Enum.Font.GothamBold,
-            -- Chevron typographique plutot qu'une image : aucun asset a
-            -- charger, et le rendu suit la couleur du theme.
+            -- A typographic chevron rather than an image: no asset to load,
+            -- and it follows the theme colour.
             Text = ">",
             TextSize = 12,
             TextColor3 = Theme.color("MutedText"),

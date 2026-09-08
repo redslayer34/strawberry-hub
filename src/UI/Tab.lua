@@ -1,14 +1,13 @@
 --=============================================================================
--- TAB — bouton de barre laterale + page de contenu
+-- TAB — sidebar button plus content page
 --=============================================================================
---  Changer d'onglet ne fait que basculer `Visible`. Les pages sont construites
---  une fois et gardees : c'est ce qui preserve l'etat des composants (valeur
---  d'un slider, position de defilement, selection d'un dropdown) d'un aller-
---  retour a l'autre. Reconstruire a chaque clic serait plus simple a ecrire
---  et perdrait tout.
+--  Switching tabs only flips `Visible`. Pages are built once and kept: that is
+--  what preserves component state (a slider's value, scroll position, a
+--  dropdown's selection) across a round trip. Rebuilding on every click would
+--  be simpler to write and would lose all of it.
 --
---  L'onglet actif se signale par un liseré rouge vertical et un fond
---  legerement plus clair, comme sur la reference.
+--  The active tab is marked by a vertical red bar and a slightly lighter
+--  background, as in the reference.
 --=============================================================================
 
 local Input = require("UI.Input")
@@ -31,7 +30,7 @@ function Tab.new(window, opts, order)
     self.sectionCount = 0
 
     ---------------------------------------------------------------------
-    -- Bouton de la barre laterale
+    -- Sidebar button
     ---------------------------------------------------------------------
 
     local button = Utility.new("TextButton", {
@@ -48,9 +47,9 @@ function Tab.new(window, opts, order)
     maid:give(button)
     Utility.corner(4, button)
 
-    -- Liseré d'onglet actif : hauteur nulle au repos, il grandit a la
-    -- selection. L'animation part donc du centre et se lit comme un
-    -- glissement, pas comme une apparition.
+    -- Active-tab bar: zero height at rest, growing on selection. The animation
+    -- therefore runs from the centre and reads as a slide rather than a
+    -- sudden appearance.
     local indicator = Utility.new("Frame", {
         Name = "Indicator",
         AnchorPoint = Vector2.new(0, 0.5),
@@ -119,7 +118,7 @@ function Tab.new(window, opts, order)
     self.label, self.icon = label, icon
 
     ---------------------------------------------------------------------
-    -- Apparence
+    -- Appearance
     ---------------------------------------------------------------------
 
     local function paint(animate)
@@ -150,8 +149,8 @@ function Tab.new(window, opts, order)
     local painterId = Theme.register(function() paint(false) end)
     maid:give(function() Theme.unregister(painterId) end)
 
-    -- Survol : uniquement quand l'onglet n'est pas deja actif, sinon le
-    -- survol effacerait la mise en avant de l'onglet courant.
+    -- Hover only when the tab is not already active, otherwise hovering would
+    -- wipe out the current tab's highlight.
     for _, connection in ipairs(Input.onHover(button,
         function()
             if not self.active then
@@ -187,8 +186,8 @@ end
 function Tab:Show()
     if self.active then return end
     self.active = true
-    -- La page existe deja : on ne fait que la reveler. C'est ce qui preserve
-    -- la position de defilement et l'etat de chaque composant.
+    -- The page already exists: we only reveal it. That is what preserves
+    -- scroll position and every component's state.
     self.page.Visible = true
     self.page.CanvasPosition = self.savedScroll or Vector2.new(0, 0)
     self.paint(true)
@@ -197,8 +196,8 @@ end
 function Tab:Hide()
     if not self.active then return end
     self.active = false
-    -- Roblox remet CanvasPosition a zero sur une page masquee : on la garde
-    -- pour la restaurer au retour.
+    -- Roblox resets CanvasPosition on a hidden page, so keep it to restore on
+    -- the way back.
     self.savedScroll = self.page.CanvasPosition
     self.page.Visible = false
     self.paint(true)

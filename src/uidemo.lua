@@ -1,12 +1,12 @@
 --=============================================================================
--- DEMO — exemple complet et executable de la bibliotheque UI
+-- DEMO — a complete, runnable example of the UI library
 --=============================================================================
---  Point d'entree alternatif du bundle :
+--  Alternate bundle entry point:
 --      python3 tools/pack.py --entry uidemo --bundle-only dist/StrawberryUI.lua
 --
---  Tout ce qui suit est fonctionnel : les callbacks impriment reellement, les
---  composants gardent leur etat, et les references renvoyees permettent de
---  piloter l'interface depuis le reste du script.
+--  Everything below works: the callbacks really print, components keep their
+--  state, and the returned handles let the rest of a script drive the
+--  interface.
 --=============================================================================
 
 local UI = require("UI")
@@ -28,16 +28,16 @@ local statusLabel
 
 AutoFarm:CreateToggle({
     Name = "Auto Farm",
-    Description = "Farm automatiquement les mobs de la quete active",
+    Description = "Automatically farms the active quest's mobs",
     Default = false,
     Callback = function(value)
         print("Auto Farm:", value)
         if statusLabel then
-            statusLabel:SetText("Statut : " .. (value and "en cours" or "arrete"))
+            statusLabel:SetText("Status: " .. (value and "running" or "stopped"))
         end
         UI:Notify({
             Title = "Auto Farm",
-            Content = value and "Farm demarre" or "Farm arrete",
+            Content = value and "Farm started" or "Farm stopped",
             Duration = 3,
         })
     end,
@@ -61,13 +61,13 @@ AutoFarm:CreateSlider({
 
 AutoFarm:CreateButton({
     Name = "Start Farm",
-    Description = "Lance le cycle de farm immediatement",
+    Description = "Runs the farm cycle immediately",
     Arrow = true,
     Callback = function() print("Start") end,
 })
 
 local Status = Farm:CreateSection({ Name = "Status" })
-statusLabel = Status:CreateLabel({ Name = "Statut : arrete" })
+statusLabel = Status:CreateLabel({ Name = "Status: stopped" })
 
 ---------------------------------------------------------------------------
 -- Teleport
@@ -117,7 +117,7 @@ Islands:CreateButton({
 })
 
 ---------------------------------------------------------------------------
--- Misc — montre SetTheme a chaud et le rafraichissement d'un dropdown
+-- Misc — shows live SetTheme and refreshing a dropdown
 ---------------------------------------------------------------------------
 
 local Misc = Window:CreateTab({ Name = "Misc" })
@@ -125,16 +125,16 @@ local Interface = Misc:CreateSection({ Name = "Interface" })
 
 Interface:CreateDropdown({
     Name = "Accent",
-    Values = { "Rouge", "Bleu", "Vert", "Violet" },
-    Default = "Rouge",
+    Values = { "Red", "Blue", "Green", "Purple" },
+    Default = "Red",
     Callback = function(value)
         local palettes = {
-            Rouge  = Color3.fromRGB(196, 54, 54),
-            Bleu   = Color3.fromRGB(66, 122, 210),
-            Vert   = Color3.fromRGB(72, 172, 110),
-            Violet = Color3.fromRGB(140, 96, 200),
+            Red    = Color3.fromRGB(196, 54, 54),
+            Blue   = Color3.fromRGB(66, 122, 210),
+            Green  = Color3.fromRGB(72, 172, 110),
+            Purple = Color3.fromRGB(140, 96, 200),
         }
-        -- Changement a chaud : rien n'est reconstruit, l'etat est conserve.
+        -- Live change: nothing is rebuilt, state is preserved.
         UI:SetTheme({ Accent = palettes[value] })
     end,
 })
@@ -142,23 +142,23 @@ Interface:CreateDropdown({
 Interface:CreateDivider()
 
 Interface:CreateButton({
-    Name = "Rafraichir la liste des iles",
-    Description = "Demontre Dropdown:Refresh",
+    Name = "Refresh island list",
+    Description = "Demonstrates Dropdown:Refresh",
     Callback = function()
         islandDropdown:Refresh({ "Starter Island", "Jungle", "Desert" })
-        UI:Notify({ Title = "Iles", Content = "Liste rafraichie", Duration = 2 })
+        UI:Notify({ Title = "Islands", Content = "List refreshed", Duration = 2 })
     end,
 })
 
 Interface:CreateButton({
-    Name = "Fermer l'interface",
+    Name = "Close interface",
     Arrow = true,
     Callback = function() Window:Hide() end,
 })
 
 UI:Notify({
     Title = "Strawberry UI",
-    Content = "Interface chargee",
+    Content = "Interface loaded",
     Duration = 4,
 })
 

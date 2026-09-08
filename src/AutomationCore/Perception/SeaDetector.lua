@@ -1,14 +1,12 @@
 --=============================================================================
--- SEA DETECTOR — dans quelle mer sommes-nous
+-- SEA DETECTOR — which sea are we in
 --=============================================================================
---  La mer se lit sur le PlaceId : ce n'est pas une coordonnee mais l'identite
---  du serveur lui-meme, donc une donnee stable qu'une mise a jour de carte ne
---  deplace pas. Elle ne devient fausse que si le jeu publie un nouveau
---  PlaceId, cas traite par la detection de repli.
+--  The sea is read from the PlaceId: that is not a coordinate but the identity
+--  of the server itself, so a map update cannot move it. It only becomes wrong
+--  if the game publishes a new PlaceId, which the fallback below covers.
 --
---  Repli : la composition du dossier des lieux. Chaque mer expose des iles
---  qui n'existent pas dans les autres ; leur presence identifie la mer sans
---  aucune position.
+--  Fallback: the make-up of the locations folder. Each sea exposes islands the
+--  others do not; their presence identifies the sea without any position.
 --=============================================================================
 
 local Log = require("AutomationCore.Log")
@@ -16,15 +14,15 @@ local Names = require("AutomationCore.Names")
 
 local SeaDetector = {}
 
--- PlaceId connus. Une entree manquante n'est plus bloquante : on tombe sur
--- la signature d'iles.
+-- Known PlaceIds. A missing entry is no longer fatal: we fall through to the
+-- island signature.
 local PLACES = {
     [2753915549] = 1, [100117331123089] = 1,
     [4442272183] = 2, [79091703265657] = 2,
     [7449423635] = 3, [85211729168715] = 3,
 }
 
--- Iles exclusives a une mer. Il suffit d'une seule pour trancher.
+-- Islands exclusive to one sea. A single match settles it.
 local SIGNATURE = {
     [1] = { "jungle", "pirate village", "desert", "frozen village", "marine", "skylands" },
     [2] = { "kingdom of rose", "green zone", "graveyard island", "snow mountain", "cafe" },
@@ -53,15 +51,15 @@ local function fromLocations(ctx)
     return nil
 end
 
--- Renvoie le numero de mer, et true si la valeur vient d'un repli.
+-- Returns the sea number, and true when the value came from a fallback.
 function SeaDetector.detect(ctx)
     local sea = fromPlaceId(ctx)
     if sea then return sea, false end
 
     sea = fromLocations(ctx)
     if sea then
-        Log.Sea("PlaceId inconnu (" .. tostring(ctx.world.placeId())
-            .. ") -- mer deduite des iles presentes :", sea)
+        Log.Sea("unknown PlaceId (" .. tostring(ctx.world.placeId())
+            .. ") -- sea inferred from present islands:", sea)
         return sea, true
     end
 
@@ -71,7 +69,7 @@ end
 function SeaDetector.update(ctx)
     local sea = SeaDetector.detect(ctx)
     if sea and sea ~= ctx.sea then
-        Log.Sea(ctx.sea and ("changement " .. ctx.sea .. " -> " .. sea) or ("mer " .. sea))
+        Log.Sea(ctx.sea and ("changed " .. ctx.sea .. " -> " .. sea) or ("sea " .. sea))
         ctx.sea = sea
     end
     return ctx.sea

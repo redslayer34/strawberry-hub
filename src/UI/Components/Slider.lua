@@ -1,13 +1,13 @@
 --=============================================================================
 -- SLIDER
 --=============================================================================
---  La barre visible fait 4 pixels, mais la zone de saisie occupe toute la
---  hauteur du corps de la ligne : viser 4 pixels au doigt est impossible.
---  C'est la difference entre un slider utilisable sur telephone et un slider
---  qui ne l'est que sur PC.
+--  The visible bar is 4 pixels tall, but the hit area spans the whole body of
+--  the row: aiming at 4 pixels with a finger is impossible. That is the
+--  difference between a slider that works on a phone and one that only works
+--  on desktop.
 --
---  Cliquer positionne immediatement (Input.makeScrubbable traite le premier
---  appui comme un deplacement), glisser continue, relacher termine.
+--  Clicking positions immediately (Input.makeScrubbable treats the first press
+--  as a move), dragging continues, releasing ends.
 --=============================================================================
 
 local Input = require("UI.Input")
@@ -57,7 +57,7 @@ function Slider.new(parent, opts, order)
         Parent = self.row.right,
     })
 
-    -- Zone de saisie : toute la hauteur du corps, transparente.
+    -- Hit area: the full height of the body, transparent.
     local hit = Utility.new("TextButton", {
         Name = "Hit",
         Size = UDim2.new(1, 0, 1, 0),
@@ -132,8 +132,8 @@ function Slider.new(parent, opts, order)
     end)
     maid:give(function() Theme.unregister(painterId) end)
 
-    -- Conversion position ecran -> valeur. Pas d'animation pendant le
-    -- glissement : le curseur doit coller au doigt.
+    -- Screen position to value. No animation while scrubbing: the handle must
+    -- stay under the finger.
     local function scrubTo(position)
         if self.destroyed then return end
         local origin = bar.AbsolutePosition.X
@@ -153,14 +153,14 @@ function Slider.new(parent, opts, order)
     return self
 end
 
--- silent : n'appelle pas le callback. immediate : pas d'animation (glissement).
+-- silent : skips the callback. immediate : no animation (used while dragging).
 function Slider:SetValue(value, silent, immediate)
     value = Utility.clamp(tonumber(value) or self.min, self.min, self.max)
     value = Utility.round(value, self.rounding)
 
     if value == self.value then
-        -- Reaffiche quand meme : un glissement borne doit repositionner le
-        -- curseur sur la butee plutot que de le laisser suivre le doigt.
+        -- Still re-render: a scrub past the end must park the handle on the
+        -- limit rather than let it keep following the finger.
         self.render(not immediate)
         return self
     end
@@ -170,7 +170,7 @@ function Slider:SetValue(value, silent, immediate)
 
     if not silent and self.callback then
         local ok, err = pcall(self.callback, value)
-        if not ok then warn("[UI] Slider callback : " .. tostring(err)) end
+        if not ok then warn("[UI] Slider callback: " .. tostring(err)) end
     end
     return self
 end

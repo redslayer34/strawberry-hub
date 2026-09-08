@@ -1,11 +1,11 @@
 --=============================================================================
 -- LABEL & DIVIDER
 --=============================================================================
---  Deux elements passifs, regroupes parce qu'ils partagent la meme absence
---  d'interaction : ni clic, ni survol, ni callback.
+--  Two passive elements, grouped because they share the same absence of
+--  interaction: no click, no hover, no callback.
 --
---  Le Label sert a afficher un etat qui change (progression, statut) : d'ou
---  SetText, et le retour a la ligne automatique pour un texte long.
+--  The Label exists to show state that changes (progress, status) — hence
+--  SetText, and wrapping for long text.
 --=============================================================================
 
 local Theme = require("UI.Theme")
@@ -79,9 +79,9 @@ function Divider.new(parent, opts, order)
     local maid = Utility.maid()
     self.maid = maid
 
-    -- Le conteneur transparent donne la respiration ; seul le trait d'un
-    -- pixel est visible. Un separateur qui touche les elements voisins ne
-    -- separe rien.
+    -- The transparent holder provides the breathing room; only the one-pixel
+    -- line is visible. A separator flush against its neighbours separates
+    -- nothing.
     local holder = Utility.new("Frame", {
         Name = "Divider",
         Size = UDim2.new(1, 0, 0, 9),

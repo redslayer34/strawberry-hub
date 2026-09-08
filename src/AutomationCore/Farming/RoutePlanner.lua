@@ -1,20 +1,19 @@
 --=============================================================================
--- ROUTE PLANNER — quelle quete prendre, et pourquoi celle-la
+-- ROUTE PLANNER — which quest to take, and why that one
 --=============================================================================
---  L'ancienne selection tenait en une ligne : la premiere entree de la table
---  dont [Min, Max] contient le niveau. Elle ignorait tout le reste — que le
---  mob n'existe pas sur ce serveur, qu'il n'en reste que deux, qu'ils sont a
---  quatre mille studs, ou qu'une autre quete rapporte davantage.
+--  The old selection was one line: the first table entry whose [Min, Max]
+--  contains the level. It ignored everything else -- that the mob does not
+--  exist on this server, that only two are left, that they are four thousand
+--  studs away, or that another quest pays better.
 --
---  Ici la table historique n'est plus qu'un CATALOGUE de quetes possibles :
---  elle fournit des identifiants de quete et des noms de cible, jamais une
---  verite de position. Chaque candidate est notee sur ce qui est reellement
---  observable maintenant :
+--  Here the historical table is only a CATALOGUE of possible quests: it
+--  supplies quest ids and target names, never a positional truth. Each
+--  candidate is scored on what is actually observable right now:
 --
---      niveau  x  disponibilite de la cible  x  densite  x  distance  x  gain
+--      level  x  target availability  x  density  x  distance  x  reward
 --
---  Une quete dont la cible n'existe pas sur ce serveur tombe a zero, quelle
---  que soit sa place dans la table.
+--  A quest whose target does not exist on this server scores zero, wherever it
+--  sits in the table.
 --=============================================================================
 
 local IslandDetector = require("AutomationCore.Perception.IslandDetector")
@@ -23,18 +22,17 @@ local Names = require("AutomationCore.Names")
 
 local RoutePlanner = {}
 
--- Distance max entre une coordonnee historique et une ile publiee pour
--- qu'on accepte de les associer. Au-dela, la table est trop perimee pour
--- servir meme d'indice.
+-- Maximum distance between a historical coordinate and a published island for
+-- us to accept the association. Beyond that, the table is too stale to serve
+-- even as a hint.
 local ISLAND_SNAP = 2500
 
 ---------------------------------------------------------------------------
 -- Catalogue
 ---------------------------------------------------------------------------
 
--- Convertit une entree de la table historique en candidate exploitable.
--- Les CFrame ne sont conserves que comme replis de dernier recours, jamais
--- comme destination directe.
+-- Turns a historical table row into a usable candidate. The CFrames are kept
+-- only as last-resort fallbacks, never as a direct destination.
 local function toCandidate(ctx, row)
     local canonical = Names.normalize(row.Name)
     if not canonical then return nil end
@@ -48,16 +46,16 @@ local function toCandidate(ctx, row)
         maxLevel = row.Max or math.huge,
         sea = row.Sea,
         entrance = row.Entrance,
-        -- Confiance 6. Utilises uniquement si toute detection a echoue.
+        -- Trust level 6. Used only if all detection has failed.
         giverFallback = row.QCF and row.QCF.Position or nil,
         mobFallback = row.MonCF and row.MonCF.Position or nil,
     }
 end
 
--- Ile la plus proche de la coordonnee historique. Astuce utile : la vieille
--- coordonnee ne sert pas de destination, elle sert a NOMMER la zone, et le
--- nom est ensuite resolu sur la position publiee par le jeu. Une ile
--- deplacee reste donc trouvable tant qu'elle n'a pas change de nom.
+-- Island nearest the historical coordinate. A useful trick: the old coordinate
+-- is not used as a destination, it is used to NAME the zone, and the name is
+-- then resolved against the position the game publishes. A relocated island
+-- stays findable as long as it has not been renamed.
 function RoutePlanner.islandFor(ctx, fallbackPosition)
     if not fallbackPosition then return nil end
 
@@ -72,17 +70,17 @@ function RoutePlanner.islandFor(ctx, fallbackPosition)
 end
 
 ---------------------------------------------------------------------------
--- Notation
+-- Scoring
 ---------------------------------------------------------------------------
 
--- Chaque facteur est un multiplicateur : un facteur nul elimine la candidate
--- au lieu de se faire compenser par les autres.
+-- Each factor is a multiplier: a zero factor eliminates the candidate rather
+-- than being offset by the others.
 local function scoreCandidate(ctx, scanner, candidate, level)
-    -- Mer : une quete d'une autre mer n'est pas atteignable d'ici.
+    -- Sea: a quest in another sea is not reachable from here.
     if candidate.sea and ctx.sea and candidate.sea ~= ctx.sea then return 0 end
 
-    -- Niveau. Dans la fourchette : plein tarif. En dessous : elimine (les
-    -- mobs tuent). Au-dessus : penalise, le gain d'experience s'effondre.
+    -- Level. Inside the band: full marks. Below: eliminated (the mobs kill).
+    -- Above: penalised, since the experience gain collapses.
     local levelFactor
     if level < candidate.minLevel then
         return 0
@@ -93,17 +91,17 @@ local function scoreCandidate(ctx, scanner, candidate, level)
         levelFactor = math.max(0.05, 1 - excess / 400)
     end
 
-    -- Disponibilite : la cible existe-t-elle vraiment, ici, maintenant ?
-    -- C'est le facteur qui manquait completement a l'ancienne selection.
+    -- Availability: does the target really exist, here, now? This is the
+    -- factor the old selection lacked entirely.
     local live = scanner:candidatesFor(candidate.targetName)
     local count = #live
     local availability = count > 0 and 1 or 0.08
 
-    -- Densite : un paquet de dix mobs vaut mieux qu'un mob isole. Plafonnee
-    -- pour qu'une zone tres peuplee ne domine pas le reste du calcul.
+    -- Density: a pack of ten beats a lone mob. Capped so a very crowded zone
+    -- does not dominate the rest of the calculation.
     local density = 1 + math.min(count, 12) / 12
 
-    -- Distance : mesuree sur les mobs reels quand il y en a, sinon sur l'ile.
+    -- Distance: measured against real mobs when there are any, else the island.
     local distance
     if count > 0 then
         local here = ctx:pos()
@@ -121,8 +119,8 @@ local function scoreCandidate(ctx, scanner, candidate, level)
         distanceFactor = 1 / (1 + distance / 2500)
     end
 
-    -- Gain : approxime par le palier de la quete. Les paliers hauts donnent
-    -- nettement plus d'experience par kill.
+    -- Reward: approximated by the quest's level band. High bands give markedly
+    -- more experience per kill.
     local reward = 1 + (candidate.minLevel / 2000)
 
     return levelFactor * availability * density * distanceFactor * reward
@@ -132,7 +130,7 @@ end
 -- Selection
 ---------------------------------------------------------------------------
 
--- Renvoie le meilleur plan, ou nil. `preferBoss` reserve a BossFarm.
+-- Returns the best plan, or nil. `preferBoss` is reserved for BossFarm.
 function RoutePlanner.plan(ctx, scanner, opts)
     opts = opts or {}
     local catalogue = ctx.legacyConfig.Quests or {}
@@ -150,30 +148,30 @@ function RoutePlanner.plan(ctx, scanner, opts)
     end
 
     if not best then
-        Log.Quest("aucune quete exploitable (niveau", level, ", mer", tostring(ctx.sea) .. ")")
+        Log.Quest("no usable quest (level", level, ", sea", tostring(ctx.sea) .. ")")
         return nil
     end
 
     best.score = bestScore
     best.island = RoutePlanner.islandFor(ctx, best.mobFallback or best.giverFallback)
 
-    -- Indices d'identification du donneur. L'identifiant de quete est le plus
-    -- discriminant : il porte le nom de la zone ("DesertQuest", "SnowQuest").
+    -- Identification hints for the giver. The quest id is the most
+    -- discriminating: it carries the zone name ("DesertQuest", "SnowQuest").
     best.hints = {
         best.questId or "",
         best.targetRaw or "",
         best.island or "",
     }
 
-    Log.Quest(string.format("plan : %s niveau %d -> %s (score %.2f%s)",
+    Log.Quest(string.format("plan: %s level %d -> %s (score %.2f%s)",
         tostring(best.questId), best.questLevel, best.targetRaw, bestScore,
-        best.island and (", ile " .. best.island) or ""))
+        best.island and (", island " .. best.island) or ""))
 
     return best
 end
 
--- Le plan reste-t-il pertinent ? Un changement de niveau peut ouvrir une
--- meilleure quete, et une cible qui disparait du serveur en invalide une.
+-- Is the plan still relevant? A level change can open a better quest, and a
+-- target vanishing from the server invalidates one.
 function RoutePlanner.isStale(ctx, plan, scanner)
     if not plan then return true end
     local level = ctx.player.level()

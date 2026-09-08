@@ -1,14 +1,14 @@
 --=============================================================================
--- TARGETED FARM — moteur commun aux farms sans quete
+-- TARGETED FARM — the engine shared by the questless farming modes
 --=============================================================================
---  MaterialFarm et MasteryFarm posent la meme question au systeme : "frappe
---  ce mob-la, en boucle". Seule la maniere de CHOISIR le mob differe. Ce
---  module porte donc tout le cycle (scan, voyage, bring, combat, recuperation)
---  et laisse a l'appelant la seule decision qui lui appartient : l'objectif.
+--  MaterialFarm and MasteryFarm ask the system the same thing: "hit that mob,
+--  repeatedly". Only the way they CHOOSE the mob differs. So this module
+--  carries the whole cycle (scan, travel, bring, combat, recovery) and leaves
+--  the caller the one decision that is theirs: the objective.
 --
---  L'objectif a la meme forme qu'un QuestState, ce qui garantit que
---  TargetValidator lui applique exactement les memes controles — y compris
---  l'exclusion des boss, qu'aucun de ces deux modes ne leve.
+--  The objective has the same shape as a QuestState, which guarantees
+--  TargetValidator applies exactly the same checks to it -- including the boss
+--  exclusion, which neither of these modes lifts.
 --=============================================================================
 
 local AttackController = require("AutomationCore.Combat.AttackController")
@@ -24,9 +24,9 @@ local TravelController = require("AutomationCore.Movement.TravelController")
 local TargetedFarm = {}
 TargetedFarm.__index = TargetedFarm
 
--- label : etiquette de journal ("Material", "Mastery").
--- selector : function() -> nom de mob souhaite, ou nil. Rappele quand
---            l'objectif courant n'est plus tenable.
+-- label : journal tag ("Material", "Mastery").
+-- selector : function() -> wanted mob name, or nil. Called again whenever the
+--            current objective no longer holds.
 function TargetedFarm.new(ctx, perception, recovery, label, selector)
     local self = setmetatable({
         ctx = ctx,
@@ -37,7 +37,7 @@ function TargetedFarm.new(ctx, perception, recovery, label, selector)
         objective = nil,
         bring = BringController.new(ctx),
         attack = AttackController.new(ctx),
-        onEngage = nil,     -- crochet appele avant chaque combat
+        onEngage = nil,     -- hook called before each engagement
         machine = nil,
     }, TargetedFarm)
 
@@ -46,8 +46,8 @@ function TargetedFarm.new(ctx, perception, recovery, label, selector)
     return self
 end
 
--- Objectif synthetique. Volontairement sans AllowBoss : ces modes n'ont
--- aucune raison d'engager un boss, et le validateur les exclura.
+-- Synthetic objective. Deliberately without AllowBoss: these modes have no
+-- reason to engage a boss, and the validator will exclude them.
 function TargetedFarm:setTarget(name)
     local canonical = Names.normalize(name)
     if not canonical then
@@ -67,9 +67,9 @@ function TargetedFarm:setTarget(name)
         Remaining = math.huge,
         IsBossQuest = false,
     }
-    -- La region du cycle precedent portait sur un autre mob.
+    -- The previous cycle's region applied to a different mob.
     self.ctx.region = nil
-    Log.write(self.label, "cible =", name)
+    Log.write(self.label, "target =", name)
     return true
 end
 
@@ -96,8 +96,8 @@ function TargetedFarm:defineStates()
             end,
         },
 
-        -- Le choix du mob est rejoue regulierement : sur un nouveau serveur,
-        -- le meilleur candidat n'est pas le meme.
+        -- The mob choice is replayed regularly: on a new server the best
+        -- candidate is not the same one.
         SELECT = {
             timeout = 15,
             onTimeout = function()
@@ -142,8 +142,8 @@ function TargetedFarm:defineStates()
 
                 local status = TargetTravel.step(ctx, nil)
                 if status == "unknown" then
-                    -- Ni cible ni region : ce mob n'existe pas ici. On
-                    -- redemande un candidat plutot que d'insister.
+                    -- No target and no region: this mob does not exist here.
+                    -- Ask for another candidate rather than insisting.
                     self.objective = nil
                     return "SELECT"
                 end
@@ -193,8 +193,8 @@ function TargetedFarm:defineStates()
 
                 local status = self.attack:engage(found, self.objective)
                 if status == "killed" then
-                    -- Un kill ne fait pas sortir de l'etat : on enchaine sur
-                    -- la cible suivante sans repasser par le scan complet.
+                    -- A kill does not leave the state: move on to the next
+                    -- target without going through a full scan.
                     self.machine.enteredAt = os.clock()
                     return nil
                 end
@@ -207,15 +207,15 @@ function TargetedFarm:defineStates()
         RECOVERY = {
             enter = function()
                 perception:setCombat(false)
-                self.attack:clear("recuperation")
+                self.attack:clear("recovery")
                 self.bring:detach()
                 ctx.bringActive = false
             end,
             update = function()
                 local resume = self.recovery:step()
                 if not resume then return nil end
-                -- La recuperation raisonne en etats de QuestFarm : on les
-                -- ramene sur ceux d'ici.
+                -- The recovery controller thinks in QuestFarm states: map them
+                -- back onto this machine's.
                 if resume == "SERVER_HOP" then return "SERVER_HOP" end
                 if resume == "SCAN_TARGETS" or resume == "BUILD_TARGET_GROUP"
                     or resume == "BRING_TARGETS" then
@@ -229,7 +229,7 @@ function TargetedFarm:defineStates()
             timeout = 30,
             onTimeout = "IDLE",
             enter = function()
-                ctx.map:clear("changement de serveur")
+                ctx.map:clear("server change")
                 self.objective = nil
                 pcall(function() ctx.server.hop(true) end)
             end,
@@ -237,12 +237,12 @@ function TargetedFarm:defineStates()
         },
     })
 
-    self.machine:goTo("IDLE", "demarrage")
+    self.machine:goTo("IDLE", "startup")
 end
 
 function TargetedFarm:update()
     if not self.ctx.flags.farming() then
-        if not self.machine:is("IDLE") then self.machine:goTo("IDLE", "farm arrete") end
+        if not self.machine:is("IDLE") then self.machine:goTo("IDLE", "farm stopped") end
         return
     end
     self.perception:update(false)
@@ -251,14 +251,14 @@ end
 
 function TargetedFarm:stop()
     self.bring:detach()
-    self.attack:clear("arret")
+    self.attack:clear("stop")
     TravelController.stop(self.ctx)
     self.objective = nil
-    self.machine:goTo("IDLE", "arret")
+    self.machine:goTo("IDLE", "stop")
 end
 
 function TargetedFarm:describe()
-    return string.format("[%s] %s cible=%s", tostring(self.machine.current),
+    return string.format("[%s] %s target=%s", tostring(self.machine.current),
         self.label, self.objective and self.objective.TargetRaw or "-")
 end
 

@@ -1,17 +1,16 @@
 --=============================================================================
--- QUEST GIVER RESOLVER — identifier le donneur, pas retenir sa position
+-- QUEST GIVER RESOLVER — identify the giver, do not memorise its position
 --=============================================================================
---  L'ancienne approche stockait QuestGiver = CFrame.new(...). Une mise a jour
---  qui deplace le PNJ de trois metres suffisait alors a casser le farm, sans
---  aucun moyen de s'en apercevoir.
+--  The old approach stored QuestGiver = CFrame.new(...). An update moving the
+--  NPC three metres was then enough to break the farm, with no way to notice.
 --
---  Ici on identifie le PNJ par ce qu'il EST : son nom, le texte de son
---  invite d'interaction, les etiquettes qu'il porte. Sa position n'est qu'une
---  consequence, mise en cache pour ne pas rebalayer le dossier NPCs a chaque
---  frame, et invalidee des que quoi que ce soit bouge.
+--  Here the NPC is identified by what it IS: its name, the text of its
+--  interaction prompt, the labels it carries. Its position is only a
+--  consequence, cached so the NPCs folder is not re-swept every frame, and
+--  invalidated the moment anything moves.
 --
---  Le cache tombe sur : changement de serveur, de mer, d'ile, PNJ introuvable,
---  interaction ratee, deplacement detecte, expiration.
+--  The cache drops on: server change, sea change, island change, NPC missing,
+--  failed interaction, detected movement, expiry.
 --=============================================================================
 
 local Log = require("AutomationCore.Log")
@@ -20,13 +19,13 @@ local Trust = require("AutomationCore.Trust")
 
 local QuestGiverResolver = {}
 
--- En dessous, on considere qu'aucun PNJ ne correspond : mieux vaut declarer
--- l'echec et laisser la recuperation agir que d'aller parler au mauvais.
+-- Below this, no NPC is considered a match: better to declare failure and let
+-- recovery act than to go and talk to the wrong one.
 local MIN_SCORE = 0.34
-local MOVE_TOLERANCE = 15      -- studs avant de considerer que le PNJ a bouge
+local MOVE_TOLERANCE = 15      -- studs before the NPC counts as having moved
 
 ---------------------------------------------------------------------------
--- Identite d'un PNJ
+-- NPC identity
 ---------------------------------------------------------------------------
 
 local function rootOf(model)
@@ -36,8 +35,8 @@ local function rootOf(model)
     return model:FindFirstChildWhichIsA("BasePart")
 end
 
--- Tout ce que le PNJ dit de lui-meme : son nom, ses invites, ses etiquettes.
--- C'est le niveau NPC_IDENTITY de la hierarchie de confiance.
+-- Everything the NPC says about itself: its name, its prompts, its labels.
+-- This is the NPC_IDENTITY level of the trust hierarchy.
 local function identityTokens(model)
     local tokens = { model.Name }
     local interactive = false
@@ -50,8 +49,8 @@ local function identityTokens(model)
         elseif node:IsA("ClickDetector") then
             interactive = true
         elseif node:IsA("TextLabel") and node.Text ~= "" then
-            -- Panneau flottant au-dessus du PNJ : porte souvent le nom de la
-            -- quete plutot que celui du personnage.
+            -- Floating sign above the NPC: often carries the quest name rather
+            -- than the character's.
             tokens[#tokens + 1] = node.Text
         end
     end
@@ -60,7 +59,7 @@ local function identityTokens(model)
 end
 
 -- hints : { questId = "DesertQuest", target = "desert bandit", island = "Desert" }
--- Chaque indice est compare a chaque jeton ; on garde le meilleur accord.
+-- Each hint is compared to each token; the best agreement wins.
 local function scoreAgainst(tokens, hints)
     local best = 0
     for _, token in ipairs(tokens) do
@@ -75,10 +74,10 @@ local function scoreAgainst(tokens, hints)
 end
 
 ---------------------------------------------------------------------------
--- Recherche
+-- Search
 ---------------------------------------------------------------------------
 
--- Renvoie { model, root, position, name, score } ou nil.
+-- Returns { model, root, position, name, score } or nil.
 function QuestGiverResolver.find(ctx, hints, near)
     local folder = ctx.world.npcs()
     if not folder then return nil end
@@ -96,12 +95,12 @@ function QuestGiverResolver.find(ctx, hints, near)
             local tokens, interactive = identityTokens(model)
             local value = scoreAgainst(tokens, hints)
 
-            -- Un PNJ interactif est un meilleur candidat qu'un figurant qui
-            -- porterait le meme mot dans son nom.
+            -- An interactive NPC is a better candidate than a bystander that
+            -- happens to share a word in its name.
             if interactive then value = value * 1.15 end
 
-            -- Bonus de proximite avec la zone de la quete : un donneur se
-            -- trouve sur la meme ile que ses mobs. Jamais determinant seul.
+            -- Proximity bonus to the quest area: a giver sits on the same
+            -- island as its mobs. Never decisive on its own.
             if near then
                 local d = (root.Position - near).Magnitude
                 if d < 600 then value = value * 1.2
@@ -133,24 +132,24 @@ local function cacheKey(hints)
     return table.concat(hints, "|")
 end
 
--- Resolution complete, hierarchie de confiance appliquee :
---   3. identite d'un PNJ present
---   5. donneur retenu plus tot sur CE serveur
---   6. coordonnee figee de la table historique (dernier recours)
+-- Full resolution with the trust hierarchy applied:
+--   3. identity of a present NPC
+--   5. a giver settled on earlier on THIS server
+--   6. a frozen coordinate from the historical table (last resort)
 function QuestGiverResolver.resolve(ctx, hints, near, staticFallback)
     local key = cacheKey(hints)
 
-    local position, level = Trust.resolve("donneur de quete", {
+    local position, level = Trust.resolve("quest giver", {
         {
             level = Trust.LEVEL.NPC_IDENTITY,
-            why = "PNJ identifie dans le Workspace",
+            why = "NPC identified in the Workspace",
             get = function()
                 local found = QuestGiverResolver.find(ctx, hints, near)
                 if not found then return nil end
 
                 local model, origin = found.model, found.position
-                -- Le cache ne survit pas au PNJ : s'il disparait ou se
-                -- deplace, l'entree se declare invalide d'elle-meme.
+                -- The cache does not outlive the NPC: if it disappears or
+                -- moves, the entry declares itself invalid.
                 ctx.map:put("QuestGivers", key, origin, {
                     name = found.name, score = found.score,
                 }, function()
@@ -166,12 +165,12 @@ function QuestGiverResolver.resolve(ctx, hints, near, staticFallback)
         },
         {
             level = Trust.LEVEL.SERVER_MEMORY,
-            why = "donneur memorise sur ce serveur",
+            why = "giver remembered on this server",
             get = function() return ctx.map:get("QuestGivers", key) end,
         },
         {
             level = Trust.LEVEL.STATIC_FALLBACK,
-            why = "coordonnee de la table historique",
+            why = "coordinate from the historical table",
             get = function() return staticFallback end,
         },
     })
@@ -179,11 +178,11 @@ function QuestGiverResolver.resolve(ctx, hints, near, staticFallback)
     return position, level
 end
 
--- Interaction ratee : on jette immediatement ce qu'on croyait savoir. Sans
--- cela le script retourne indefiniment au meme endroit vide.
+-- Failed interaction: drop what we thought we knew immediately. Without this
+-- the script keeps returning to the same empty spot forever.
 function QuestGiverResolver.markFailed(ctx, hints, reason)
-    ctx.map:invalidate("QuestGivers", cacheKey(hints), reason or "interaction echouee")
-    Log.QuestGiver("cache invalide --", reason or "interaction echouee")
+    ctx.map:invalidate("QuestGivers", cacheKey(hints), reason or "interaction failed")
+    Log.QuestGiver("cache invalidated --", reason or "interaction failed")
 end
 
 return QuestGiverResolver

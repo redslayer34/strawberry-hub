@@ -1,14 +1,14 @@
 --=============================================================================
--- SERVER HOP — changer de serveur, mais pas en boucle
+-- SERVER HOP — change server, but not in a loop
 --=============================================================================
---  Le changement de serveur est l'outil le plus couteux du systeme : une
---  minute de chargement, toute la memoire de carte jetee, la detection a
---  refaire. Il n'est justifie que lorsque le probleme vient reellement du
---  serveur — un boss absent, une zone vide sur ce shard.
+--  A server change is the most expensive tool in the system: a minute of
+--  loading, the whole map memory thrown away, detection to redo. It is only
+--  justified when the problem really is the server -- a missing boss, an empty
+--  zone on this shard.
 --
---  Le piege classique est la boucle : on saute, la nouvelle destination
---  presente le meme symptome, on ressaute. Ce module l'empeche par un delai
---  minimal entre deux sauts et un plafond sur une fenetre glissante.
+--  The classic trap is the loop: you hop, the new place shows the same
+--  symptom, you hop again. This module prevents it with a minimum delay
+--  between hops and a cap over a sliding window.
 --=============================================================================
 
 local Log = require("AutomationCore.Log")
@@ -16,9 +16,9 @@ local Log = require("AutomationCore.Log")
 local ServerHop = {}
 ServerHop.__index = ServerHop
 
-local MIN_INTERVAL = 45      -- s entre deux sauts
-local WINDOW = 600           -- fenetre d'observation (s)
-local MAX_IN_WINDOW = 5      -- sauts autorises dans la fenetre
+local MIN_INTERVAL = 45      -- s between two hops
+local WINDOW = 600           -- observation window (s)
+local MAX_IN_WINDOW = 5      -- hops allowed within the window
 
 function ServerHop.new(ctx)
     return setmetatable({
@@ -35,33 +35,33 @@ local function prune(self, now)
     end
 end
 
--- Vrai si un saut est autorise maintenant, sinon false + motif.
+-- True when a hop is allowed right now, otherwise false plus a reason.
 function ServerHop:allowed()
     local now = os.clock()
 
     if now < self.blockedUntil then
-        return false, "en attente apres saturation"
+        return false, "cooling down after saturation"
     end
     if now - self.lastHop < MIN_INTERVAL then
-        return false, string.format("dernier saut il y a %.0f s", now - self.lastHop)
+        return false, string.format("last hop %.0f s ago", now - self.lastHop)
     end
 
     prune(self, now)
     if #self.history >= MAX_IN_WINDOW then
-        -- Trop de sauts rapproches : le probleme n'est probablement pas le
-        -- serveur. On se bloque le temps de laisser la situation evoluer.
+        -- Too many hops close together: the problem is probably not the
+        -- server. Block ourselves and let the situation move on.
         self.blockedUntil = now + WINDOW / 2
-        return false, "trop de sauts recents"
+        return false, "too many recent hops"
     end
 
     return true
 end
 
--- lowestOnly : viser les serveurs les moins peuples (spawns plus stables).
+-- lowestOnly : aim for the least populated servers (steadier spawns).
 function ServerHop:hop(reason, lowestOnly)
     local ok, why = self:allowed()
     if not ok then
-        Log.ServerHop("refuse --", why)
+        Log.ServerHop("refused --", why)
         return false
     end
 
@@ -69,22 +69,22 @@ function ServerHop:hop(reason, lowestOnly)
     self.lastHop = now
     self.history[#self.history + 1] = now
 
-    Log.ServerHop("saut --", reason or "non precise")
+    Log.ServerHop("hopping --", reason or "unspecified")
 
-    -- Tout ce qui a ete appris ici sera faux ailleurs.
-    self.ctx.map:clear("changement de serveur")
+    -- Everything learned here will be wrong elsewhere.
+    self.ctx.map:clear("server change")
     self.ctx.region = nil
     self.ctx.questGiver = nil
 
     local sent = pcall(function()
         self.ctx.server.hop(lowestOnly ~= false)
     end)
-    if not sent then Log.ServerHop("le runtime a refuse le saut") end
+    if not sent then Log.ServerHop("the runtime refused the hop") end
     return sent
 end
 
 function ServerHop:describe()
-    return string.format("%d saut(s) sur la fenetre", #self.history)
+    return string.format("%d hop(s) in the window", #self.history)
 end
 
 return ServerHop

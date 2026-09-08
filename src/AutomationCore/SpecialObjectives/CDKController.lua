@@ -1,23 +1,22 @@
 --=============================================================================
--- CDK CONTROLLER — Cursed Dual Katana, totalement independant du QuestFarm
+-- CDK CONTROLLER — Cursed Dual Katana, fully independent of QuestFarm
 --=============================================================================
---  Aucune dependance vers QuestFarm, et reciproquement : les deux se
---  branchent sur le meme AutomationCore par l'interface d'objectif special
---  (requirements / step / describe / stop). Couper l'un n'affecte pas l'autre.
+--  No dependency on QuestFarm, and none the other way: both plug into the same
+--  AutomationCore through the special-objective interface (requirements /
+--  step / describe / stop). Switching one off does not affect the other.
 --
---  Principe directeur, identique au reste : on ne suppose PAS que le puzzle
---  se trouve a l'etape ou on l'a laisse. A chaque pas, on DETECTE l'epreuve
---  reellement active. Un ordre d'epreuves code en dur (Trial1, Trial2, ...)
---  casse des que le jeu reorganise le puzzle, et surtout il rend impossible
---  la reprise en cours de route — cas normal quand on rejoint un serveur ou
---  quelqu'un a deja avance.
+--  Guiding principle, the same as everywhere else: we do NOT assume the puzzle
+--  is where we left it. On every step we DETECT the trial that is actually
+--  active. A hardcoded trial order (Trial1, Trial2, ...) breaks the moment the
+--  game reorganises the puzzle, and above all it makes resuming mid-way
+--  impossible -- the normal case when joining a server where someone has
+--  already made progress.
 --
 --  ------------------------------------------------------------------------
---  A VERIFIER EN JEU : la table SIGNALS ci-dessous decrit COMMENT reconnaitre
---  chaque epreuve, pas ou elle se trouve. Les noms d'instances candidats sont
---  ceux observes publiquement ; ils doivent etre confirmes serveur en main.
---  C'est volontairement une table de DONNEES : corriger un nom ne demande de
---  toucher a aucun algorithme.
+--  TO VERIFY IN GAME: the SIGNALS table below describes HOW to recognise each
+--  trial, not where it is. The candidate instance names are the publicly
+--  observed ones; they need confirming with a live server. This is
+--  deliberately a DATA table: fixing a name means touching no algorithm.
 --  ------------------------------------------------------------------------
 --=============================================================================
 
@@ -30,12 +29,11 @@ local CDKController = {}
 CDKController.__index = CDKController
 
 ---------------------------------------------------------------------------
--- Pre-requis
+-- Requirements
 ---------------------------------------------------------------------------
 
--- Maitrise d'une arme. Le jeu range cette valeur sous des noms differents
--- selon les outils : on essaie les variantes connues plutot que d'en imposer
--- une seule.
+-- Weapon mastery. The game stores this value under different names depending
+-- on the tool, so we try the known variants rather than mandating one.
 local MASTERY_FIELDS = { "Level", "Mastery", "MasteryLevel", "Exp" }
 
 local function findTool(ctx, toolName)
@@ -71,51 +69,50 @@ local function masteryOf(tool)
 end
 
 ---------------------------------------------------------------------------
--- Detection de l'epreuve active
+-- Detecting the active trial
 ---------------------------------------------------------------------------
 
--- Chaque signal decrit une facon de reconnaitre une etape. `match` recoit le
--- contexte et rend true quand l'etape est active. Ajouter une epreuve = une
--- entree de plus, sans toucher a la machine.
+-- Each signal describes a way of recognising a step. `match` takes the context
+-- and returns true when that step is active. Adding a trial means one more
+-- entry, without touching the machine.
 local SIGNALS = {
     {
         id = "scroll",
-        label = "recuperation du parchemin",
+        label = "scroll pickup",
         containers = { "Scroll", "CursedScroll", "Katana Scroll" },
     },
     {
         id = "trial_sword",
-        label = "epreuve de l'epee",
+        label = "sword trial",
         containers = { "SwordTrial", "Trial1", "TrialSword" },
     },
     {
         id = "trial_fruit",
-        label = "epreuve du fruit",
+        label = "fruit trial",
         containers = { "FruitTrial", "Trial2", "TrialFruit" },
     },
     {
         id = "trial_gun",
-        label = "epreuve de l'arme a feu",
+        label = "gun trial",
         containers = { "GunTrial", "Trial3", "TrialGun" },
     },
     {
         id = "final_boss",
-        label = "boss final",
+        label = "final boss",
         containers = { "CursedCaptain", "Final Boss", "Boss" },
     },
 }
 
--- Cherche, n'importe ou sous le Workspace, un conteneur portant l'un des
--- noms candidats ET actuellement visible/actif. La visibilite est le vrai
--- signal : un dossier d'epreuve existe souvent en permanence, seul son etat
--- change.
+-- Looks anywhere under the Workspace for a container carrying one of the
+-- candidate names AND currently visible/active. Visibility is the real signal:
+-- a trial folder often exists permanently, only its state changes.
 local function containerActive(node)
     if not node or not node.Parent then return false end
 
     local enabled = node:GetAttribute("Active")
     if enabled ~= nil then return enabled == true end
 
-    -- Une epreuve en cours expose au moins un element interactif ou visible.
+    -- A trial in progress exposes at least one interactive or visible element.
     for _, child in ipairs(node:GetDescendants()) do
         if child:IsA("ProximityPrompt") and child.Enabled then return true end
         if child:IsA("BasePart") and child.Transparency < 1 and child.CanCollide then
@@ -134,7 +131,7 @@ local function findContainer(names)
 end
 
 ---------------------------------------------------------------------------
--- Controleur
+-- Controller
 ---------------------------------------------------------------------------
 
 function CDKController.new(ctx, perception, recovery)
@@ -155,47 +152,48 @@ function CDKController.new(ctx, perception, recovery)
     return self
 end
 
--- Interface d'objectif special : pre-conditions verifiables AVANT de lancer
--- quoi que ce soit. Echouer ici coute une ligne de journal ; echouer en
--- cours de puzzle coute la tentative.
+-- Special-objective interface: verifiable preconditions BEFORE anything is
+-- started. Failing here costs one journal line; failing mid-puzzle costs the
+-- attempt.
 function CDKController:requirements()
     local ctx = self.ctx
     local cfg = ctx.cfg.CDK
 
     local level = ctx.player.level()
     if level < cfg.MinLevel then
-        return false, string.format("niveau %d < %d requis", level, cfg.MinLevel)
+        return false, string.format("level %d < %d required", level, cfg.MinLevel)
     end
 
     local yama = findTool(ctx, "Yama")
-    if not yama then return false, "Yama non obtenue" end
+    if not yama then return false, "Yama not obtained" end
 
     local tushita = findTool(ctx, "Tushita")
-    if not tushita then return false, "Tushita non obtenue" end
+    if not tushita then return false, "Tushita not obtained" end
 
     local yamaMastery = masteryOf(yama)
     if yamaMastery and yamaMastery < cfg.MinYamaMastery then
-        return false, string.format("maitrise Yama %d < %d",
+        return false, string.format("Yama mastery %d < %d",
             yamaMastery, cfg.MinYamaMastery)
     end
 
     local tushitaMastery = masteryOf(tushita)
     if tushitaMastery and tushitaMastery < cfg.MinTushitaMastery then
-        return false, string.format("maitrise Tushita %d < %d",
+        return false, string.format("Tushita mastery %d < %d",
             tushitaMastery, cfg.MinTushitaMastery)
     end
 
-    -- Maitrise illisible : on ne bloque pas sur une lecture ratee, on
-    -- previent. Le jeu refusera de lui-meme si le pre-requis n'est pas tenu.
+    -- Unreadable mastery: do not block on a failed read, warn instead. The
+    -- game will refuse by itself if the requirement is not met.
     if not yamaMastery or not tushitaMastery then
-        Log.CDK("maitrise illisible sur au moins une lame -- verification laissee au jeu")
+        Log.CDK("mastery unreadable on at least one blade -- leaving the check to the game")
     end
 
-    Log.CDK("pre-requis satisfaits (niveau " .. level .. ")")
+    Log.CDK("requirements satisfied (level " .. level .. ")")
     return true
 end
 
--- Determine l'epreuve REELLEMENT active, sans se fier a l'ordre attendu.
+-- Works out which trial is REALLY active, without relying on the expected
+-- order.
 function CDKController:detectActiveTrial()
     for _, signal in ipairs(SIGNALS) do
         local container = findContainer(signal.containers)
@@ -239,7 +237,7 @@ function CDKController:defineStates()
                 local crypt = findContainer({ "Crypt", "CursedCrypt", "Katana Crypt" })
                 if not crypt then return nil end
                 self.crypt = crypt
-                Log.CDK("crypte reperee")
+                Log.CDK("crypt located")
                 return "OPEN_CRYPT"
             end,
         },
@@ -264,7 +262,7 @@ function CDKController:defineStates()
                     return nil
                 end
 
-                -- Sur place : l'ouverture se fait par l'invite du jeu.
+                -- On site: opening happens through the game's own prompt.
                 for _, node in ipairs(crypt:GetDescendants()) do
                     if node:IsA("ProximityPrompt") and node.Enabled then
                         pcall(function() fireproximityprompt(node) end)
@@ -274,8 +272,8 @@ function CDKController:defineStates()
             end,
         },
 
-        -- Les deux etats de detection partagent la meme lecture : c'est
-        -- l'etat reel du puzzle qui decide, pas notre progression supposee.
+        -- Both detection states share the same read: the puzzle's real state
+        -- decides, not our assumed progress.
         DETECT_CURRENT_SCROLL = {
             timeout = 20,
             onTimeout = "DETECT_CURRENT_TRIAL",
@@ -284,10 +282,10 @@ function CDKController:defineStates()
                 if not trial then return nil end
                 self.activeTrial = trial
                 if trial.id == "scroll" then
-                    Log.CDK("parchemin actif")
+                    Log.CDK("scroll active")
                     return "EXECUTE_TRIAL"
                 end
-                -- Le parchemin est deja pris : on enchaine sur l'epreuve.
+                -- The scroll is already taken: move on to the trial.
                 return "DETECT_CURRENT_TRIAL"
             end,
         },
@@ -295,7 +293,7 @@ function CDKController:defineStates()
         DETECT_CURRENT_TRIAL = {
             timeout = 30,
             onTimeout = function()
-                self.failure = "aucune epreuve detectee"
+                self.failure = "no trial detected"
                 return "FAILED"
             end,
             update = function()
@@ -305,7 +303,7 @@ function CDKController:defineStates()
                 self.activeTrial = trial
                 if trial.id == "final_boss" then return "FINAL_BOSS" end
 
-                Log.CDK("epreuve active :", trial.label)
+                Log.CDK("active trial:", trial.label)
                 return "EXECUTE_TRIAL"
             end,
         },
@@ -313,7 +311,7 @@ function CDKController:defineStates()
         EXECUTE_TRIAL = {
             timeout = ctx.cfg.CDK.TrialTimeout,
             onTimeout = function()
-                Log.CDK("epreuve non terminee dans le temps imparti")
+                Log.CDK("trial not finished within the allotted time")
                 return "DETECT_CURRENT_TRIAL"
             end,
             update = function()
@@ -322,8 +320,8 @@ function CDKController:defineStates()
                     return "DETECT_CURRENT_TRIAL"
                 end
 
-                -- L'epreuve s'est refermee : c'est le signal de reussite le
-                -- plus fiable dont on dispose cote client.
+                -- The trial closed itself: that is the most reliable success
+                -- signal available client-side.
                 if not containerActive(trial.container) then
                     return "VERIFY_TRIAL"
                 end
@@ -349,14 +347,14 @@ function CDKController:defineStates()
                 local trial = self.activeTrial
                 if not trial then return "DETECT_CURRENT_TRIAL" end
 
-                -- Verification par observation, pas par supposition : on
-                -- reconfirme que l'epreuve n'est plus active.
+                -- Verified by observation, not assumption: reconfirm the trial
+                -- is no longer active.
                 if containerActive(trial.container) then
                     return "EXECUTE_TRIAL"
                 end
 
                 self.completed[trial.id] = true
-                Log.CDK("epreuve validee :", trial.label)
+                Log.CDK("trial confirmed:", trial.label)
                 return "NEXT_TRIAL"
             end,
         },
@@ -367,8 +365,8 @@ function CDKController:defineStates()
             update = function()
                 local trial = self:detectActiveTrial()
                 if not trial then
-                    -- Plus rien d'actif : soit tout est fait, soit le puzzle
-                    -- met un instant a exposer l'etape suivante.
+                    -- Nothing active: either everything is done, or the puzzle
+                    -- takes a moment to expose the next step.
                     if self.machine:elapsed() > 6 then return "ALL_TRIALS_COMPLETE" end
                     return nil
                 end
@@ -382,13 +380,13 @@ function CDKController:defineStates()
             timeout = 20,
             onTimeout = "FINAL_BOSS",
             update = function()
-                Log.CDK("epreuves terminees")
+                Log.CDK("trials complete")
                 return "FINAL_BOSS"
             end,
         },
 
-        -- Le boss final est confie a BossFarm, qui sait deja confirmer une
-        -- mort et gerer un respawn. Aucune raison de le reimplementer ici.
+        -- The final boss is handed to BossFarm, which already knows how to
+        -- confirm a kill and handle a respawn. No reason to reimplement it.
         FINAL_BOSS = {
             timeout = 600,
             onTimeout = "FAILED",
@@ -402,7 +400,7 @@ function CDKController:defineStates()
 
                 boss:update()
                 if boss.machine:is("AWAIT_RESPAWN") or boss.machine:is("SERVER_HOP") then
-                    -- Le boss est tombe (AWAIT_RESPAWN suit CONFIRM_KILL).
+                    -- The boss is down (AWAIT_RESPAWN follows CONFIRM_KILL).
                     boss:stop()
                     return "VERIFY_REWARD"
                 end
@@ -415,7 +413,7 @@ function CDKController:defineStates()
             onTimeout = "FAILED",
             update = function()
                 if findTool(ctx, "Cursed Dual Katana") then
-                    Log.CDK("recompense obtenue")
+                    Log.CDK("reward obtained")
                     return "DONE"
                 end
                 return nil
@@ -437,10 +435,10 @@ function CDKController:defineStates()
         },
     })
 
-    self.machine:goTo("CDK_START", "demarrage CDK")
+    self.machine:goTo("CDK_START", "CDK startup")
 end
 
--- Interface d'objectif special : "running" | "done" | "failed".
+-- Special-objective interface: "running" | "done" | "failed".
 function CDKController:step()
     if self.finished then
         return self.machine:is("DONE") and "done" or "failed"
@@ -451,7 +449,7 @@ function CDKController:step()
 
     if self.machine:is("DONE") then return "done" end
     if self.machine:is("FAILED") then
-        if self.failure then Log.CDK("echec :", self.failure) end
+        if self.failure then Log.CDK("failed:", self.failure) end
         return "failed"
     end
     return "running"

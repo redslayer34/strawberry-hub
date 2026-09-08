@@ -1,10 +1,10 @@
 --=============================================================================
 -- TOGGLE
 --=============================================================================
---  Interrupteur a bascule. L'etat visuel est reconstruit par `apply`, seule
---  fonction autorisee a toucher a l'apparence : SetValue, le clic et le
---  changement de theme y passent tous, ce qui evite qu'un chemin oublie de
---  mettre a jour le bouton ou la couleur de la piste.
+--  A switch. The visual state is rebuilt by `apply`, the only function allowed
+--  to touch appearance: SetValue, the click handler and the theme change all
+--  go through it, so no path can forget to update the knob or the track
+--  colour.
 --=============================================================================
 
 local Input = require("UI.Input")
@@ -62,7 +62,7 @@ function Toggle.new(parent, opts, order)
 
     self.track, self.knob = track, knob
 
-    -- Point unique de rendu de l'etat.
+    -- Single point of state rendering.
     local function apply(animate)
         local theme = Theme.get()
         local trackColor = self.value and theme.Accent or theme.Toggle
@@ -94,8 +94,8 @@ function Toggle.new(parent, opts, order)
     return self
 end
 
--- silent : met a jour l'affichage sans declencher le callback. Utile pour
--- restaurer un etat sauvegarde sans relancer l'action associee.
+-- silent : updates the display without firing the callback. Useful for
+-- restoring a saved state without re-running the action it maps to.
 function Toggle:SetValue(value, silent)
     value = value == true
     if value == self.value then return self end
@@ -105,7 +105,7 @@ function Toggle:SetValue(value, silent)
 
     if not silent and self.callback then
         local ok, err = pcall(self.callback, value)
-        if not ok then warn("[UI] Toggle callback : " .. tostring(err)) end
+        if not ok then warn("[UI] Toggle callback: " .. tostring(err)) end
     end
     return self
 end

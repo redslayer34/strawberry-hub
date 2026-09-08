@@ -1,22 +1,21 @@
 --=============================================================================
--- INPUT — clic, survol et deplacement, souris comme tactile
+-- INPUT — click, hover and drag, mouse and touch alike
 --=============================================================================
---  Un seul module traite les entrees, pour que les composants n'aient jamais
---  a distinguer souris et doigt.
+--  A single module handles input so components never have to tell a mouse from
+--  a finger.
 --
---  Sur le deplacement : aucune boucle. Les connexions de suivi (InputChanged,
---  InputEnded) ne sont ouvertes qu'au moment ou le drag commence, et fermees
---  des qu'il finit. Au repos, une fenetre ne coute qu'une seule connexion
---  InputBegan sur sa barre de titre — contre une connexion RenderStepped
---  permanente par fenetre dans l'approche naive.
+--  On dragging: no loop. The tracking connections (InputChanged, InputEnded)
+--  are opened only when a drag starts and closed the moment it ends. At rest a
+--  window costs one InputBegan connection on its topbar — against one
+--  permanent RenderStepped connection per window in the naive approach.
 --=============================================================================
 
 local UserInputService = game:GetService("UserInputService")
 
 local Input = {}
 
--- Types d'entree traites comme un appui. Le tactile et la souris sont
--- volontairement equivalents partout.
+-- Input types treated as a press. Touch and mouse are deliberately equivalent
+-- everywhere.
 local function isPress(inputObject)
     local kind = inputObject.UserInputType
     return kind == Enum.UserInputType.MouseButton1
@@ -39,17 +38,17 @@ end
 -- Activation
 ---------------------------------------------------------------------------
 
--- `Activated` couvre le clic, le tap et la manette d'un seul coup : c'est le
--- signal a utiliser pour "l'utilisateur a valide cet element".
+-- `Activated` covers click, tap and gamepad in one: it is the signal to use
+-- for "the user confirmed this element".
 function Input.onActivate(button, callback)
     return button.Activated:Connect(function()
         local ok, err = pcall(callback)
-        if not ok then warn("[UI] callback : " .. tostring(err)) end
+        if not ok then warn("[UI] callback: " .. tostring(err)) end
     end)
 end
 
--- Retour visuel d'appui. Separe de l'activation : sur mobile il n'y a pas de
--- survol, l'appui est le seul retour disponible.
+-- Press feedback. Separate from activation: on mobile there is no hover, so
+-- the press is the only feedback available.
 function Input.onPress(button, onDown, onUp)
     local connections = {}
 
@@ -64,8 +63,8 @@ function Input.onPress(button, onDown, onUp)
     return connections
 end
 
--- Survol souris uniquement — volontairement : simuler un survol au doigt
--- laisse des elements allumes apres le retrait du doigt.
+-- Mouse hover only, on purpose: faking hover on touch leaves elements lit up
+-- after the finger is gone.
 function Input.onHover(button, onEnter, onLeave)
     local connections = {}
 
@@ -80,11 +79,11 @@ function Input.onHover(button, onEnter, onLeave)
 end
 
 ---------------------------------------------------------------------------
--- Deplacement de fenetre
+-- Window dragging
 ---------------------------------------------------------------------------
 
--- handle : la zone qui saisit (barre de titre). frame : ce qui se deplace.
--- Renvoie la connexion permanente et une fonction d'arret, a confier au Maid.
+-- handle : the grab area (topbar). frame : what moves. Returns the permanent
+-- connection and a stop function, both for the Maid.
 function Input.makeDraggable(frame, handle, options)
     options = options or {}
 
@@ -105,9 +104,9 @@ function Input.makeDraggable(frame, handle, options)
             startPosition.X.Scale, startPosition.X.Offset + delta.X,
             startPosition.Y.Scale, startPosition.Y.Offset + delta.Y)
 
-        -- Pas de tween ici : interpoler la position pendant un drag ajoute un
-        -- retard visible entre le doigt et la fenetre. Le suivi direct est ce
-        -- qui donne la sensation de fluidite.
+        -- No tween here: interpolating position during a drag introduces a
+        -- visible lag between finger and window. Direct tracking is what
+        -- actually feels smooth.
         frame.Position = goal
         if options.onDrag then options.onDrag(goal) end
     end
@@ -119,7 +118,7 @@ function Input.makeDraggable(frame, handle, options)
         startInput = inputObject.Position
         startPosition = frame.Position
 
-        -- Ouvertes seulement pendant le drag, refermees juste apres.
+        -- Opened only for the duration of the drag, closed right after.
         moveConnection = UserInputService.InputChanged:Connect(function(moved)
             if dragging and isMove(moved) then update(moved) end
         end)
@@ -133,12 +132,12 @@ function Input.makeDraggable(frame, handle, options)
 end
 
 ---------------------------------------------------------------------------
--- Glissement sur une barre (slider)
+-- Scrubbing a bar (slider)
 ---------------------------------------------------------------------------
 
--- Meme principe : suivi ouvert a l'appui, referme au relachement. `onMove`
--- recoit la position absolue du pointeur ; c'est au slider de la convertir
--- en valeur, lui seul connaissant sa geometrie.
+-- Same principle: tracking opens on press, closes on release. `onMove` gets
+-- the absolute pointer position; converting it to a value is the slider's job,
+-- since only it knows its own geometry.
 function Input.makeScrubbable(target, onMove, onRelease)
     local active = false
     local moveConnection, endConnection
@@ -156,8 +155,8 @@ function Input.makeScrubbable(target, onMove, onRelease)
         if not isPress(inputObject) then return end
 
         active = true
-        -- Le premier appui compte comme un deplacement : cliquer sur la barre
-        -- doit deplacer le curseur sans avoir a glisser.
+        -- The initial press counts as a move: clicking the bar must jump the
+        -- handle there without having to drag.
         onMove(inputObject.Position)
 
         moveConnection = UserInputService.InputChanged:Connect(function(moved)
@@ -173,12 +172,12 @@ function Input.makeScrubbable(target, onMove, onRelease)
 end
 
 ---------------------------------------------------------------------------
--- Clic exterieur
+-- Outside click
 ---------------------------------------------------------------------------
 
--- Ferme un menu quand l'appui tombe hors de sa zone. Utilise par le
--- Dropdown. La connexion est ouverte a l'ouverture du menu et fermee a sa
--- fermeture : rien ne tourne quand aucun menu n'est ouvert.
+-- Closes a menu when a press lands outside its area. Used by the Dropdown. The
+-- connection opens when the menu opens and closes when it closes: nothing runs
+-- while no menu is open.
 function Input.onOutsideClick(regions, callback)
     return UserInputService.InputBegan:Connect(function(inputObject)
         if not isPress(inputObject) then return end

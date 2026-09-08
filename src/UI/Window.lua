@@ -1,14 +1,13 @@
 --=============================================================================
--- WINDOW — cadre, barre de titre, barre laterale, zone de contenu
+-- WINDOW — frame, topbar, sidebar, content area
 --=============================================================================
---  Mise en page : une barre de titre de 30 pixels, une barre laterale a 25 %
---  de la largeur (avec un plancher en pixels, sinon elle devient illisible
---  sur telephone), le reste pour le contenu.
+--  Layout: a 30px topbar, a sidebar at 25% width (with a pixel floor, or it
+--  becomes unreadable on a phone), the rest for content.
 --
---  Le redimensionnement passe par un UIScale pilote par la taille du
---  viewport, pas par un recalcul de chaque element : une seule valeur a
---  ajuster, et les proportions restent celles pensees au depart. La
---  connexion qui l'ecoute est unique et se coupe avec la fenetre.
+--  Resizing goes through a UIScale driven by the viewport size rather than
+--  recomputing every element: one value to adjust, and the proportions stay as
+--  designed. The connection watching for it is single and dies with the
+--  window.
 --=============================================================================
 
 local Input = require("UI.Input")
@@ -45,13 +44,13 @@ function Window.new(opts)
     if opts.Theme then Theme.set(opts.Theme) end
 
     ---------------------------------------------------------------------
-    -- Racine
+    -- Root
     ---------------------------------------------------------------------
 
     local gui = Utility.new("ScreenGui", {
         Name = "StrawberryUI",
-        -- Les coordonnees ecran et les AbsolutePosition coincident : le
-        -- placement du menu deroulant en depend.
+        -- Screen coordinates and AbsolutePosition then line up, which the
+        -- dropdown placement depends on.
         IgnoreGuiInset = true,
         ResetOnSpawn = false,
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
@@ -76,7 +75,7 @@ function Window.new(opts)
     local mainStroke = Utility.stroke(Theme.color("Border"), 1, main)
 
     ---------------------------------------------------------------------
-    -- Barre de titre
+    -- Topbar
     ---------------------------------------------------------------------
 
     local topbar = Utility.new("Frame", {
@@ -87,8 +86,8 @@ function Window.new(opts)
         Parent = main,
     })
 
-    -- Un UICorner arrondit les quatre coins : ce petit cache redonne des
-    -- angles droits en bas de la barre, contre le corps de la fenetre.
+    -- A UICorner rounds all four corners; this small patch squares off the
+    -- bottom edge again, against the body of the window.
     Utility.corner(7, topbar)
     local cornerPatch = Utility.new("Frame", {
         Name = "CornerPatch",
@@ -111,10 +110,9 @@ function Window.new(opts)
         Parent = topbar,
     })
 
-    -- Titre et sous-titre dans un flux horizontal : le sous-titre se place
-    -- apres le titre quelle que soit sa longueur. Calculer sa position a
-    -- partir du nombre de caracteres serait faux des le premier changement
-    -- de police ou de titre.
+    -- Title and subtitle in a horizontal flow: the subtitle lands after the
+    -- title whatever its length. Computing its position from a character count
+    -- would be wrong the first time the font or the title changed.
     local titleGroup = Utility.new("Frame", {
         Name = "TitleGroup",
         AnchorPoint = Vector2.new(0, 0.5),
@@ -164,7 +162,7 @@ function Window.new(opts)
             Name = name,
             AnchorPoint = Vector2.new(1, 0.5),
             Position = UDim2.new(1, -offset, 0.5, 0),
-            -- 22 pixels : en dessous, la cible devient difficile a toucher.
+            -- 22 pixels: below that the target gets hard to hit on touch.
             Size = UDim2.fromOffset(22, 22),
             BackgroundColor3 = Theme.color("Element"),
             BackgroundTransparency = 1,
@@ -184,7 +182,7 @@ function Window.new(opts)
     local minimizeButton = topbarButton("-", 33, "Minimize")
 
     ---------------------------------------------------------------------
-    -- Corps
+    -- Body
     ---------------------------------------------------------------------
 
     local body = Utility.new("Frame", {
@@ -203,8 +201,8 @@ function Window.new(opts)
         Parent = body,
     })
 
-    -- Bornes en pixels : 25 % d'un ecran de telephone ne suffit pas a lire
-    -- un nom d'onglet, et 25 % d'un grand ecran gaspille la place.
+    -- Pixel bounds: 25% of a phone screen is not enough to read a tab name,
+    -- and 25% of a large screen wastes the space.
     Utility.new("UISizeConstraint", {
         MinSize = Vector2.new(SIDEBAR_MIN, 0),
         MaxSize = Vector2.new(SIDEBAR_MAX, math.huge),
@@ -244,9 +242,9 @@ function Window.new(opts)
         Parent = body,
     })
 
-    -- Le contenu doit suivre la largeur reelle de la barre laterale, qui est
-    -- contrainte en pixels : une position en pourcentage seul laisserait un
-    -- trou ou un chevauchement des que la contrainte s'applique.
+    -- Content has to follow the sidebar's real width, which is constrained in
+    -- pixels: a percentage-only position would leave a gap or an overlap the
+    -- moment the constraint kicks in.
     local function syncContent()
         local width = sidebar.AbsoluteSize.X
         content.Position = UDim2.new(0, width + 1, 0, 0)
@@ -257,7 +255,7 @@ function Window.new(opts)
     syncContent()
 
     ---------------------------------------------------------------------
-    -- Couche de superposition (menus deroulants)
+    -- Overlay layer (dropdown menus)
     ---------------------------------------------------------------------
 
     local overlay = Utility.new("Frame", {
@@ -294,7 +292,7 @@ function Window.new(opts)
     maid:give(function() Theme.unregister(painterId) end)
 
     ---------------------------------------------------------------------
-    -- Interactions de la barre de titre
+    -- Topbar interactions
     ---------------------------------------------------------------------
 
     for _, entry in ipairs({
@@ -324,7 +322,7 @@ function Window.new(opts)
     maid:give(dragStop)
 
     ---------------------------------------------------------------------
-    -- Reactivite
+    -- Responsiveness
     ---------------------------------------------------------------------
 
     self:applyResponsive()
@@ -340,11 +338,11 @@ function Window.new(opts)
 end
 
 ---------------------------------------------------------------------------
--- Reactivite
+-- Responsiveness
 ---------------------------------------------------------------------------
 
--- Un seul facteur d'echelle, borne : en dessous de 0.62 le texte devient
--- illisible, mieux vaut alors laisser defiler que retrecir encore.
+-- A single, bounded scale factor: below 0.62 the text stops being readable, so
+-- past that point it is better to let the content scroll than to shrink more.
 function Window:applyResponsive()
     local camera = workspace.CurrentCamera
     local viewport = camera and camera.ViewportSize or Vector2.new(1280, 720)
@@ -358,7 +356,7 @@ function Window:applyResponsive()
 end
 
 ---------------------------------------------------------------------------
--- Onglets
+-- Tabs
 ---------------------------------------------------------------------------
 
 function Window:CreateTab(opts)
@@ -367,8 +365,8 @@ function Window:CreateTab(opts)
     table.insert(self.tabs, tab)
     self.maid:give(tab)
 
-    -- Le premier onglet cree devient l'onglet actif : ouvrir une fenetre sur
-    -- une zone de contenu vide n'a pas de sens.
+    -- The first tab created becomes the active one: opening a window onto an
+    -- empty content area makes no sense.
     if not self.activeTab then self:SelectTab(tab) end
     return tab
 end
@@ -388,7 +386,7 @@ function Window:GetTab(name)
 end
 
 ---------------------------------------------------------------------------
--- Etat
+-- State
 ---------------------------------------------------------------------------
 
 function Window:Show()
@@ -411,13 +409,13 @@ end
 
 function Window:IsVisible() return self.visible end
 
--- Fermer masque et previent l'appelant. Detruire est une action distincte :
--- une fenetre fermee doit pouvoir etre rouverte avec son etat intact, sauf
--- si l'appelant demande explicitement le contraire.
+-- Closing hides and tells the caller. Destroying is a separate action: a
+-- closed window should reopen with its state intact, unless the caller
+-- explicitly asked otherwise.
 function Window:Close()
     if self.onClose then
         local ok, err = pcall(self.onClose, self)
-        if not ok then warn("[UI] OnClose : " .. tostring(err)) end
+        if not ok then warn("[UI] OnClose: " .. tostring(err)) end
     end
     if self.destroyOnClose then return self:Destroy() end
     return self:Hide()
@@ -430,8 +428,8 @@ function Window:ToggleMinimize()
         and UDim2.fromOffset(self.baseWidth, TOPBAR_HEIGHT)
         or UDim2.fromOffset(self.baseWidth, self.baseHeight)
 
-    -- ClipsDescendants est deja actif sur la fenetre : le corps disparait
-    -- derriere le bord pendant l'animation, sans avoir a le masquer.
+    -- ClipsDescendants is already on for the window: the body slides out of
+    -- view behind the edge during the animation, with nothing to hide by hand.
     Utility.tween(self.main, { Size = goal }, Utility.SLOW)
     return self
 end

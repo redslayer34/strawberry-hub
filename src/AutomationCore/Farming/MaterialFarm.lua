@@ -1,18 +1,18 @@
 --=============================================================================
--- MATERIAL FARM — partir du materiau, pas d'une position
+-- MATERIAL FARM — start from the material, not from a position
 --=============================================================================
---  Chaine demandee :
+--  The required chain:
 --
 --      Drop -> EnemyCandidates -> Sea -> Island -> SpawnRegion
 --
---  Le materiau donne une LISTE de mobs susceptibles de le lacher. Lequel
---  farmer n'est pas une constante : cela depend de ce qui existe sur ce
---  serveur, en quelle quantite, et a quelle distance. Le choix est donc
---  refait a partir de l'observation, jamais lu dans une table de positions.
+--  A material gives a LIST of mobs that may drop it. Which one to farm is not
+--  a constant: it depends on what exists on this server, in what numbers, and
+--  how far away. So the choice is remade from observation, never read out of a
+--  position table.
 --
---  L'ancien Enemies.nearestOfList relançait un scan complet du Workspace par
---  nom de la liste. Ici l'index d'EnemyScanner est deja construit : chaque
---  candidat coute une lecture de table.
+--  The old Enemies.nearestOfList restarted a full Workspace scan for every name
+--  in its list. Here EnemyScanner's index is already built: each candidate
+--  costs one table lookup.
 --=============================================================================
 
 local Log = require("AutomationCore.Log")
@@ -36,8 +36,8 @@ function MaterialFarm.new(ctx, perception, recovery)
     return self
 end
 
--- Mobs susceptibles de lacher ce materiau. La table du runtime sert de
--- catalogue de candidats — elle ne contient que des noms, aucune position.
+-- Mobs that may drop this material. The runtime's table serves as a catalogue
+-- of candidates -- it holds names only, no positions.
 function MaterialFarm:enemyCandidates()
     if not self.material then return {} end
     local entry = self.ctx.legacyConfig.Materials[self.material]
@@ -49,14 +49,14 @@ function MaterialFarm:setMaterial(name)
     self.material = name
     self.ctx.region = nil
     if name then
-        Log.Material("materiau demande :", name,
-            "(" .. #self:enemyCandidates() .. " mob(s) candidat(s))")
+        Log.Material("material requested:", name,
+            "(" .. #self:enemyCandidates() .. " candidate mob(s))")
     end
     return true
 end
 
--- Meilleur candidat REELLEMENT present. Un mob absent du serveur est ecarte
--- d'office, quelle que soit sa place dans la table.
+-- Best candidate ACTUALLY present. A mob absent from the server is discarded
+-- outright, wherever it sits in the table.
 function MaterialFarm:pickMob()
     local scanner = self.perception.scanner
     local here = self.ctx:pos()
@@ -67,8 +67,8 @@ function MaterialFarm:pickMob()
         local live = canonical and scanner:candidatesFor(canonical) or {}
 
         if #live > 0 then
-            -- Densite d'abord, proximite ensuite : un paquet un peu plus loin
-            -- vaut mieux qu'un mob isole a cote.
+            -- Density first, proximity second: a pack slightly further away
+            -- beats a lone mob nearby.
             local nearest = math.huge
             if here then
                 for _, e in ipairs(live) do
@@ -88,11 +88,11 @@ function MaterialFarm:pickMob()
 
     if best then return best end
 
-    -- Aucun candidat present ici. On rend le premier de la liste : le moteur
-    -- ira sur place (etat TRAVEL), ce qui declenche les spawns de la zone.
+    -- No candidate present here. Return the first of the list: the engine will
+    -- travel there (TRAVEL state), which triggers the zone's spawns.
     local fallback = self:enemyCandidates()[1]
     if fallback then
-        Log.Material("aucun candidat present -- approche de", fallback)
+        Log.Material("no candidate present -- approaching", fallback)
     end
     return fallback
 end
@@ -103,7 +103,7 @@ function MaterialFarm:stop()
     return self.engine:stop()
 end
 function MaterialFarm:describe()
-    return self.engine:describe() .. " materiau=" .. tostring(self.material)
+    return self.engine:describe() .. " material=" .. tostring(self.material)
 end
 
 return MaterialFarm

@@ -1,26 +1,26 @@
 --=============================================================================
--- NAMES — normalisation des noms d'entites
+-- NAMES — entity name normalisation
 --=============================================================================
---  Le texte de quete et le nom d'instance ne coincident jamais exactement :
+--  Quest text and instance names never match exactly:
 --
---      "Defeat 8 Desert Bandits"   ->  entite  "Desert Bandit"
---      "Defeat 5 Fishmen Warriors" ->  entite  "Fishman Warrior"
+--      "Defeat 8 Desert Bandits"   ->  entity  "Desert Bandit"
+--      "Defeat 5 Fishmen Warriors" ->  entity  "Fishman Warrior"
 --
---  D'ou la normalisation. Elle est PERMISSIVE (pluriel, casse, espaces,
---  ponctuation) mais elle ne sert qu'a produire une forme canonique : la
---  comparaison finale, elle, est une EGALITE STRICTE entre deux formes
---  canoniques. Aucun `string.find`, aucune correspondance partielle, aucune
---  distance d'edition dans le chemin de selection des cibles.
+--  Hence normalisation. It is PERMISSIVE (plurals, case, spacing,
+--  punctuation) but its only job is to produce a canonical form: the final
+--  comparison is STRICT EQUALITY between two canonical forms. No
+--  `string.find`, no partial match, no edit distance anywhere in the target
+--  selection path.
 --
---  `Names.similarity` existe pour classer des candidats PNJ (ou une erreur se
---  corrige par une interaction ratee, sans consequence), jamais pour choisir
---  un mob a frapper.
+--  `Names.similarity` exists to rank NPC candidates -- where a wrong guess is
+--  corrected by a failed interaction, at no cost -- never to pick a mob to
+--  hit.
 --=============================================================================
 
 local Names = {}
 
--- Irregularites que les regles generiques ne couvrent pas. Table de donnees :
--- une variante de plus ne demande pas de toucher a l'algorithme.
+-- Irregular forms the generic rules do not cover. A data table: one more
+-- variant does not mean touching the algorithm.
 local IRREGULAR = {
     ["men"] = "man",
     ["fishmen"] = "fishman",
@@ -31,7 +31,7 @@ local IRREGULAR = {
     ["militia"] = "militia",
 }
 
--- Mots vides retires en tete de chaine. "The Saw" reste "saw".
+-- Stop words stripped from the front. "The Saw" stays "saw".
 local LEADING_NOISE = { ["the"] = true, ["a"] = true, ["an"] = true }
 
 local function singularizeWord(word)
@@ -40,25 +40,25 @@ local function singularizeWord(word)
 
     if #word <= 3 then return word end
 
-    -- "-men" -> "-man" : Fishmen, Swordsmen, Marinemen...
+    -- "-men" -> "-man": Fishmen, Swordsmen, Marinemen...
     local stem = word:match("^(.-)men$")
     if stem and #stem > 0 then return stem .. "man" end
 
-    -- "-ies" -> "-y" : Bounties -> Bounty
+    -- "-ies" -> "-y": Bounties -> Bounty
     stem = word:match("^(.-)ies$")
     if stem and #stem > 0 then return stem .. "y" end
 
-    -- "-ves" -> "-f" : Thieves -> Thief
+    -- "-ves" -> "-f": Thieves -> Thief
     stem = word:match("^(.-)ves$")
     if stem and #stem > 0 then return stem .. "f" end
 
-    -- "-ches/-shes/-sses/-xes/-zes" -> on retire le "es"
+    -- "-ches/-shes/-sses/-xes/-zes": drop the "es"
     if word:match("ches$") or word:match("shes$") or word:match("sses$")
         or word:match("xes$") or word:match("zes$") then
         return word:sub(1, #word - 2)
     end
 
-    -- "-s" simple. On protege "-ss" (Boss) et "-us" (Cactus).
+    -- Plain "-s". "-ss" (Boss) and "-us" (Cactus) are protected.
     if word:match("s$") and not word:match("ss$") and not word:match("us$") then
         return word:sub(1, #word - 1)
     end
@@ -66,15 +66,15 @@ local function singularizeWord(word)
     return word
 end
 
--- Memo : la normalisation tourne sur chaque mob a chaque scan, et le jeu
--- reutilise une poignee de noms pour des centaines d'entites. Borne pour ne
--- pas grossir indefiniment si un nom est genere dynamiquement.
+-- Memo: normalisation runs on every mob on every scan, and the game reuses a
+-- handful of names across hundreds of entities. Bounded so a dynamically
+-- generated name cannot grow it without limit.
 local memo = {}
 local memoCount = 0
 local MEMO_LIMIT = 512
 
--- Minuscules, ponctuation retiree, espaces normalises, mots au singulier.
--- Resultat deterministe : c'est la cle de comparaison.
+-- Lowercase, punctuation removed, spacing normalised, words singularised.
+-- The result is deterministic: it is the comparison key.
 function Names.normalize(value)
     if type(value) ~= "string" then return nil end
 
@@ -84,8 +84,8 @@ function Names.normalize(value)
     end
 
     local text = value:lower()
-    text = text:gsub("[%[%]%(%){}<>]", " ")   -- habillage d'UI
-    text = text:gsub("[^%a%d%s]", " ")        -- ponctuation, apostrophes
+    text = text:gsub("[%[%]%(%){}<>]", " ")   -- UI decoration
+    text = text:gsub("[^%a%d%s]", " ")        -- punctuation, apostrophes
     text = text:gsub("%s+", " ")
     text = text:gsub("^%s*(.-)%s*$", "%1")
 
@@ -106,7 +106,7 @@ function Names.normalize(value)
         words[#words + 1] = word
     end
 
-    -- Articles de tete uniquement : "the" au milieu d'un nom est signifiant.
+    -- Leading articles only: "the" mid-name is meaningful.
     while #words > 1 and LEADING_NOISE[words[1]] do
         table.remove(words, 1)
     end
@@ -119,17 +119,17 @@ function Names.normalize(value)
     return remember(out ~= "" and out or nil)
 end
 
--- Egalite stricte de deux formes canoniques. C'est la SEULE comparaison
--- autorisee pour decider qu'un mob est la cible de la quete.
+-- Strict equality of two canonical forms. This is the ONLY comparison allowed
+-- when deciding that a mob is the quest target.
 function Names.matches(a, b)
     local na, nb = Names.normalize(a), Names.normalize(b)
     if not na or not nb then return false end
     return na == nb
 end
 
--- Score de ressemblance dans [0,1], reserve au classement de candidats PNJ.
--- Volontairement grossier : mots communs sur mots totaux. Pas de recherche
--- de sous-chaine, qui ferait passer "Bandit" pour "Desert Bandit".
+-- Similarity score in [0,1], reserved for ranking NPC candidates.
+-- Deliberately coarse: shared words over total words. No substring search,
+-- which would let "Bandit" pass for "Desert Bandit".
 function Names.similarity(a, b)
     local na, nb = Names.normalize(a), Names.normalize(b)
     if not na or not nb then return 0 end
@@ -148,8 +148,8 @@ function Names.similarity(a, b)
     end
 
     if total == 0 or other == 0 then return 0 end
-    -- Moyenne harmonique : penalise un candidat qui contient le nom cherche
-    -- noye dans dix autres mots.
+    -- Harmonic mean: penalises a candidate that contains the wanted name
+    -- buried among ten other words.
     local precision = shared / other
     local recall = shared / total
     if precision + recall == 0 then return 0 end

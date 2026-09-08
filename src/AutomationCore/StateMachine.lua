@@ -1,19 +1,20 @@
 --=============================================================================
--- STATE MACHINE — machine a etats generique
+-- STATE MACHINE — generic finite state machine
 --=============================================================================
---  Remplace la grande fonction `tick()` qui enchainait tout dans un seul flux
---  de `if`. Chaque etat declare son entree, son timeout, sa sortie et ses
---  transitions ; la machine ne fait qu'appliquer ces regles.
+--  Replaces the one big `tick()` that chained everything through a single run
+--  of `if`s. Each state declares its entry, timeout, exit and transitions; the
+--  machine only applies those rules.
 --
---  Interet concret : un etat qui n'aboutit pas ne peut plus bloquer le farm
---  indefiniment. Le timeout est structurel, pas ajoute au cas par cas.
+--  The concrete benefit: a state that does not complete can no longer block
+--  the farm indefinitely. The timeout is structural, not bolted on case by
+--  case.
 --
---  Definition d'un etat :
+--  A state definition:
 --      {
---        enter    = function(ctx, from)         -- optionnel
---        update   = function(ctx) -> nextState  -- nil = rester ici
---        exit     = function(ctx, to)           -- optionnel
---        timeout  = 8,                          -- secondes, optionnel
+--        enter    = function(ctx, from)         -- optional
+--        update   = function(ctx) -> nextState  -- nil = stay here
+--        exit     = function(ctx, to)           -- optional
+--        timeout  = 8,                          -- seconds, optional
 --        onTimeout= "RECOVERY" | function(ctx) -> nextState
 --      }
 --=============================================================================
@@ -39,9 +40,9 @@ function StateMachine.new(name, ctx)
 end
 
 function StateMachine:define(stateName, def)
-    assert(type(stateName) == "string", "nom d'etat invalide")
-    assert(type(def) == "table", "definition d'etat invalide")
-    assert(type(def.update) == "function", stateName .. " : update() est obligatoire")
+    assert(type(stateName) == "string", "invalid state name")
+    assert(type(def) == "table", "invalid state definition")
+    assert(type(def.update) == "function", stateName .. ": update() is required")
     self.states[stateName] = def
     return self
 end
@@ -57,8 +58,8 @@ end
 
 function StateMachine:is(stateName) return self.current == stateName end
 
--- Etats traverses, du plus recent au plus ancien. RecoveryController s'en
--- sert pour savoir ou reprendre au lieu de tout recommencer.
+-- States passed through, most recent first. RecoveryController uses this to
+-- work out where to resume instead of starting over.
 function StateMachine:recent(count)
     local out = {}
     local n = math.min(count or HISTORY_LIMIT, #self.history)
@@ -68,8 +69,8 @@ function StateMachine:recent(count)
     return out
 end
 
--- Dernier etat traverse qui satisfait le predicat. Sert a reprendre le fil
--- apres une recuperation : on revient au dernier etat "utile", pas a IDLE.
+-- Most recent visited state satisfying the predicate. Used to pick the thread
+-- back up after a recovery: we return to the last *useful* state, not to IDLE.
 function StateMachine:lastWhere(predicate)
     for i = #self.history, 1, -1 do
         local record = self.history[i]
@@ -80,15 +81,15 @@ end
 
 function StateMachine:goTo(stateName, reason)
     if not self.states[stateName] then
-        Log.State("etat inconnu :", stateName, "-- passage en RECOVERY")
+        Log.State("unknown state:", stateName, "-- falling back to RECOVERY")
         stateName = self.states.RECOVERY and "RECOVERY" or self.current
         if not stateName then return end
     end
 
     local from = self.current
     if from == stateName then
-        -- Reentrer dans le meme etat remet seulement le chrono a zero :
-        -- sans cela, une boucle serree sur place declencherait le timeout.
+        -- Re-entering the same state only resets the clock: without this, a
+        -- tight loop in place would trip its own timeout.
         self.enteredAt = os.clock()
         return
     end
@@ -97,7 +98,7 @@ function StateMachine:goTo(stateName, reason)
         local def = self.states[from]
         if def and def.exit then
             local ok, err = pcall(def.exit, self.ctx, stateName)
-            if not ok then Log.State("exit", from, "a echoue :", err) end
+            if not ok then Log.State("exit", from, "failed:", err) end
         end
     end
 
@@ -114,31 +115,31 @@ function StateMachine:goTo(stateName, reason)
     if def.enter then
         local ok, err = pcall(def.enter, self.ctx, from)
         if not ok then
-            Log.State("enter", stateName, "a echoue :", err)
+            Log.State("enter", stateName, "failed:", err)
             self.lastError = err
         end
     end
 end
 
--- Un tour de machine. Ne bloque jamais : l'etat rend la main a chaque appel,
--- c'est l'appelant qui cadence.
+-- One turn of the machine. Never blocks: a state hands control back on every
+-- call, and the caller sets the pace.
 function StateMachine:update()
     if not self.current then return end
     local def = self.states[self.current]
     if not def then
-        self:goTo("RECOVERY", "definition d'etat manquante")
+        self:goTo("RECOVERY", "missing state definition")
         return
     end
 
-    -- Le timeout prime sur update() : un etat bloque ne doit pas pouvoir
-    -- decider de rester en place indefiniment.
+    -- The timeout wins over update(): a stuck state must not be able to decide
+    -- to stay put forever.
     if def.timeout and self:elapsed() > def.timeout then
         local target = def.onTimeout
         if type(target) == "function" then
             local ok, result = pcall(target, self.ctx)
             target = ok and result or "RECOVERY"
         end
-        Log.State(self.current, "timeout apres",
+        Log.State(self.current, "timed out after",
             string.format("%.1f", self:elapsed()), "s")
         self:goTo(target or "RECOVERY", "timeout")
         return
@@ -146,9 +147,9 @@ function StateMachine:update()
 
     local ok, result = pcall(def.update, self.ctx)
     if not ok then
-        Log.State(self.current, "a leve une erreur :", result)
+        Log.State(self.current, "raised:", result)
         self.lastError = result
-        self:goTo("RECOVERY", "erreur dans update")
+        self:goTo("RECOVERY", "error in update")
         return
     end
 
@@ -161,7 +162,7 @@ function StateMachine:reset(stateName, reason)
     self.current = nil
     self.lastError = nil
     table.clear(self.history)
-    self:goTo(stateName, reason or "reinitialisation")
+    self:goTo(stateName, reason or "reset")
 end
 
 return StateMachine

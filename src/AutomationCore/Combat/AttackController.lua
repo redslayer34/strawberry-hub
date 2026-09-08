@@ -1,17 +1,16 @@
 --=============================================================================
--- ATTACK CONTROLLER — engager une cible, un pas a la fois
+-- ATTACK CONTROLLER — engage a target, one step at a time
 --=============================================================================
---  L'ancien `engage()` etait une boucle `while` bloquante : tant qu'elle
---  tournait, rien d'autre ne pouvait s'executer — ni la relecture de la
---  quete, ni la detection d'un changement d'ile, ni la recuperation. Un mob
---  inatteignable gelait tout le farm jusqu'a son timeout.
+--  The old `engage()` was a blocking `while` loop: while it ran, nothing else
+--  could -- not re-reading the quest, not detecting an island change, not
+--  recovery. One unreachable mob froze the whole farm until its timeout.
 --
---  Ici chaque appel fait un pas et rend la main. La machine a etats garde le
---  controle, et le verrouillage sur une cible (qui rend le farm efficace)
---  est conserve : on ne rebalaie pas le Workspace entre deux coups.
+--  Here every call takes one step and hands control back. The state machine
+--  stays in charge, and the target lock that makes farming efficient is kept:
+--  we do not re-sweep the Workspace between blows.
 --
---  Avant chaque coup : ValidateTarget puis ValidateCombatState. Aucune
---  operation n'est faite sur une reference qui a vieilli.
+--  Before every blow: ValidateTarget then ValidateCombatState. No operation is
+--  performed on a reference that has aged.
 --=============================================================================
 
 local CombatPositionController = require("AutomationCore.Combat.CombatPositionController")
@@ -37,7 +36,7 @@ function AttackController:target() return self.entry end
 
 function AttackController:clear(reason)
     if self.entry and reason then
-        Log.Combat("cible relachee --", reason)
+        Log.Combat("target released --", reason)
     end
     self.entry = nil
     self.lastHealth = nil
@@ -53,8 +52,8 @@ function AttackController:setTarget(entry)
     Log.Combat("Started --", entry.name)
 end
 
--- Choisit la cible la plus proche parmi une liste DEJA validee. Aucun
--- filtrage supplementaire ici : ce module ne juge pas de la validite.
+-- Picks the nearest target from an ALREADY validated list. No extra filtering
+-- here: this module does not judge validity.
 function AttackController:pick(targets)
     local here = self.ctx:pos()
     if not here or not targets or #targets == 0 then return nil end
@@ -67,16 +66,16 @@ function AttackController:pick(targets)
     return best
 end
 
--- Un pas de combat.
--- Renvoie "attacking" | "killed" | "lost" | "timeout" | "blocked" | "idle".
+-- One combat step.
+-- Returns "attacking" | "killed" | "lost" | "timeout" | "blocked" | "idle".
 function AttackController:step(quest)
     local ctx = self.ctx
     local entry = self.entry
 
     if not entry then return "idle" end
 
-    -- 1. La cible est-elle encore une cible ? Une quete qui change en cours
-    -- de combat doit interrompre le coup en cours, pas le finir.
+    -- 1. Is the target still a target? A quest that changes mid-fight must
+    -- interrupt the blow in progress, not finish it.
     local valid, reason = TargetValidator.stillValid(ctx, entry, quest)
     if not valid then
         local dead = entry.humanoid and entry.humanoid.Health <= 0
@@ -86,18 +85,18 @@ function AttackController:step(quest)
             ctx.stats.kills = ctx.stats.kills + 1
             return "killed"
         end
-        Log.Combat("cible perdue --", reason)
+        Log.Combat("target lost --", reason)
         return "lost"
     end
 
-    -- 2. Sommes-nous en etat de frapper ?
+    -- 2. Are we in a state to strike?
     local ready, why = CombatPositionController.validateCombatState(ctx)
     if not ready then
         return "blocked", why
     end
 
-    -- 3. Progression : c'est la perte de vie qui prouve que le combat avance.
-    -- Sans ce controle, un mob invulnerable ou hors sync bloquait la boucle.
+    -- 3. Progress: losing health is the proof the fight is going anywhere.
+    -- Without this check, an invulnerable or desynced mob blocked the loop.
     local health = entry.humanoid.Health
     if self.lastHealth and health < self.lastHealth then
         self.lastProgress = os.clock()
@@ -105,20 +104,20 @@ function AttackController:step(quest)
     self.lastHealth = health
 
     if os.clock() - self.lastProgress > ctx.cfg.Combat.EngageTimeout then
-        Log.Combat("aucun degat depuis", ctx.cfg.Combat.EngageTimeout, "s -- abandon")
+        Log.Combat("no damage for", ctx.cfg.Combat.EngageTimeout, "s -- giving up")
         self:clear(nil)
         return "timeout"
     end
 
-    -- 4. Placement puis frappe, a la cadence configuree.
+    -- 4. Position then strike, at the configured rate.
     local now = os.clock()
     if now - self.lastStrike < ctx.cfg.Combat.AttackDelay then
         return "attacking"
     end
     self.lastStrike = now
 
-    -- En mode bring les mobs viennent a nous : on reste sur l'ancre plutot
-    -- que de courir apres chacun.
+    -- In bring mode the mobs come to us: stay on the anchor rather than chase
+    -- each one.
     if not ctx.bringActive then
         CombatPositionController.hold(ctx, entry)
     end
@@ -127,8 +126,8 @@ function AttackController:step(quest)
     return "attacking"
 end
 
--- Engage la meilleure cible disponible et fait un pas. Point d'entree unique
--- de l'etat ATTACK.
+-- Engages the best available target and takes a step. Single entry point for
+-- the ATTACK state.
 function AttackController:engage(targets, quest)
     if not self.entry then
         local pick = self:pick(targets)

@@ -1,19 +1,17 @@
 --=============================================================================
--- PERCEPTION — un seul tour de detection, cadence et mis en cache
+-- PERCEPTION — one detection pass, paced and cached
 --=============================================================================
---  Rien de tout ceci ne tourne sur RenderStepped. Un tour complet coute cher
---  (parcours du dossier Enemies, lecture de l'UI, regroupement) : il tourne
---  toutes les quelques secondes au repos, et se resserre pendant le combat ou
---  la situation change vite.
+--  None of this runs on RenderStepped. A full pass is expensive (walking the
+--  Enemies folder, reading the UI, clustering): it runs every few seconds when
+--  idle, and tightens up during combat when the situation changes fast.
 --
---  Ordre impose, chaque etape s'appuyant sur la precedente :
+--  A fixed order, each step building on the previous one:
 --
 --      DetectSea -> DetectIsland -> DetectQuest
 --                -> RefreshQuestGiver -> RefreshTargets -> RefreshSpawnRegion
 --
---  Le changement de mer ou d'ile vide la memoire de carte AVANT que les
---  etapes suivantes ne lisent quoi que ce soit : aucune etape ne peut donc
---  travailler sur des donnees heritees du contexte precedent.
+--  A sea or island change clears the map memory BEFORE the later steps read
+--  anything, so no step can work on data inherited from the previous context.
 --=============================================================================
 
 local EnemyScanner = require("AutomationCore.Perception.EnemyScanner")
@@ -43,8 +41,8 @@ function Perception.new(ctx)
     return self
 end
 
--- Le mode combat resserre la cadence : pendant un bring, la situation change
--- en quelques dixiemes de seconde.
+-- Combat mode tightens the pace: during a bring, the situation changes within
+-- tenths of a second.
 function Perception:setCombat(value)
     self.combatMode = value and true or false
 end
@@ -54,16 +52,16 @@ function Perception:interval()
     return self.combatMode and cfg.CombatInterval or cfg.IdleInterval
 end
 
--- Indices d'identification du donneur, poses par le mode de farm actif.
--- La perception ne sait pas quelle quete on veut prendre ; elle sait la
--- chercher une fois qu'on le lui dit.
+-- Identification hints for the giver, set by the active farming mode.
+-- Perception does not know which quest we want to take; it knows how to look
+-- for it once told.
 function Perception:setQuestGiverHints(hints, fallback)
     self.questGiverHints = hints
     self.questGiverFallback = fallback
 end
 
 ---------------------------------------------------------------------------
--- Etapes
+-- Steps
 ---------------------------------------------------------------------------
 
 function Perception:detectSea()
@@ -74,8 +72,8 @@ function Perception:detectIsland()
     return IslandDetector.update(self.ctx)
 end
 
--- La quete se relit plus souvent que le reste : c'est la source de verite,
--- et sa progression change a chaque kill.
+-- The quest is re-read more often than the rest: it is the source of truth,
+-- and its progress changes on every kill.
 function Perception:detectQuest(force)
     local ctx = self.ctx
     local now = os.clock()
@@ -87,18 +85,18 @@ function Perception:detectQuest(force)
     local previous = ctx.quest
     local current = QuestDetector.read(ctx)
 
-    -- Le nom d'instance reel ne s'invente pas : il vient du Workspace. On le
-    -- reporte sur l'etat de quete pour que tout le reste travaille sur une
-    -- entite qui existe.
+    -- The real instance name cannot be invented: it comes from the Workspace.
+    -- It is carried onto the quest state so everything downstream works with
+    -- an entity that exists.
     if current.TargetName then
         current.ResolvedName = self.scanner:resolveName(current.TargetName)
     end
 
-    -- Changement d'objectif : tout ce qui en decoulait devient faux.
+    -- Objective changed: everything derived from it is now wrong.
     if not QuestDetector.sameObjective(previous, current) then
         ctx.region = nil
         ctx.targets = {}
-        ctx.map:invalidate("SpawnClusters", nil, "changement d'objectif")
+        ctx.map:invalidate("SpawnClusters", nil, "objective changed")
     end
 
     QuestDetector.logChange(previous, current)
@@ -119,8 +117,8 @@ function Perception:refreshQuestGiver()
     return position, level
 end
 
--- Reconstruit la liste des cibles VALIDES. C'est le seul endroit ou
--- ctx.targets est ecrit : tout le reste le lit.
+-- Rebuilds the list of VALID targets. This is the only place ctx.targets is
+-- written: everything else reads it.
 function Perception:refreshTargets()
     local ctx = self.ctx
     local quest = ctx.quest
@@ -137,9 +135,9 @@ end
 
 function Perception:refreshSpawnRegion()
     local ctx = self.ctx
-    -- La region se calcule sur les cibles valides, mais SANS filtre de region
-    -- (sinon la region ne pourrait jamais se deplacer : elle se validerait
-    -- elle-meme). On repart donc des candidats bruts revalides hors zone.
+    -- The region is computed from valid targets but WITHOUT the region filter
+    -- (otherwise it could never move: it would validate itself). So we start
+    -- from the raw candidates revalidated without the zone check.
     local quest = ctx.quest
     if not quest or not quest.TargetName then
         ctx.region = nil
@@ -157,17 +155,17 @@ function Perception:refreshSpawnRegion()
 end
 
 ---------------------------------------------------------------------------
--- Boucle
+-- Loop
 ---------------------------------------------------------------------------
 
--- Un tour complet. `force` ignore la cadence (utilise par la recuperation,
--- qui a besoin d'une image fraiche immediatement).
+-- One full pass. `force` ignores the pacing (used by recovery, which needs a
+-- fresh picture immediately).
 function Perception:update(force)
     local ctx = self.ctx
     local now = os.clock()
 
-    -- La quete se relit a chaque appel, meme hors cadence : c'est bon marche
-    -- (quelques labels) et c'est la donnee qui doit etre la plus fraiche.
+    -- The quest is re-read on every call, pacing or not: it is cheap (a few
+    -- labels) and it is the data that must be freshest.
     self:detectQuest(force)
 
     if not force and now - self.lastFull < self:interval() then
@@ -179,24 +177,23 @@ function Perception:update(force)
     local sea = self:detectSea()
     local island = self:detectIsland()
 
-    -- Vidange de la memoire AVANT les etapes qui la lisent.
+    -- Flush the memory BEFORE the steps that read it.
     ctx.map:syncContext(ctx.world.jobId(), sea, island)
 
     self.scanner:scan()
 
-    -- Re-resolution du nom reel apres le scan : au premier tour sur un
-    -- serveur, detectQuest a tourne sur un index encore vide.
+    -- Re-resolve the real name after the scan: on the first pass on a server,
+    -- detectQuest ran against a still-empty index.
     if ctx.quest and ctx.quest.TargetName and not ctx.quest.ResolvedName then
         ctx.quest.ResolvedName = self.scanner:resolveName(ctx.quest.TargetName)
     end
 
-    -- Region avant donneur, contrairement a l'ordre nominal : les deux se
-    -- referencent mutuellement (la region se note par rapport au donneur, le
-    -- donneur se departage par proximite a la region), il faut donc trancher.
-    -- Calculer la region d'abord fait que refreshTargets filtre sur une
-    -- region FRAICHE — et la liste de cibles est la sortie critique. Le
-    -- donneur, lui, ne perd qu'un leger bonus de classement a travailler sur
-    -- la region du tour precedent.
+    -- Region before giver, contrary to the nominal order: the two reference
+    -- each other (the region is scored against the giver, the giver is broken
+    -- by proximity to the region), so something has to give. Computing the
+    -- region first means refreshTargets filters against a FRESH region -- and
+    -- the target list is the critical output. The giver only loses a small
+    -- ranking bonus by working from the previous pass's region.
     self:refreshSpawnRegion()
     self:refreshQuestGiver()
     self:refreshTargets()
@@ -204,10 +201,10 @@ function Perception:update(force)
     return true
 end
 
--- Rescan immediat et complet. Premier barreau de l'echelle de recuperation :
--- souvent, un "plus aucune cible" n'est qu'un index perime.
+-- Immediate, full rescan. First rung of the recovery ladder: often a "no
+-- targets left" is just a stale index.
 function Perception:rescan(reason)
-    Log.Perception("rescan --", reason or "demande")
+    Log.Perception("rescan --", reason or "requested")
     self.lastFull = 0
     self.lastQuest = 0
     return self:update(true)
@@ -218,9 +215,9 @@ function Perception:targetCount() return #self.ctx.targets end
 function Perception:describe()
     local ctx = self.ctx
     return string.format(
-        "mer=%s ile=%s cibles=%d region=%s",
+        "sea=%s island=%s targets=%d region=%s",
         tostring(ctx.sea), tostring(ctx.island), #ctx.targets,
-        ctx.region and string.format("%d mobs", ctx.region.count) or "aucune")
+        ctx.region and string.format("%d mobs", ctx.region.count) or "none")
 end
 
 return Perception

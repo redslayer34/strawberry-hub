@@ -1,22 +1,21 @@
 --=============================================================================
--- TRUST — hierarchie de confiance des sources d'information
+-- TRUST — hierarchy of information sources
 --=============================================================================
---  Le point central de toute l'architecture. Une meme question ("ou est le
---  donneur de quete ?", "quel mob dois-je frapper ?") admet plusieurs
---  reponses, de fiabilites tres inegales. On les classe une fois pour toutes :
+--  The centrepiece of the whole architecture. The same question ("where is
+--  the quest giver?", "which mob should I hit?") admits several answers of
+--  very unequal reliability. They are ranked once and for all:
 --
---    1. QUEST_STATE     etat reel de la quete lu dans le jeu
---    2. LIVE_ENTITY     entite reellement presente dans le Workspace
---    3. NPC_IDENTITY    identite / dialogue / objectif d'un PNJ
---    4. SPAWN_CLUSTER   groupe de spawn effectivement detecte
---    5. SERVER_MEMORY   donnee apprise sur CE serveur, pendant CETTE session
---    6. STATIC_FALLBACK coordonnee connue d'avance (table figee)
+--    1. QUEST_STATE     the real quest state read from the game
+--    2. LIVE_ENTITY     an entity actually present in the Workspace
+--    3. NPC_IDENTITY    an NPC's identity / dialogue / objective
+--    4. SPAWN_CLUSTER   a spawn group actually detected
+--    5. SERVER_MEMORY   something learned on THIS server, THIS session
+--    6. STATIC_FALLBACK a coordinate known in advance (frozen table)
 --
---  Consequence directe : une ancienne coordonnee n'est jamais une verite.
---  C'est le dernier recours, et il est trace comme tel. Quand une mise a jour
---  du jeu deplace une ile, les niveaux 1 a 4 continuent de fonctionner ; seul
---  le niveau 6 devient faux, et il n'est consulte que si tout le reste a
---  echoue.
+--  The direct consequence: an old coordinate is never a truth. It is the last
+--  resort, and it is logged as such. When a game update moves an island,
+--  levels 1 through 4 keep working; only level 6 becomes wrong, and it is
+--  consulted only once everything else has failed.
 --=============================================================================
 
 local Log = require("AutomationCore.Log")
@@ -41,13 +40,13 @@ Trust.LABEL = {
     [6] = "static-fallback",
 }
 
--- Au-dela de ce niveau la donnee est un pis-aller : on l'utilise, mais on le
--- dit, et l'appelant est cense declencher un rescan en parallele.
+-- Past this level the data is a stopgap: we use it, but we say so, and the
+-- caller is expected to kick off a rescan in parallel.
 Trust.DEGRADED_FROM = Trust.LEVEL.SERVER_MEMORY
 
--- sources : liste de { level = Trust.LEVEL.*, get = function() -> value, why = "..." }
--- Renvoie value, level, why. Les sources sont essayees par confiance
--- decroissante, quel que soit leur ordre dans la table.
+-- sources : list of { level = Trust.LEVEL.*, get = function() -> value, why = "..." }
+-- Returns value, level, why. Sources are tried by decreasing trust, whatever
+-- their order in the table.
 function Trust.resolve(question, sources)
     local ordered = table.clone and table.clone(sources) or (function()
         local copy = {}
@@ -61,7 +60,7 @@ function Trust.resolve(question, sources)
         local ok, value = pcall(source.get)
         if ok and value ~= nil then
             if source.level >= Trust.DEGRADED_FROM then
-                Log.Perception(question, "resolu en mode degrade via",
+                Log.Perception(question, "resolved in degraded mode via",
                     Trust.LABEL[source.level], "--", source.why or "")
             end
             return value, source.level, source.why

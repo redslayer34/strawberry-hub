@@ -1,16 +1,16 @@
 --=============================================================================
--- CONTEXT — surface de contact entre l'AutomationCore et le runtime
+-- CONTEXT — the contact surface between the AutomationCore and the runtime
 --=============================================================================
---  L'AutomationCore ne connait pas le monolithe historique. Il ne connait que
---  ce contexte : une poignee de primitives injectees a la construction.
+--  The AutomationCore knows nothing about the historical monolith. It knows
+--  only this context: a handful of primitives injected at construction.
 --
---  Deux consequences voulues :
---    * chaque module se teste en lui passant un contexte simule ;
---    * remplacer le moteur de deplacement ou de combat ne touche a aucun
---      module de perception, de decision ou de recuperation.
+--  Two deliberate consequences:
+--    * every module can be tested by handing it a simulated context;
+--    * replacing the movement or combat engine touches no perception,
+--      decision or recovery module.
 --
---  C'est aussi ce qui rend QuestFarm et CDK reellement separables : ils
---  dependent du contexte, pas l'un de l'autre.
+--  This is also what makes QuestFarm and CDK genuinely separable: they depend
+--  on the context, not on each other.
 --=============================================================================
 
 local Config = require("AutomationCore.Config")
@@ -20,9 +20,9 @@ local Log = require("AutomationCore.Log")
 local Context = {}
 Context.__index = Context
 
--- internal : la table StrawberryHub.Internal exposee par le runtime.
+-- internal : the StrawberryHub.Internal table exposed by the runtime.
 function Context.new(internal)
-    assert(type(internal) == "table", "contexte : primitives runtime manquantes")
+    assert(type(internal) == "table", "context: runtime primitives missing")
 
     local legacyConfig = internal.Config
     local Core = internal.Core
@@ -38,7 +38,7 @@ function Context.new(internal)
         map = DynamicMapCache.new(),
         log = Log,
 
-        -- Etat partage, ecrit par la perception, lu par tout le reste.
+        -- Shared state, written by perception, read by everything else.
         quest = nil,
         sea = nil,
         island = nil,
@@ -49,7 +49,7 @@ function Context.new(internal)
     }, Context)
 
     ---------------------------------------------------------------------------
-    -- Joueur
+    -- Player
     ---------------------------------------------------------------------------
     self.player = {
         instance = player,
@@ -64,7 +64,7 @@ function Context.new(internal)
             return hrp and hrp.Position or nil
         end,
 
-        -- Valeur brute d'un champ de LocalPlayer.Data (Level, Beli, Fragments...).
+        -- Raw value of a LocalPlayer.Data field (Level, Beli, Fragments...).
         data = function(field)
             local data = player and player:FindFirstChild("Data")
             local entry = data and data:FindFirstChild(field)
@@ -73,15 +73,15 @@ function Context.new(internal)
     }
 
     ---------------------------------------------------------------------------
-    -- Monde — aucun chemin code en dur au-dela de ces accesseurs
+    -- World — no hardcoded paths beyond these accessors
     ---------------------------------------------------------------------------
     self.world = {
         enemies = function() return workspace:FindFirstChild("Enemies") end,
         npcs = function() return workspace:FindFirstChild("NPCs") end,
 
-        -- Le jeu publie lui-meme la position des iles ici. C'est la source
-        -- dynamique qui remplace les tables de CFrame : quand une ile bouge,
-        -- cette table bouge avec elle.
+        -- The game publishes island positions here itself. This is the dynamic
+        -- source that replaces coordinate tables: when an island moves, this
+        -- table moves with it.
         locations = function()
             local origin = workspace:FindFirstChild("_WorldOrigin")
             return origin and origin:FindFirstChild("Locations")
@@ -128,8 +128,8 @@ function Context.new(internal)
         toSea = function(sea) return internal.Teleport.toSea(sea) end,
     }
 
-    -- Le core est pilote par le flag AutoFarm du runtime : couper le farm
-    -- dans l'UI doit arreter le core, sans qu'il ait a le savoir.
+    -- The core is driven by the runtime's AutoFarm flag: switching the farm
+    -- off in the interface must stop the core, without the core knowing.
     self.flags = {
         farming = function() return internal.State.flags.AutoFarm == true end,
         get = function(name) return internal.State.flags[name] == true end,
@@ -138,7 +138,7 @@ function Context.new(internal)
     return self
 end
 
--- Position du joueur, ou nil. Raccourci tres utilise.
+-- Player position, or nil. Heavily used shorthand.
 function Context:pos()
     return self.player.position()
 end

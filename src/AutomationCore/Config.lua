@@ -1,24 +1,23 @@
 --=============================================================================
--- CONFIG — reglages de l'AutomationCore
+-- CONFIG — AutomationCore settings
 --=============================================================================
---  Tout nombre ajustable vit ici. Aucune constante magique dans les modules :
---  regler le comportement ne doit jamais demander de relire un algorithme.
+--  Every tunable number lives here. No magic constants in the modules: tuning
+--  behaviour must never require reading an algorithm first.
 --=============================================================================
 
 return {
-    -- Cadence de la boucle de perception. Le scan complet du Workspace est
-    -- cher : on l'espace, et on le resserre pendant le combat ou l'etat
-    -- change vite.
+    -- Perception loop pacing. A full Workspace scan is expensive: it is spaced
+    -- out, and tightened during combat when state changes fast.
     Perception = {
-        IdleInterval = 2.0,        -- s entre deux tours hors combat
-        CombatInterval = 0.4,      -- s entre deux tours en combat
-        QuestPollInterval = 0.5,   -- s entre deux lectures de l'etat de quete
-        MaxScanPerTick = 400,      -- instances inspectees par tour, au maximum
+        IdleInterval = 2.0,        -- s between passes outside combat
+        CombatInterval = 0.4,      -- s between passes during combat
+        QuestPollInterval = 0.5,   -- s between quest-state reads
+        MaxScanPerTick = 400,      -- instances inspected per pass, at most
     },
 
     Quest = {
-        -- Motifs de lecture de l'objectif, essayes dans l'ordre. Deplacer un
-        -- motif ou en ajouter un ne demande pas de toucher au code.
+        -- Objective patterns, tried in order. Moving or adding one does not
+        -- mean touching the code.
         Patterns = {
             "^%s*Defeat%s+(%d+)%s+(.+)$",
             "^%s*Kill%s+(%d+)%s+(.+)$",
@@ -29,81 +28,81 @@ return {
             "%[(%d+)%s*/%s*(%d+)%]",
             "(%d+)%s*/%s*(%d+)",
         },
-        StaleAfter = 6,            -- s sans lecture reussie avant de douter
+        StaleAfter = 6,            -- s without a successful read before doubting
     },
 
     Targets = {
-        ScanRadius = 1500,         -- rayon de collecte des cibles candidates
-        -- Un mob dont la vie max depasse ce seuil est traite comme un boss et
-        -- exclu, sauf si la quete active le designe explicitement.
+        ScanRadius = 1500,         -- radius for collecting candidate targets
+        -- A mob whose max health exceeds this is treated as a boss and
+        -- excluded, unless the active quest names it explicitly.
         BossHealthThreshold = 20000,
         MinHealth = 1,
-        -- Une cible hors de la region de spawn retenue est ignoree : c'est ce
-        -- qui empeche d'aspirer les mobs de la zone voisine.
-        RegionSlack = 1.6,         -- multiplicateur du rayon de region
+        -- A target outside the chosen spawn region is ignored: this is what
+        -- stops the neighbouring zone's mobs from being pulled in.
+        RegionSlack = 1.6,         -- multiplier on the region radius
     },
 
     Cluster = {
-        Radius = 140,              -- rayon de regroupement d'un paquet de mobs
-        MinSize = 1,               -- taille minimale d'un groupe retenu
-        DistanceWeight = 0.6,      -- poids de l'eloignement dans le score
-        DensityWeight = 1.0,       -- poids de la densite dans le score
-        RefreshInterval = 8,       -- s entre deux recalculs de region
+        Radius = 140,              -- grouping radius for a pack of mobs
+        MinSize = 1,               -- smallest group kept
+        DistanceWeight = 0.6,      -- weight of distance in the score
+        DensityWeight = 1.0,       -- weight of density in the score
+        RefreshInterval = 8,       -- s between region recomputations
     },
 
     Bring = {
-        -- Rayon de collecte. Au-dela, on ne teleporte pas le mob a travers la
-        -- carte : on rapproche le JOUEUR (voir PullLimit).
+        -- Collection radius. Beyond it the mob is not teleported across the
+        -- map: the PLAYER moves instead (see PullLimit).
         Radius = 260,
-        PullLimit = 400,           -- distance au-dela de laquelle on voyage
-        Height = 12,               -- hauteur du point de combat sous le joueur
-        Interval = 0.1,            -- s entre deux repositionnements
-        SlotSpacing = 7,           -- distance entre deux emplacements de mob
-        MaxTargets = 6,            -- emplacements disponibles autour de l'ancre
-        DeadZone = 5,              -- en deca, on ne retouche pas le mob
-        AnchorRefresh = 1.5,       -- s avant recalcul du point d'ancrage
+        PullLimit = 400,           -- distance past which we travel instead
+        Height = 12,               -- height of the combat point below the player
+        Interval = 0.1,            -- s between repositionings
+        SlotSpacing = 7,           -- distance between two mob slots
+        MaxTargets = 6,            -- slots available around the anchor
+        DeadZone = 5,              -- inside this, the mob is left alone
+        AnchorRefresh = 1.5,       -- s before the anchor is recomputed
     },
 
     Anchor = {
-        Height = 18,               -- hauteur de vol au-dessus du sol
-        ProbeDepth = 400,          -- portee du rayon de sondage vers le bas
-        MinGroundClearance = 6,    -- garde au sol minimale
-        WaterLevel = 2,            -- Y en dessous duquel on considere l'eau
-        MaxDriftFromRegion = 220,  -- eloignement max du centre de region
+        Height = 18,               -- flight height above the ground
+        ProbeDepth = 400,          -- reach of the downward probe ray
+        MinGroundClearance = 6,    -- minimum clearance above ground
+        WaterLevel = 2,            -- Y below which we consider it water
+        MaxDriftFromRegion = 220,  -- max drift from the region centre
     },
 
     Travel = {
-        ArriveDistance = 12,       -- distance a laquelle on se considere arrive
-        QuestGiverDistance = 8,    -- distance d'interaction avec un donneur
-        StuckDistance = 4,         -- deplacement minimal attendu par controle
-        StuckWindow = 3,           -- s d'immobilite avant de declarer un blocage
-        FarEntranceDistance = 10000, -- au-dela : passage par requestEntrance
+        ArriveDistance = 12,       -- distance at which we count as arrived
+        QuestGiverDistance = 8,    -- interaction distance with a giver
+        StuckDistance = 4,         -- minimum expected progress per check
+        StuckWindow = 3,           -- s without progress before declaring a block
+        FarEntranceDistance = 10000, -- beyond this: go through requestEntrance
     },
 
     Combat = {
-        EngageTimeout = 8,         -- s sans degat avant d'abandonner une cible
+        EngageTimeout = 8,         -- s without damage before dropping a target
         AttackDelay = 0.1,
         ReacquireDelay = 0.25,
     },
 
     Recovery = {
-        MaxLocalAttempts = 3,      -- rescans locaux avant d'escalader
-        MaxRedetects = 2,          -- redetections completes avant server hop
-        Cooldown = 1.5,            -- s entre deux tentatives
-        HopAfterFailures = 6,      -- echecs cumules avant changement de serveur
+        MaxLocalAttempts = 3,      -- local rescans before escalating
+        MaxRedetects = 2,          -- full re-detections before a server hop
+        Cooldown = 1.5,            -- s between attempts
+        HopAfterFailures = 6,      -- cumulative failures before hopping
     },
 
     CDK = {
         MinLevel = 2200,
         MinYamaMastery = 350,
         MinTushitaMastery = 350,
-        TrialTimeout = 120,        -- s par epreuve avant recuperation
+        TrialTimeout = 120,        -- s per trial before recovery
         ScanInterval = 2,
     },
 
     Boss = {
         SearchRadius = 3000,
-        RespawnPoll = 10,          -- s entre deux verifications de respawn
+        RespawnPoll = 10,          -- s between respawn checks
         KillConfirmDelay = 1.5,
     },
 }
