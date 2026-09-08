@@ -26,6 +26,7 @@ copy-pasted, and it is why the source has to live in src/ to stay editable.
 import argparse
 import base64
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -68,7 +69,7 @@ def module_name(path: pathlib.Path) -> str:
     return ".".join(parts)
 
 
-def collect() -> list[tuple[str, pathlib.Path]]:
+def collect(entry: str = ENTRY) -> list[tuple[str, pathlib.Path]]:
     files = sorted(SRC.rglob("*.lua"))
     if not files:
         raise SystemExit(f"no .lua sources found under {SRC}")
@@ -78,12 +79,49 @@ def collect() -> list[tuple[str, pathlib.Path]]:
         if name in seen:
             raise SystemExit(f"duplicate module {name}: {seen[name]} and {path}")
         seen[name] = path
-    if ENTRY not in seen:
-        raise SystemExit(f"missing entry module src/{ENTRY}.lua")
+    if entry not in seen:
+        raise SystemExit(f"missing entry module src/{entry.replace('.', '/')}.lua")
     return modules
 
 
-def bundle(modules: list[tuple[str, pathlib.Path]]) -> str:
+# Every require in this codebase takes a literal module path, so the
+# dependency graph is recoverable statically.
+REQUIRE_RE = re.compile(r"""require\(\s*["']([\w.]+)["']\s*\)""")
+
+
+def reachable(modules: list[tuple[str, pathlib.Path]], entry: str):
+    """Modules the entry actually pulls in, plus a check for broken requires.
+
+    Keeps a UI-only build from shipping the whole AutomationCore, and the hub
+    build from shipping the UI. A require naming a module that does not exist
+    fails here rather than at load time in the game.
+    """
+    index = dict(modules)
+    seen: set[str] = set()
+    stack = [entry]
+    broken: list[str] = []
+
+    while stack:
+        name = stack.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        path = index.get(name)
+        if path is None:
+            continue
+        for dep in REQUIRE_RE.findall(path.read_text(encoding="utf-8")):
+            if dep not in index:
+                broken.append(f"{name} requires missing module {dep!r}")
+            elif dep not in seen:
+                stack.append(dep)
+
+    if broken:
+        raise SystemExit("unresolved requires:\n  " + "\n  ".join(sorted(set(broken))))
+
+    return [(name, path) for name, path in modules if name in seen]
+
+
+def bundle(modules: list[tuple[str, pathlib.Path]], entry: str = ENTRY) -> str:
     out = ["-- Strawberry Hub — bundle genere par tools/pack.py. Ne pas editer.", PREAMBLE]
     for name, path in modules:
         # Module names come from filesystem paths made of identifier chars and
@@ -91,7 +129,7 @@ def bundle(modules: list[tuple[str, pathlib.Path]]) -> str:
         assert '"' not in name and "\\" not in name, name
         body = path.read_text(encoding="utf-8").rstrip("\n")
         out.append(f'__modules["{name}"] = function()\n{body}\nend\n')
-    out.append(f'return require("{ENTRY}")\n')
+    out.append(f'return require("{entry}")\n')
     return "\n".join(out)
 
 
@@ -153,20 +191,41 @@ def main() -> int:
         metavar="PATH",
         help="write the readable bundle here and skip packing (for syntax checks)",
     )
+    ap.add_argument(
+        "--entry",
+        default=ENTRY,
+        help=f"module to require at the end of the bundle (default: {ENTRY})",
+    )
+    ap.add_argument(
+        "--out",
+        metavar="PATH",
+        help="write the packed build here instead of StrawberryHub.lua",
+    )
+    ap.add_argument(
+        "--no-prune",
+        action="store_true",
+        help="include every module, not just those the entry requires",
+    )
     args = ap.parse_args()
 
-    modules = collect()
-    bundled = bundle(modules)
+    modules = collect(args.entry)
+    if not args.no_prune:
+        modules = reachable(modules, args.entry)
+    bundled = bundle(modules, args.entry)
 
     if args.bundle_only:
-        pathlib.Path(args.bundle_only).write_text(bundled, encoding="utf-8")
+        out = pathlib.Path(args.bundle_only)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(bundled, encoding="utf-8")
         print(f"bundle -> {args.bundle_only} ({len(modules)} modules, {len(bundled)} bytes)")
         return 0
 
-    DIST.write_text(pack(bundled), encoding="utf-8")
+    dist = pathlib.Path(args.out) if args.out else DIST
+    dist.parent.mkdir(parents=True, exist_ok=True)
+    dist.write_text(pack(bundled), encoding="utf-8")
     print(
-        f"packed {len(modules)} modules -> {DIST.relative_to(ROOT)} "
-        f"({len(bundled)} bytes source, {DIST.stat().st_size} bytes dist)"
+        f"packed {len(modules)} modules (entry {args.entry}) -> {dist} "
+        f"({len(bundled)} bytes source, {dist.stat().st_size} bytes dist)"
     )
     return 0
 

@@ -65,6 +65,23 @@ end
 Vector3 = { new = function(x, y, z) return vec(x or 0, y or 0, z or 0) end }
 Vector3.zero = Vector3.new(0, 0, 0)
 
+-- Vector2 -------------------------------------------------------------------
+local Vector2mt = {}
+Vector2mt.__index = function(self, key)
+    if key == "Magnitude" then return math.sqrt(self.X ^ 2 + self.Y ^ 2) end
+    return rawget(Vector2mt, key)
+end
+local function vec2(x, y)
+    return setmetatable({ X = x, Y = y, __vector2 = true }, Vector2mt)
+end
+function Vector2mt.__add(a, b) return vec2(a.X + b.X, a.Y + b.Y) end
+function Vector2mt.__sub(a, b) return vec2(a.X - b.X, a.Y - b.Y) end
+function Vector2mt.__eq(a, b) return a.X == b.X and a.Y == b.Y end
+function Vector2mt.__tostring(a) return string.format("(%.0f, %.0f)", a.X, a.Y) end
+
+Vector2 = { new = function(x, y) return vec2(x or 0, y or 0) end }
+Vector2.zero = Vector2.new(0, 0)
+
 -- CFrame -------------------------------------------------------------------
 local CFramemt = { __index = {} }
 local function cframe(position)
@@ -84,11 +101,57 @@ CFrame = {
     lookAt = function(from, _to) return cframe(from) end,
 }
 
+-- Signaux ------------------------------------------------------------------
+-- Reproduits fidelement parce que les tests s'en servent pour SIMULER les
+-- entrees : `button.Activated:Fire()` est ce qui remplace un clic reel.
+local Signal = {}
+Signal.__index = Signal
+
+local function newSignal()
+    return setmetatable({ handlers = {}, __signal = true }, Signal)
+end
+_G.newSignal = newSignal
+
+function Signal:Connect(fn)
+    local handlers = self.handlers
+    local entry = { fn = fn }
+    local connection = { Connected = true, __connection = true }
+
+    function connection:Disconnect()
+        self.Connected = false
+        for index, candidate in ipairs(handlers) do
+            if candidate == entry then
+                table.remove(handlers, index)
+                break
+            end
+        end
+    end
+
+    entry.connection = connection
+    handlers[#handlers + 1] = entry
+    return connection
+end
+
+function Signal:Fire(...)
+    -- Copie : un handler qui se deconnecte pendant le parcours ne doit pas
+    -- decaler la liste sous nos pieds.
+    local snapshot = {}
+    for index, entry in ipairs(self.handlers) do snapshot[index] = entry end
+    for _, entry in ipairs(snapshot) do entry.fn(...) end
+end
+
+function Signal:Count() return #self.handlers end
+
 -- typeof -------------------------------------------------------------------
 function typeof(value)
     if type(value) ~= "table" then return type(value) end
     if value.__vector then return "Vector3" end
+    if value.__vector2 then return "Vector2" end
     if value.__cframe then return "CFrame" end
+    if value.__udim2 then return "UDim2" end
+    if value.__udim then return "UDim" end
+    if value.__color3 then return "Color3" end
+    if value.__connection then return "RBXScriptConnection" end
     if value.__instance then return "Instance" end
     return "table"
 end
@@ -100,13 +163,66 @@ local Instance_methods = {}
 -- Roblox resout d'abord les proprietes, puis les methodes, puis les enfants
 -- par nom. Le troisieme cas compte ici : c'est ce qui permet de tester le
 -- chemin rapide `frame.Container.QuestTitle.Title.Text`.
+-- Signaux crees a la demande : le code UI y accede sans que le stub ait a
+-- lister a l'avance quelles instances en exposent lesquels.
+local SIGNAL_NAMES = {
+    Activated = true, InputBegan = true, InputEnded = true, InputChanged = true,
+    MouseEnter = true, MouseLeave = true, MouseButton1Click = true,
+    MouseButton1Down = true, MouseButton1Up = true,
+    Changed = true, Completed = true, Touched = true,
+}
+
 Instance_mt.__index = function(self, key)
     local method = Instance_methods[key]
     if method then return method end
+
+    if SIGNAL_NAMES[key] then
+        local signals = rawget(self, "Signals")
+        local signal = signals[key]
+        if not signal then
+            signal = newSignal()
+            signals[key] = signal
+        end
+        return signal
+    end
+
     for _, child in ipairs(rawget(self, "Children") or {}) do
         if child.Name == key then return child end
     end
     return nil
+end
+
+local function detach(instance, parent)
+    if not parent or not parent.Children then return end
+    for index, child in ipairs(parent.Children) do
+        if child == instance then
+            table.remove(parent.Children, index)
+            return
+        end
+    end
+end
+
+-- Affecter `.Parent` doit REPARENTER, pas seulement ecrire un champ : le code
+-- d'interface cree ses instances puis les parente (Utility.new pose Parent en
+-- dernier), donc sans cela aucun enfant ne serait jamais enregistre.
+Instance_mt.__newindex = function(self, key, value)
+    if key == "Parent" then
+        local previous = rawget(self, "Parent")
+        if previous == value then return end
+        detach(self, previous)
+        rawset(self, "Parent", value)
+        if value and value.Children then
+            table.insert(value.Children, self)
+        end
+    else
+        rawset(self, key, value)
+    end
+
+    -- Reveille GetPropertyChangedSignal, sur lequel la fenetre s'appuie pour
+    -- suivre la largeur reelle de la barre laterale.
+    local signals = rawget(self, "PropertySignals")
+    local signal = signals and signals[key]
+    if signal then signal:Fire() end
 end
 
 local function newInstance(className, name, parent)
@@ -117,6 +233,16 @@ local function newInstance(className, name, parent)
         Parent = parent,
         Children = {},
         Attributes = {},
+        Signals = {},
+        PropertySignals = {},
+        -- Valeurs par defaut des proprietes que le code UI LIT sans les avoir
+        -- ecrites. Sans elles, un calcul de placement recevrait nil.
+        AbsolutePosition = Vector2 and Vector2.new(0, 0) or nil,
+        AbsoluteSize = Vector2 and Vector2.new(100, 30) or nil,
+        Visible = true,
+        Text = "",
+        BackgroundTransparency = 0,
+        Rotation = 0,
     }, Instance_mt)
     if parent then table.insert(parent.Children, self) end
     return self
@@ -190,6 +316,42 @@ end
 
 function Instance_methods:GetAttribute(key) return self.Attributes[key] end
 function Instance_methods:SetAttribute(key, value) self.Attributes[key] = value end
+
+function Instance_methods:GetPropertyChangedSignal(property)
+    local signals = rawget(self, "PropertySignals")
+    local signal = signals[property]
+    if not signal then
+        signal = newSignal()
+        signals[property] = signal
+    end
+    return signal
+end
+
+-- Destruction recursive. Le Maid en depend : sans elle, `maid:Destroy()`
+-- echouerait sur la premiere instance et laisserait le reste en place.
+function Instance_methods:Destroy()
+    for index = #self.Children, 1, -1 do
+        self.Children[index]:Destroy()
+    end
+
+    local parent = self.Parent
+    if parent and parent.Children then
+        for index, child in ipairs(parent.Children) do
+            if child == self then
+                table.remove(parent.Children, index)
+                break
+            end
+        end
+    end
+
+    self.Parent = nil
+    self.Destroyed = true
+
+    -- Les connexions portees par l'instance meurent avec elle.
+    for _, signal in pairs(rawget(self, "Signals") or {}) do
+        signal.handlers = {}
+    end
+end
 function Instance_methods:GetPivot()
     return CFrame.new(self.Position or Vector3.new(0, 0, 0))
 end
@@ -229,11 +391,28 @@ game = {
 
 RaycastParams = { new = function() return { FilterDescendantsInstances = {} } end }
 OverlapParams = { new = function() return { FilterDescendantsInstances = {} } end }
-Enum = {
-    RaycastFilterType = { Exclude = "Exclude" },
-    EasingStyle = { Linear = "Linear" },
-    PlaybackState = { Playing = "Playing" },
-}
+
+-- Enum auto-genere : chaque categorie et chaque membre est cree a la
+-- premiere lecture, puis mis en cache. Les comparaisons par identite
+-- fonctionnent donc normalement, sans avoir a enumerer a l'avance les
+-- dizaines de membres que le code UI utilise.
+local function enumCategory(categoryName)
+    return setmetatable({}, {
+        __index = function(category, memberName)
+            local member = { Name = memberName, EnumType = categoryName }
+            rawset(category, memberName, member)
+            return member
+        end,
+    })
+end
+
+Enum = setmetatable({}, {
+    __index = function(root, categoryName)
+        local category = enumCategory(categoryName)
+        rawset(root, categoryName, category)
+        return category
+    end,
+})
 
 task = { wait = function() end, spawn = function(fn) fn() end }
 
