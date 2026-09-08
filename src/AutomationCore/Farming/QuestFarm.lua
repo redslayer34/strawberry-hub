@@ -35,6 +35,8 @@ function QuestFarm.new(ctx, perception, recovery)
         bring = BringController.new(ctx),
         attack = AttackController.new(ctx),
         plan = nil,
+        acceptedPlan = nil,
+        acceptedAt = 0,
         machine = nil,
     }, QuestFarm)
 
@@ -120,10 +122,23 @@ function QuestFarm:defineStates()
                     return "SCAN_TARGETS"
                 end
 
-                -- Quest active but the objective is unreadable: we do not
-                -- guess. Abandon it and take a clean one, rather than farm
-                -- blind.
+                -- Quest active but the objective is unreadable, even after
+                -- QuestDetector's own catalogue fallback: if we are the ones
+                -- who just accepted this quest, we already know its target --
+                -- no need to abandon it over a UI we failed to parse. The
+                -- short window guards against pinning a stale plan onto some
+                -- unrelated quest the player picked up another way.
                 if quest.Active and not quest.TargetName then
+                    if self.acceptedPlan and os.clock() - (self.acceptedAt or 0) < 20 then
+                        quest.TargetRaw = self.acceptedPlan.targetRaw
+                        quest.TargetName = self.acceptedPlan.targetName
+                        quest.RequiredCount = math.huge
+                        quest.Remaining = math.huge
+                        Log.Quest("objective unreadable -- using the plan we just accepted:",
+                            quest.TargetRaw)
+                        return "SCAN_TARGETS"
+                    end
+
                     Log.Quest("objective unreadable -- abandoning the quest")
                     QuestTravel.abandon(ctx)
                     return nil
@@ -186,7 +201,13 @@ function QuestFarm:defineStates()
             end,
             update = function()
                 local quest = perception:detectQuest(true)
-                if quest.Active then return "DETECT_QUEST" end
+                if quest.Active then
+                    -- Remember what we just accepted: DETECT_QUEST falls back
+                    -- to it if the quest panel's text turns out unreadable.
+                    self.acceptedPlan = self.plan
+                    self.acceptedAt = os.clock()
+                    return "DETECT_QUEST"
+                end
 
                 -- Re-request once a second while the NPC is in range: the
                 -- remote fails if we have drifted away.

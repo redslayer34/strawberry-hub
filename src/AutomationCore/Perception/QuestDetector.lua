@@ -98,6 +98,85 @@ local function matchProgress(text, patterns)
 end
 
 ---------------------------------------------------------------------------
+-- Catalogue fallback
+---------------------------------------------------------------------------
+--  The sentence patterns above assume the game phrases its objective as
+--  "Defeat N <mob>". If the real wording differs (a separate title and
+--  objective label, a different verb, a language variant), that assumption
+--  can fail on a server we have never seen phrase it. Rather than abandon a
+--  quest we can neither read nor safely act on, we fall back to recognising
+--  the mob BY NAME: the historical catalogue already carries the real,
+--  canonical mob names for this level band, so any of them appearing in the
+--  quest panel's text is a solid signal, independent of sentence structure.
+--
+--  This is still evidence, not invention: the mob name has to be found
+--  verbatim (as a normalised word sequence) inside text the game itself
+--  displayed. Nothing here is a hardcoded position -- only a smarter way to
+--  read what is already on screen.
+
+local function wordsOf(normalized)
+    local words = {}
+    for word in normalized:gmatch("%S+") do words[#words + 1] = word end
+    return words
+end
+
+-- True when `needle` (already normalised, e.g. "desert bandit") occurs as a
+-- consecutive run of words inside `haystack` (already normalised).
+local function containsPhrase(haystack, needle)
+    local hay, need = wordsOf(haystack), wordsOf(needle)
+    if #need == 0 or #need > #hay then return false end
+
+    for start = 1, #hay - #need + 1 do
+        local match = true
+        for i = 1, #need do
+            if hay[start + i - 1] ~= need[i] then
+                match = false
+                break
+            end
+        end
+        if match then return true end
+    end
+    return false
+end
+
+-- Looks for a catalogue mob name inside the collected texts. Restricted to
+-- the current sea (when known) to avoid recognising a same-named mob from a
+-- different sea; entries matching the player's level band are preferred.
+local function matchFromCatalogue(ctx, texts)
+    local catalogue = ctx.legacyConfig and ctx.legacyConfig.Quests
+    if not catalogue then return nil end
+
+    local level = ctx.player.level()
+    local normalizedTexts = {}
+    for _, text in ipairs(texts) do
+        normalizedTexts[#normalizedTexts + 1] = Names.normalize(text) or ""
+    end
+
+    local best, bestInBand
+    for _, row in ipairs(catalogue) do
+        if not row.Sea or not ctx.sea or row.Sea == ctx.sea then
+            local canonical = Names.normalize(row.Name)
+            if canonical then
+                for _, normalized in ipairs(normalizedTexts) do
+                    if containsPhrase(normalized, canonical) then
+                        local inBand = level >= (row.Min or 1) and level <= (row.Max or math.huge)
+                        -- Prefer a match whose level band fits the player: two
+                        -- mobs can share a word, and the level band is the
+                        -- cheapest disambiguator available.
+                        if not best or (inBand and not bestInBand) then
+                            best, bestInBand = row.Name, inBand
+                        end
+                        break
+                    end
+                end
+            end
+        end
+    end
+
+    return best
+end
+
+---------------------------------------------------------------------------
 -- API
 ---------------------------------------------------------------------------
 
@@ -142,6 +221,19 @@ function QuestDetector.read(ctx)
         end
     end
 
+    -- The sentence pattern found nothing: fall back to recognising a
+    -- catalogue mob name inside the displayed text (see matchFromCatalogue
+    -- above). Still evidence read off the game, just less rigid about
+    -- phrasing.
+    if not state.TargetName then
+        local fromCatalogue = matchFromCatalogue(ctx, texts)
+        if fromCatalogue then
+            state.TargetRaw = fromCatalogue
+            state.TargetName = Names.normalize(fromCatalogue)
+            Log.Quest("objective recovered from the catalogue --", fromCatalogue)
+        end
+    end
+
     -- Progress: prefer the pair whose total matches the objective already
     -- read, otherwise the first one found.
     local fallbackCurrent, fallbackRequired
@@ -162,6 +254,17 @@ function QuestDetector.read(ctx)
         if state.RequiredCount == 0 and fallbackRequired then
             state.RequiredCount = fallbackRequired
         end
+    end
+
+    -- A target name with no readable count is not a completed quest: treat
+    -- the remaining count as unknown (never zero) rather than falsely
+    -- declaring victory and skipping straight to TURN_IN without a single
+    -- mob engaged. Completion is then detected the only way still available
+    -- -- the quest becoming inactive -- rather than guessed from a count we
+    -- never actually read.
+    if state.TargetName and state.RequiredCount == 0 then
+        state.RequiredCount = math.huge
+        state.CurrentCount = 0
     end
 
     state.Remaining = math.max(0, state.RequiredCount - state.CurrentCount)
@@ -187,9 +290,13 @@ function QuestDetector.describe(state)
     if not state.TargetName then
         return "quest active, objective unreadable (" .. tostring(state.QuestName) .. ")"
     end
-    return string.format("%s -- %s %d/%d",
+    -- RequiredCount is math.huge when the target name was recovered but no
+    -- count could be read: %d rejects that (not representable as an
+    -- integer), so it needs its own branch rather than reaching string.format.
+    local required = state.RequiredCount == math.huge and "?" or tostring(state.RequiredCount)
+    return string.format("%s -- %s %d/%s",
         tostring(state.QuestName), state.TargetRaw or state.TargetName,
-        state.CurrentCount, state.RequiredCount)
+        state.CurrentCount, required)
 end
 
 -- Logs changes only: the read runs several times a second and the journal has
