@@ -1,0 +1,6 @@
+# Chunk assemble par tools/test.py, regenere a chaque execution.
+build/
+
+# tools/test.py importe tools/pack.py comme module.
+__pycache__/
+*.pyc
