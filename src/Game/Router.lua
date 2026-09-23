@@ -46,6 +46,8 @@ Router.RESPAWN_COST = 6      -- seconds a respawn costs
 Router.RESPAWN_STEPS = 60    -- x 0.25 s to wait for the new character
 Router.PORTAL_STEPS = 12     -- x 0.25 s to see a learned portal work (3 s)
 Router.EXIT_RADIUS = 500     -- studs from a portal's exit that count as arrived
+Router.PORTAL_DOCK = 3       -- studs from a learned entrance before triggering it
+Router.HOLD_STEPS = 3        -- x 0.2 s standing in the portal so the server sees it
 
 -- Sea 3 Submerged Island (reference): the island, the worker who sends you
 -- there, the dock to leave from, and where leaving lands.
@@ -176,7 +178,8 @@ function Router.plan(here, goal, speed)
             end
             consider({
                 kind = "learned", name = portal.name, portal = portal,
-                dock = not fromHere and portal.entrance or nil, cost = cost,
+                dock = not fromHere and portal.entrance or nil, dockRadius = Router.PORTAL_DOCK,
+                cost = cost,
             })
         end
     end
@@ -258,12 +261,31 @@ end
 
 -- Replays a learned portal and waits to land near its exit. Returns
 -- whether it worked, the distance it was triggered from, the answer.
+-- Stands exactly on the entrance, still, long enough for the server to
+-- receive that position: it checks the player is in the portal.
+local function standOn(position)
+    for _ = 1, math.max(Router.HOLD_STEPS, 1) do
+        local hrp = Player.hrp()
+        if not hrp then return end
+        pcall(function()
+            hrp.CFrame = CFrame.new(position)
+            hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        end)
+        if Router.HOLD_STEPS > 0 then task.wait(0.2) end
+    end
+end
+
 local function tryPortal(portal, callOnly)
     local here = Player.position()
+    if not callOnly and here and (here - portal.entrance).Magnitude <= PortalRecorder.AT_ENTRANCE then
+        standOn(portal.entrance)
+        here = Player.position()
+    end
     local distance = here and (here - portal.entrance).Magnitude or math.huge
     local answer = PortalRecorder.trigger(portal, callOnly)
     local ok = waitUntil(Router.PORTAL_STEPS, function() return near(portal.exit, Router.EXIT_RADIUS) end)
     PortalRecorder.recordUse(portal, distance, ok)
+    PortalRecorder.recordTry(portal, ok)
     return ok, distance, answer
 end
 
@@ -359,7 +381,7 @@ function Router.update(here, goal, speed)
         note = "via " .. route.name
     end
 
-    if route.dock and (here - route.dock).Magnitude > Router.AT_DOCK then
+    if route.dock and (here - route.dock).Magnitude > (route.dockRadius or Router.AT_DOCK) then
         return false, route.dock
     end
 

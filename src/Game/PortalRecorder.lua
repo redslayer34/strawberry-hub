@@ -25,7 +25,8 @@ local PortalRecorder = {}
 PortalRecorder.FILE = "StrawberryHub/portals.json"
 PortalRecorder.JUMP = 300           -- studs in one frame that mean a teleport
 PortalRecorder.CALL_WINDOW = 5      -- seconds a call stays linked to a jump
-PortalRecorder.TOUCH_RADIUS = 25    -- studs around the entrance for its part
+PortalRecorder.TOUCH_RADIUS = 30    -- studs around the entrance whose touch parts count
+PortalRecorder.MAX_PARTS = 5
 PortalRecorder.KEEP_CALLS = 20
 PortalRecorder.SAME_ENTRANCE = 50
 PortalRecorder.SAME_EXIT = 200
@@ -155,6 +156,7 @@ local function load()
                         call = type(saved.call) == "table" and teleportLike(saved.call) and saved.call or nil,
                         reach = tonumber(saved.reach),
                         tooFar = tonumber(saved.tooFar),
+                        parts = type(saved.parts) == "table" and saved.parts or nil,
                     }
                 end
             end
@@ -175,6 +177,7 @@ local function save()
                 call = portal.call,
                 reach = portal.reach,
                 tooFar = portal.tooFar,
+                parts = portal.parts,
             }
         end
         data[tostring(sea)] = out
@@ -229,6 +232,28 @@ local function recentCall(now)
     return nil
 end
 
+-- Parts with a touch interest around the entrance, nearest first. The
+-- query is on bounds, so a big portal part whose centre is far still counts.
+local function touchParts(entrance)
+    local found = {}
+    local ok, parts = pcall(function()
+        return workspace:GetPartBoundsInRadius(entrance, PortalRecorder.TOUCH_RADIUS)
+    end)
+    if not ok or type(parts) ~= "table" then return found end
+    for _, part in ipairs(parts) do
+        local character = Player.character()
+        if part:FindFirstChildOfClass("TouchTransmitter")
+            and not (character and part:IsDescendantOf(character)) then
+            found[#found + 1] = part
+        end
+    end
+    table.sort(found, function(a, b)
+        return (a.Position - entrance).Magnitude < (b.Position - entrance).Magnitude
+    end)
+    while #found > PortalRecorder.MAX_PARTS do table.remove(found) end
+    return found
+end
+
 -- Records one teleport from `entrance` to `exit`. Returns the portal.
 function PortalRecorder.learn(entrance, exit, now)
     load()
@@ -240,6 +265,12 @@ function PortalRecorder.learn(entrance, exit, now)
         exit = exit,
         call = recentCall(now or os.clock()),
     }
+    local paths = {}
+    for _, part in ipairs(touchParts(entrance)) do
+        local okName, name = pcall(function() return part:GetFullName() end)
+        if okName then paths[#paths + 1] = name end
+    end
+    portal.parts = #paths > 0 and paths or nil
 
     local list = portals[sea]
     for index, known in ipairs(list) do
@@ -286,27 +317,26 @@ function PortalRecorder.portals()
     return portals[Player.sea() or 0] or {}
 end
 
--- The part with a touch interest nearest the entrance: walking into it is
--- what the game's own portal reacts to.
-local function touchPart(entrance)
-    local best, bestDistance = nil, PortalRecorder.TOUCH_RADIUS
-    local ok, parts = pcall(function()
-        return workspace:GetPartBoundsInRadius(entrance, PortalRecorder.TOUCH_RADIUS)
-    end)
-    if not ok or type(parts) ~= "table" then return nil end
-    for _, part in ipairs(parts) do
-        if part:FindFirstChildOfClass("TouchTransmitter") then
-            local distance = (part.Position - entrance).Magnitude
-            if distance <= bestDistance then best, bestDistance = part, distance end
-        end
-    end
-    return best
-end
-
--- Triggers a learned portal while standing on its entrance: replays the
--- game's call when one was recorded, and touches the portal part.
--- `callOnly` skips the touch (used to test the call from far away).
+-- Triggers a learned portal while standing on its entrance: touches the
+-- portal parts (the ones seen when it was learned, else the ones around),
+-- replays the game's call, then ends the touch. `callOnly` skips the touch
+-- (used to test the call from far away). The try is kept for the panel.
 function PortalRecorder.trigger(portal, callOnly)
+    local hrp = Player.hrp()
+    local here = Player.position()
+    local parts = {}
+    if not callOnly then
+        for _, path in ipairs(portal.parts or {}) do
+            local part = resolve(path)
+            if part then parts[#parts + 1] = part end
+        end
+        if #parts == 0 then parts = touchParts(portal.entrance) end
+    end
+    local canTouch = hrp and firetouchinterest
+    if canTouch then
+        for _, part in ipairs(parts) do pcall(firetouchinterest, hrp, part, 0) end
+    end
+
     local answer
     if portal.call then
         local remote = resolve(portal.call.path)
@@ -317,18 +347,26 @@ function PortalRecorder.trigger(portal, callOnly)
             local ok, result = pcall(function()
                 return remote[method](remote, (table.unpack or unpack)(args, 1, #portal.call.args))
             end)
-            answer = ok and result or nil
+            answer = ok and result or (not ok and ("error: " .. tostring(result))) or nil
+        else
+            answer = "remote not found"
         end
     end
 
-    if callOnly then return answer end
-    local part = touchPart(portal.entrance)
-    local hrp = Player.hrp()
-    if part and hrp and firetouchinterest then
-        pcall(firetouchinterest, hrp, part, 0)
-        pcall(firetouchinterest, hrp, part, 1)
+    if canTouch then
+        for _, part in ipairs(parts) do pcall(firetouchinterest, hrp, part, 1) end
     end
+    portal.lastTry = {
+        distance = here and (here - portal.entrance).Magnitude or -1,
+        answer = tostring(answer),
+        touched = canTouch and #parts or 0,
+    }
     return answer
+end
+
+-- Result of the last try, once the Router knows whether it worked.
+function PortalRecorder.recordTry(portal, worked)
+    if portal.lastTry then portal.lastTry.worked = worked end
 end
 
 -- The server accepts a portal's call only within some distance of its
@@ -391,6 +429,13 @@ function PortalRecorder.describe()
         local at = portal.entrance
         lines[#lines + 1] = string.format("%s, %s, entrance (%.0f, %.0f, %.0f)",
             portal.name, how, at.X, at.Y, at.Z)
+        local try = portal.lastTry
+        if try then
+            local result = try.worked == true and "teleported"
+                or try.worked == false and "no teleport" or "waiting"
+            lines[#lines + 1] = string.format("  last try: %.1f studs away, answer %s, %d parts touched, %s",
+                try.distance, try.answer, try.touched, result)
+        end
     end
     if #lines == 0 then return "No portal learned in this sea yet." end
     return table.concat(lines, "\n")
@@ -415,6 +460,7 @@ function PortalRecorder.log()
             line = line .. " | " .. tostring(portal.call.path) .. ":" .. portal.call.method
                 .. "(" .. table.concat(args, ", ") .. ")"
         end
+        if portal.parts then line = line .. " | parts: " .. table.concat(portal.parts, ", ") end
         lines[#lines + 1] = line
     end
     lines[#lines + 1] = ""

@@ -306,6 +306,15 @@ function methods:FindFirstChildWhichIsA(className)
     end
     return nil
 end
+function methods:IsDescendantOf(ancestor)
+    local node = self.Parent
+    while node do
+        if node == ancestor then return true end
+        node = node.Parent
+    end
+    return false
+end
+
 function methods:GetFullName()
     local names, node = {}, self
     while node and rawget(node, "_props") do

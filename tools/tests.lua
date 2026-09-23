@@ -1113,11 +1113,12 @@ do
     check("away from the entrance: fly there", not handled and aim ~= nil and (aim - CASTLE_DOOR).Magnitude < 1)
     world.hrp.Position = CASTLE_DOOR
     check("shortcut running", Router.update(CASTLE_DOOR, goal, 300))
-    local call = world.commF.Invoked[#world.commF.Invoked]
-    eq("requestEntrance replayed", call[1], "requestEntrance")
-    check("with the destination recorded", call[2] == CASTLE, tostring(call[2]))
     check("movement holds still while busy", Router.update(CASTLE_DOOR, goal, 300))
-    stepTasks()
+    eq("no call before standing in the portal", #calls(world.commF, "requestEntrance"), 0)
+    for _ = 1, 6 do stepTasks() end
+    local call = calls(world.commF, "requestEntrance")[1]
+    eq("requestEntrance replayed", call and call[1], "requestEntrance")
+    check("with the destination recorded", call and call[2] == CASTLE, call and tostring(call[2]))
     check("jump done", not Router.busy())
     check("close goal after the jump: normal flight", not Router.update(CASTLE, goal, 300))
     local cooling = Router.plan(Vector3.new(0, 0, 0), goal, 300)
@@ -1137,7 +1138,7 @@ do
     local function attempt()
         world.hrp.Position = CASTLE_DOOR
         Router.update(CASTLE_DOOR, goal, 300)
-        for _ = 1, 4 do stepTasks() end
+        for _ = 1, 10 do stepTasks() end
         Router.update(CASTLE_DOOR, goal, 300)   -- the flying frame after a try
     end
     attempt()
@@ -1170,7 +1171,7 @@ do
     Router.PORTAL_STEPS = 2
     world.commF.OnInvoke = function() return nil end   -- the server refuses from here
     check("tried from here", Router.update(start, goal, 300))
-    for _ = 1, 4 do stepTasks() end
+    for _ = 1, 10 do stepTasks() end
     eq("miss narrows the reach", portal.tooFar, 1400)
     check("reach dropped", portal.reach == nil)
     Router.update(start, goal, 300)   -- flying frame
@@ -1186,7 +1187,7 @@ do
     for _ = 1, 2 do
         world.hrp.Position = CASTLE_DOOR
         Router.update(CASTLE_DOOR, goal, 300)
-        for _ = 1, 4 do stepTasks() end
+        for _ = 1, 10 do stepTasks() end
         Router.update(CASTLE_DOOR, goal, 300)
     end
     check("move away from the exit counts as a failure", Router.plan(CASTLE_DOOR, goal, 300).kind ~= "learned")
@@ -1474,7 +1475,7 @@ do
     end
     world.hrp.Position = MANSION_DOOR
     check("at the entrance: portal triggered", Router.update(MANSION_DOOR, goal, 300))
-    stepTasks()
+    for _ = 1, 10 do stepTasks() end
     eq("portal part touched", touched[1], 0)
     check("learned portal works", Router.describe ~= nil and not Router.busy())
     firetouchinterest = nil
@@ -1548,6 +1549,49 @@ do
     local plan = Router.plan(world.hrp.Position, MANSION_EXIT + Vector3.new(100, 0, 0), 300)
     eq("far portal chosen", plan.kind, "learned")
     eq("far portal used from here", plan.dock, nil)
+end
+
+-- A big portal part (centre 40 studs away) is recorded, saved and touched.
+setup()
+do
+    game.PlaceId = 7449423635
+    local gate = part("PortalGate", CASTLE_DOOR + Vector3.new(40, 0, 0), folder("Map", workspace))
+    gate.Size = Vector3.new(90, 20, 20)
+    newInstance("TouchTransmitter", "TouchInterest", gate)
+    workspace.GetPartBoundsInRadius = function() return { gate, world.hrp } end
+    local portal = learnCastlePortal()
+    eq("portal part recorded", portal.parts and portal.parts[1], "Workspace.Map.PortalGate")
+    check("character parts ignored", portal.parts and #portal.parts == 1)
+
+    workspace.GetPartBoundsInRadius = function() return {} end   -- found by its path now
+    local touched = {}
+    firetouchinterest = function(_, target, state) touched[#touched + 1] = { target, state } end
+    world.commF.OnInvoke = function() return nil end
+    world.hrp.Position = CASTLE_DOOR
+    PortalRecorder.trigger(portal)
+    eq("recorded part touched", touched[1] and touched[1][1], gate)
+    eq("touch begins before the call", touched[1] and touched[1][2], 0)
+    eq("then ends", touched[2] and touched[2][2], 1)
+    PortalRecorder.recordTry(portal, false)
+    local text = PortalRecorder.describe()
+    check("last try shown", text:find("last try: 0.0 studs away, answer nil, 1 parts touched, no teleport", 1, true) ~= nil, text)
+    check("parts in the log", PortalRecorder.log():find("parts: Workspace.Map.PortalGate", 1, true) ~= nil)
+    firetouchinterest = nil
+end
+
+-- Near a learned portal, the character is set on the exact entrance first.
+setup()
+do
+    game.PlaceId = 7449423635
+    learnCastlePortal()
+    local goal = CASTLE + Vector3.new(60, 0, 60)
+    local close = CASTLE_DOOR + Vector3.new(10, 0, 0)
+    world.hrp.Position = close
+    local where
+    world.commF.OnInvoke = function() where = world.hrp.Position return nil end
+    check("10 studs off: portal used", Router.update(close, goal, 300))
+    for _ = 1, 10 do stepTasks() end
+    check("called while standing exactly on the entrance", where and (where - CASTLE_DOOR).Magnitude < 0.01, tostring(where))
 end
 
 ---------------------------------------------------------------------------
