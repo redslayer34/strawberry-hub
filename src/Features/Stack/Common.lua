@@ -168,6 +168,53 @@ function Common.farm(mode, names, search)
     return "Waiting for " .. table.concat(names, ", ")
 end
 
+-- Where a model or part stands (GetPivot, then WorldPivot, then Position).
+function Common.pivot(node)
+    if not node then return nil end
+    local ok, pivot = pcall(function() return node:GetPivot() end)
+    if ok and typeof(pivot) == "CFrame" then return pivot end
+    local okWorld, world = pcall(function() return node.WorldPivot end)
+    if okWorld and typeof(world) == "CFrame" then return world end
+    local okPosition, position = pcall(function() return node.Position end)
+    if okPosition and typeof(position) == "Vector3" then return CFrame.new(position) end
+    return nil
+end
+
+-- The title of the quest panel, or "" when no quest is shown.
+function Common.questTitle()
+    local player = Services.player()
+    local quest = player and Services.find(player, "PlayerGui.Main.Quest")
+    if not quest or not quest.Visible then return "" end
+    local title = Services.find(quest, "Container.QuestTitle.Title")
+    return title and tostring(title.Text) or ""
+end
+
+-- Presses and releases a key through VirtualInputManager.
+function Common.press(key)
+    pcall(function()
+        local input = Services.get("VirtualInputManager")
+        input:SendKeyEvent(true, key, false, game)
+        input:SendKeyEvent(false, key, false, game)
+    end)
+end
+
+-- A remote under ReplicatedStorage.Modules.Net ("RF/DragonHunter").
+function Common.net(name)
+    local net = Services.find(Services.replicated(), "Modules.Net")
+    return net and net:FindFirstChild(name)
+end
+
+-- Invokes a Net remote function; nil when missing or failing.
+function Common.netInvoke(name, ...)
+    local remote = Common.net(name)
+    if not remote then return nil end
+    local args = { n = select("#", ...), ... }
+    local ok, result = pcall(function()
+        return remote:InvokeServer((table.unpack or unpack)(args, 1, args.n))
+    end)
+    return ok and result or nil
+end
+
 -- A part's BrickColor name ("Lime green"), or "".
 function Common.colorName(part)
     local ok, name = pcall(function() return part.BrickColor.Name end)
@@ -192,12 +239,12 @@ end
 ---------------------------------------------------------------------------
 
 -- Asks for a hop because of `reason`. The hop happens once the reason has
--- held for HOP_AFTER seconds, at most once per HOP_COOLDOWN. Returns true
--- when a hop was started.
-function Common.hop(reason)
+-- held for HOP_AFTER seconds (at once when `immediate`), at most once per
+-- HOP_COOLDOWN. Returns true when a hop was started.
+function Common.hop(reason, immediate)
     local now = os.clock()
     hopSince[reason] = hopSince[reason] or now
-    if now - hopSince[reason] < Common.HOP_AFTER then return false end
+    if not immediate and now - hopSince[reason] < Common.HOP_AFTER then return false end
     if lastHop and now - lastHop < Common.HOP_COOLDOWN then return false end
     lastHop = now
     hopSince = {}

@@ -158,7 +158,13 @@ function newFakeFluent()
         local input = element(config.Title, config.Description)
         input.Type = "Input"
         input.Value = config.Default or ""
-        function input:SetValue(value) input.Value = value end
+        input.Callback = config.Callback or function() end
+        -- Fluent's Input:SetValue fires Callback then Changed, like the others.
+        function input:SetValue(value)
+            input.Value = value
+            Library:SafeCallback(input.Callback, input.Value)
+            Library:SafeCallback(input.Changed, input.Value)
+        end
         function input:OnChanged(fn) input.Changed = fn end
         register(idx, input)
         return input

@@ -17,10 +17,28 @@ local Settings = require("Core.Settings")
 
 local Farm = {}
 
--- Priority order: the first enabled mode is the one that runs.
+local Dragon = require("Features.Other.Dragon")
+local Fishing = require("Features.Other.Fishing")
+local Observation = require("Features.Other.Observation")
+local Pvp = require("Features.Pvp")
+local Simple = require("Features.Other.Simple")
+
+-- Priority order: the first enabled mode is the one that runs. Stack events
+-- first, then the Farming Other modes, then the main farms.
 Farm.MODES = {
     require("Features.Travel"),
     require("Features.StackFarm"),
+    Simple.law,
+    Observation.v2,
+    Observation.farm,
+    Dragon.dojo,
+    Dragon.hunter,
+    Simple.easter,
+    Simple.berry,
+    Simple.chest,
+    Fishing.mode,
+    Simple.attackAll,
+    Pvp.follow,
     require("Features.BossFarm"),
     require("Features.KatakuriFarm"),
     require("Features.BoneFarm"),

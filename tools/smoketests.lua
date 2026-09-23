@@ -36,7 +36,7 @@ check("no warning during load", #WARNINGS == 0, table.concat(WARNINGS, " | "))
 
 eq("library and both addons downloaded", #FAKE.urls, 3)
 eq("library URL", FAKE.urls[1], "https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua")
-eq("tabs built", #FAKE.record.tabs, 7)
+eq("tabs built", #FAKE.record.tabs, 11)
 eq("autoload applied", FAKE.record.autoloadCalls, 1)
 
 check("farm loop running", Loop.isRunning("Farm"))

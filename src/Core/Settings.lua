@@ -54,6 +54,58 @@ Settings.DEFAULTS = {
     StackSummonDarkbeard = false,
     StackHopDarkbeard = false,
 
+    -- Farming Other
+    OtherAttackAll = false,
+    OtherChest = false,
+    OtherChestHop = false,
+    OtherChestHopAfter = 20,
+    OtherChestTeleport = false,
+    OtherBerry = false,
+    OtherHopBerry = false,
+    OtherEaster = false,
+    OtherLaw = false,
+    OtherObservation = false,
+    OtherObservationHop = false,
+    OtherObservationV2 = false,
+    OtherDojo = false,
+    OtherDragonHunter = false,
+    OtherFishing = false,
+    OtherFishingVortex = false,
+    OtherBait = "",
+    OtherSellFish = false,
+    OtherOpenChests = false,
+    OtherReelSize = false,
+    OtherAnglerQuest = false,
+    OtherAnglerRarities = {},
+    OtherSlapBattle = false,
+
+    -- ESP
+    EspFruit = false,
+    EspBerry = false,
+    EspIsland = false,
+    EspPlayer = false,
+
+    -- PVP
+    PvpPlayer = "",
+    PvpMethod = "Nearest enemy",
+    PvpFollow = false,
+    PvpAimbot = false,
+    PvpGunAimbot = false,
+    PvpWaterWalk = false,
+
+    -- Screen
+    ScreenWhite = false,
+    ScreenBlack = false,
+    ScreenBoostFps = false,
+    ScreenNoNotifications = false,
+    ScreenAutoRejoin = false,
+
+    -- Webhook
+    WebhookUrl = "",
+    WebhookPingId = "",
+    WebhookPing = false,
+    WebhookProfile = false,
+
     -- Mastery
     MasteryFarm = false,
     MasteryWeapon = "Blox Fruit",

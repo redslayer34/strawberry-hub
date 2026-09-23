@@ -122,7 +122,7 @@ eq("minimize key", config.MinimizeKey and config.MinimizeKey.Name, "LeftControl"
 
 local titles = {}
 for _, tab in ipairs(record.tabs) do titles[#titles + 1] = tab.Title end
-eq("tabs in order", table.concat(titles, ","), "Farm,Stack,Teleport,Shop,Player,Server,Settings")
+eq("tabs in order", table.concat(titles, ","), "Farm,Stack,Farm Other,Teleport,Shop,Player,PVP,ESP,Server,Webhook,Settings")
 eq("first tab selected", record.selectedTab, 1)
 
 for key in pairs(Settings.DEFAULTS) do
@@ -288,7 +288,7 @@ do
     eq("broken tab reported", failedList and failedList[1], "Broken")
     local names = {}
     for _, tab in ipairs(brokenRecord.tabs) do names[#names + 1] = tab.Title end
-    eq("other tabs still built", table.concat(names, ","), "Broken,Farm,Stack,Teleport,Shop,Player,Server,Settings")
+    eq("other tabs still built", table.concat(names, ","), "Broken,Farm,Stack,Farm Other,Teleport,Shop,Player,PVP,ESP,Server,Webhook,Settings")
     local note = brokenRecord.notifications[#brokenRecord.notifications]
     check("player told which tab failed", note and note.Content:find("Broken") ~= nil)
     check("failure logged", #WARNINGS > 0)

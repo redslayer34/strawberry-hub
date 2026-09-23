@@ -50,11 +50,12 @@ local function ready(frame)
     return (title.TextColor3 == WHITE and cooldown.Size == IDLE) or cooldown.Size == FULL
 end
 
--- The first selected skill key that is ready on `tool`, or nil.
-function Mastery.readySkill(tool)
+-- The first selected skill key that is ready on `tool`, or nil. `keys` (a
+-- set) replaces the Mastery Skills selection when given.
+function Mastery.readySkill(tool, keys)
     local bar = skillBar(tool)
     if not bar then return nil end
-    local selected = Settings.get("MasterySkills") or {}
+    local selected = keys or Settings.get("MasterySkills") or {}
     for _, frame in ipairs(bar:GetChildren()) do
         if frame:IsA("Frame") and frame.Name ~= "Template" and selected[frame.Name] and ready(frame) then
             return frame.Name
@@ -97,6 +98,37 @@ function Mastery.step(mob)
         end
     end
     return true
+end
+
+---------------------------------------------------------------------------
+-- Skills at a point (trees, sea events): every weapon in turn
+---------------------------------------------------------------------------
+
+Mastery.ALL_KEYS = { Z = true, X = true, C = true, V = true, F = true }
+Mastery.WEAPONS = { "Blox Fruit", "Melee", "Sword", "Gun" }
+
+local weaponIndex = 1
+
+-- Aims the skills at `target` (a CFrame) and uses the next ready skill of
+-- the weapons the player owns, moving on to the next weapon when the
+-- current one has nothing ready. Paced like Mastery.step.
+function Mastery.fireAt(target)
+    AimHook.install()
+    AimHook.target = target
+    local now = os.clock()
+    if now - lastPress < Mastery.PRESS_EVERY then return end
+    for _ = 1, #Mastery.WEAPONS do
+        local tool = Player.equip(Mastery.WEAPONS[weaponIndex])
+        if tool and tool.Parent == Player.character() then
+            local key = Mastery.readySkill(tool, Mastery.ALL_KEYS)
+            if key then
+                lastPress = now
+                press(key)
+                return
+            end
+        end
+        weaponIndex = weaponIndex % #Mastery.WEAPONS + 1
+    end
 end
 
 function Mastery.reset()

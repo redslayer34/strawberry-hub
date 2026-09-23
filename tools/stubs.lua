@@ -186,6 +186,7 @@ end
 local SIGNALS = {
     Activated = true, InputBegan = true, InputChanged = true, InputEnded = true,
     Idled = true, Heartbeat = true, ChildAdded = true,
+    DescendantAdded = true, OnClientEvent = true,
 }
 
 local CLASS_PARENTS = {
@@ -300,9 +301,15 @@ function methods:FindFirstChildOfClass(className)
     end
     return nil
 end
-function methods:FindFirstChildWhichIsA(className)
+function methods:FindFirstChildWhichIsA(className, recursive)
     for _, child in ipairs(rawget(self, "_children")) do
         if child:IsA(className) then return child end
+    end
+    if recursive then
+        for _, child in ipairs(rawget(self, "_children")) do
+            local hit = child:FindFirstChildWhichIsA(className, true)
+            if hit then return hit end
+        end
     end
     return nil
 end
@@ -338,6 +345,11 @@ function methods:GetPivot()
 end
 function methods:GetAttribute(key) return rawget(self, "_attributes")[key] end
 function methods:SetAttribute(key, value) rawget(self, "_attributes")[key] = value end
+function methods:GetAttributes()
+    local copy = {}
+    for key, value in pairs(rawget(self, "_attributes")) do copy[key] = value end
+    return copy
+end
 function methods:FireServer(...)
     local log = rawget(self, "Fired") or {}
     rawset(self, "Fired", log)

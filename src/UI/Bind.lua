@@ -61,6 +61,22 @@ function Bind.dropdown(parent, key, title, values, description)
     })
 end
 
+-- Text box: the setting holds the text. Finished = written when the box
+-- loses focus, not on every key.
+function Bind.input(parent, key, title, placeholder, description)
+    return parent:AddInput(key, {
+        Title = title,
+        Description = description,
+        Default = tostring(Settings.get(key) or ""),
+        Placeholder = placeholder or "",
+        Numeric = false,
+        Finished = true,
+        Callback = function(value)
+            Settings.set(key, tostring(value or ""))
+        end,
+    })
+end
+
 -- Multi-select: the setting holds a set ({ Z = true, X = true }).
 function Bind.multiDropdown(parent, key, title, values, description)
     local current = Settings.get(key) or {}

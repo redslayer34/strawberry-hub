@@ -55,6 +55,9 @@ local MODULES = {
     "Game.Router", "Game.Entrances", "Game.PortalRecorder", "Game.Hook",
     "Features.StackFarm", "Features.Stack.Common", "Features.Stack.World", "Features.Stack.Chests",
     "Features.Stack.Bosses", "Features.Stack.Summons", "Features.Stack.EliteHunter", "Features.Stack.Events",
+    "Features.ChestHunt", "Features.Other.Mode", "Features.Other.Simple", "Features.Other.Observation",
+    "Features.Other.Dragon", "Features.Other.Fishing", "Features.Esp", "Features.Pvp", "Features.Screen",
+    "Features.Webhook",
 }
 for _, name in ipairs(MODULES) do
     local ok, err = pcall(require, name)
@@ -1878,6 +1881,321 @@ do
     check("elite for the chalice: stack on", StackFarm.enabled())
     StackFarm.tick()
     check("status says chalice", StackFarm.status:find("God's Chalice", 1, true) ~= nil, StackFarm.status)
+end
+
+---------------------------------------------------------------------------
+-- Farming Other
+---------------------------------------------------------------------------
+
+local Simple = require("Features.Other.Simple")
+local ObservationModes = require("Features.Other.Observation")
+local Dragon = require("Features.Other.Dragon")
+local Fishing = require("Features.Other.Fishing")
+local Esp = require("Features.Esp")
+local Pvp = require("Features.Pvp")
+local Screen = require("Features.Screen")
+local Webhook = require("Features.Webhook")
+
+local function otherSetup(place, level)
+    stackSetup(place, level)
+    Simple.reset()
+    Dragon.reset()
+    Fishing.reset()
+    Webhook.reset()
+end
+
+local function worldMob(name, position, parent)
+    local model = mob(name, position, 100, parent)
+    model:SetAttribute("Level", 10)
+    model:SetAttribute("FruitType", "None")
+    return model
+end
+
+-- Attack All: mobs of the world only, then the next farm when none is left.
+otherSetup()
+do
+    Settings.set("OtherAttackAll", true)
+    Settings.set("AutoFarmLevel", true)
+    local tree = worldMob("Spirit Tree", Vector3.new(10, 0, 0))
+    local plain = mob("Summon", Vector3.new(5, 0, 0))   -- no Level / FruitType
+    local target = worldMob("Pirate", Vector3.new(80, 0, 0))
+    check("spirit tree is not a world mob", not Simple.isWorldMob(tree))
+    check("a mob without level is not a world mob", not Simple.isWorldMob(plain))
+    Farm.tick()
+    eq("attack all fights the world mob", Farm.target(), target)
+    target.Humanoid.Health = 0
+    tree.Humanoid.Health = 0
+    Farm.tick()
+    eq("nothing left: the level farm runs", Farm.current(), LevelFarm)
+    Farm.stop()
+end
+
+-- Auto Chest: hops after the chosen number of chests.
+otherSetup()
+do
+    Settings.set("OtherChest", true)
+    Settings.set("OtherChestHop", true)
+    Settings.set("OtherChestHopAfter", 1)
+    local chest = part("Chest", Vector3.new(20, 0, 0), workspace)
+    game:GetService("CollectionService").GetTagged = function() return { chest } end
+    local hops = 0
+    local realHop = ServerModule.hop
+    ServerModule.hop = function() hops = hops + 1 return true end
+    Simple.chest.tick()
+    check("heading for the chest", Simple.chest.status:find("Collecting chests", 1, true) ~= nil, Simple.chest.status)
+    Simple.chest.tick()
+    eq("hop after one chest", hops, 1)
+    eq("chest count restarts after the hop", Simple.chestHunt.collected, 0)
+    ServerModule.hop = realHop
+end
+
+-- Berries: the berry's prompt is fired once there.
+otherSetup()
+do
+    Settings.set("OtherBerry", true)
+    local bushModel = newInstance("Model", "Bush", workspace)
+    local bush = part("BerryBush", Vector3.new(4, 0, 0), bushModel)
+    bush:SetAttribute("Berry1", "Blue Berry")
+    local berry = part("Berry", Vector3.new(3, 0, 0), bush)
+    local prompt = newInstance("ProximityPrompt", "ProximityPrompt", berry)
+    game:GetService("CollectionService").GetTagged = function(_, tag)
+        if tag == "BerryBush" then return { bush } end
+        return {}
+    end
+    local fired
+    fireproximityprompt = function(target) fired = target end
+    check("a berry: berries mode on", Simple.berry.enabled())
+    Simple.berry.tick()
+    eq("berry prompt fired", fired, prompt)
+    bush:SetAttribute("Berry1", nil)
+    check("no berry: mode off", not Simple.berry.enabled())
+    fireproximityprompt = nil
+end
+
+-- Raid Law: buy a chip with fragments, then press the summon button.
+otherSetup(4442272183)
+do
+    Settings.set("OtherLaw", true)
+    local fragments = newInstance("IntValue", "Fragments", world.player.Data)
+    fragments.Value = 500
+    check("not enough fragments: off", not Simple.law.enabled())
+    fragments.Value = 1500
+    check("enough fragments: on", Simple.law.enabled())
+    Simple.law.tick()
+    eq("microchip bought", #calls(world.commF, "BlackbeardReward"), 1)
+
+    tool("Microchip")
+    local button = folder("Main", folder("Button", folder("RaidSummon", folder("CircleIsland", folder("Map", workspace)))))
+    newInstance("ClickDetector", "ClickDetector", button)
+    local clicked
+    fireclickdetector = function(detector) clicked = detector end
+    Simple.law.tick()
+    eq("summon button clicked", clicked, button.ClickDetector)
+    fireclickdetector = nil
+end
+
+-- Observation: Ken is turned on next to a Marine Commodore.
+otherSetup()
+do
+    Settings.set("OtherObservation", true)
+    mob("Marine Commodore", Vector3.new(100, 0, 0))
+    local blur = newInstance("BlurEffect", "Blur", game:GetService("Lighting"))
+    blur.Enabled = false
+    local pressed = {}
+    local input = game:GetService("VirtualInputManager")
+    input.SendKeyEvent = function(_, down, key) if down then pressed[#pressed + 1] = key end end
+    ObservationModes.farm.tick()
+    eq("E pressed for Ken", pressed[1], "E")
+    blur.Enabled = true
+    ObservationModes.farm.tick()
+    check("Ken on: dodging", ObservationModes.farm.status:find("Dodging", 1, true) ~= nil, ObservationModes.farm.status)
+end
+
+-- Observation V2: stage 0 takes the citizen quest at the citizen.
+otherSetup(7449423635)
+do
+    Settings.set("OtherObservationV2", true)
+    world.commF.OnInvoke = function(action) if action == "CitizenQuestProgress" then return 0 end end
+    check("stage 0: mode on", ObservationModes.v2.enabled())
+    world.hrp.Position = ObservationModes.CITIZEN
+    ObservationModes.v2.tick()
+    local started = calls(world.commF, "StartQuest")
+    eq("citizen quest asked", started[1] and started[1][2], "CitizenQuest")
+end
+
+-- Dojo Trainer: a White belt task, claimed once done.
+otherSetup(7449423635)
+do
+    Settings.set("OtherDojo", true)
+    local dojo = newInstance("RemoteFunction", "RF/InteractDragonQuest", rs.Modules.Net)
+    local progress = 0
+    dojo.OnInvoke = function(request)
+        if request.Command == "RequestQuest" then
+            return { Quest = { Progress = progress, Goal = 20, BeltName = "White" } }
+        end
+    end
+    world.hrp.Position = Dragon.TRAINER
+    Dragon.dojo.tick()
+    check("white belt started", Dragon.describe():find("White belt", 1, true) ~= nil, Dragon.describe())
+    Dragon.dojo.tick()
+    check("white belt farms the level quest", Dragon.dojo.status:find("White belt 0/20", 1, true) == 1, Dragon.dojo.status)
+
+    Dragon.reset()
+    StackCommon.reset()
+    progress = 20
+    world.hrp.Position = Dragon.TRAINER
+    Dragon.dojo.tick()
+    local claimed = false
+    for _, call in ipairs(dojo.Invoked or {}) do
+        if call[1].Command == "ClaimQuest" then claimed = true end
+    end
+    check("finished task claimed", claimed)
+end
+
+-- Dragon Hunter: the task text picks the mobs.
+otherSetup(7449423635)
+do
+    Settings.set("OtherDragonHunter", true)
+    local hunter = newInstance("RemoteFunction", "RF/DragonHunter", rs.Modules.Net)
+    hunter.OnInvoke = function(request)
+        if request.Context == "Check" then return { Text = "Defeat 5 Hydra Enforcers" } end
+    end
+    local npc = newInstance("Model", "Dragon Hunter", folder("NPCs", workspace))
+    part("HumanoidRootPart", Vector3.new(2, 0, 0), npc)
+    Dragon.hunter.tick()
+    local enforcer = mob("Hydra Enforcer", Vector3.new(90, 0, 0))
+    Dragon.hunter.tick()
+    eq("dragon hunter fights the enforcer", Dragon.hunter.target, enforcer)
+end
+
+-- Fishing: cast at the saved spot, catch when a fish bites.
+otherSetup()
+do
+    Settings.set("OtherFishing", true)
+    local rod = newInstance("Tool", "Fishing Rod", world.character)
+    newInstance("Configuration", "FishingRodData", rod)
+    local fishingData = newInstance("Folder", "FishingData", world.player.Data)
+    fishingData:SetAttribute("SelectedBait", "Basic Bait")
+    local fish = folder("FishReplicated", rs)
+    local fishingRequest = newInstance("RemoteFunction", "FishingRequest", fish)
+    fishingRequest.OnInvoke = function() return true end
+    Fishing.saveSpot()
+    Fishing.CAST_DELAY = 0
+    Fishing.castPoint = function() return Vector3.new(0, -5, 20), true end
+
+    Fishing.mode.tick()
+    eq("start casting", fishingRequest.Invoked and fishingRequest.Invoked[1][1], "StartCasting")
+    Fishing.mode.tick()
+    local cast = fishingRequest.Invoked[2]
+    eq("line cast at the point", cast and cast[1], "CastLineAtLocation")
+    check("with power 98 on water", cast and cast[3] == 98 and cast[4] == true)
+
+    Fishing.onFishingEvent(world.player, "SpawnFishOnBob")
+    for _ = 1, 5 do stepTasks() end
+    local actions = {}
+    for _, call in ipairs(fishingRequest.Invoked) do actions[#actions + 1] = call[1] end
+    check("fish caught", table.concat(actions, ","):find("Catching,Catch,Catch", 1, true) ~= nil, table.concat(actions, ","))
+    Fishing.CAST_DELAY = 0.7
+end
+
+-- ESP: a label per fruit, removed with it.
+otherSetup()
+do
+    Settings.set("EspFruit", true)
+    local fruit = tool("Kilo Fruit", workspace)
+    Esp.refresh()
+    eq("one label for the fruit", Esp.count(), 1)
+    fruit.Parent = nil
+    Esp.refresh()
+    eq("label removed with the fruit", Esp.count(), 0)
+    Esp.destroy()
+end
+
+-- PVP: skill aim and gun aim at the nearest enemy.
+otherSetup()
+do
+    local enemyPlayer = newInstance("Player", "Enemy", players)
+    local enemyCharacter = newInstance("Model", "Enemy", world.characters)
+    local enemyHumanoid = newInstance("Humanoid", "Humanoid", enemyCharacter)
+    enemyHumanoid.Health = 100
+    part("HumanoidRootPart", Vector3.new(50, 0, 0), enemyCharacter)
+    enemyPlayer.Character = enemyCharacter
+    eq("nearest enemy targeted", Pvp.target(), enemyCharacter)
+
+    Settings.set("PvpAimbot", true)
+    Pvp.aimStep()
+    check("skills aimed at the enemy", AimHook.target ~= nil and AimHook.target.Position == Vector3.new(50, 0, 0))
+    Settings.set("PvpAimbot", false)
+    Pvp.aimStep()
+    eq("aim released", AimHook.target, nil)
+
+    local combat = rs.Modules.CombatUtil.ModuleValue
+    local original = function() return "mouse" end
+    combat.GetTargetPosition = original
+    check("gun aim installed", Pvp.installGunAim())
+    eq("gun aim off: the game's own answer", combat.GetTargetPosition(), "mouse")
+    Settings.set("PvpGunAimbot", true)
+    eq("gun aim on: the enemy", combat.GetTargetPosition(), Vector3.new(50, 0, 0))
+    Pvp.destroy()
+    eq("gun aim restored", combat.GetTargetPosition, original)
+
+    Settings.set("PvpWaterWalk", true)
+    world.hrp.Position = Vector3.new(10, -50, 10)
+    Pvp.waterStep()
+    check("platform under the sea surface", Pvp.platform() and Pvp.platform().CanCollide == true
+        and Pvp.platform().Position.Y == -5)
+    Settings.set("PvpWaterWalk", false)
+    Pvp.waterStep()
+    eq("platform removed", Pvp.platform(), nil)
+end
+
+-- Screen: notifications silenced and restored, rejoin on disconnect.
+otherSetup()
+do
+    local shown = 0
+    local original = function() shown = shown + 1 return true end
+    moduleScript("Notification", rs, { Display = original, Dead = function() return false end })
+    Settings.set("ScreenNoNotifications", true)
+    check("notifications wrapped", Screen.wrapNotifications())
+    local module = rs.Notification.ModuleValue
+    module.Display({})
+    eq("silenced notification not shown", shown, 0)
+    Settings.set("ScreenNoNotifications", false)
+    module.Display({})
+    eq("shown again when off", shown, 1)
+    Screen.destroy()
+    eq("original restored", module.Display, original)
+
+    local teleported
+    local teleport = game:GetService("TeleportService")
+    teleport.Teleport = function(_, placeId) teleported = placeId end
+    Settings.set("ScreenAutoRejoin", true)
+    local prompt = newInstance("Frame", "ErrorPrompt")
+    local label = folder("ErrorMessage", folder("ErrorFrame", folder("MessageArea", prompt)))
+    label.Text = "You were kicked: lost connection"
+    Screen.onPrompt(prompt)
+    stepTasks()
+    eq("rejoined after a disconnect", teleported, game.PlaceId)
+    Screen.reset()
+end
+
+-- Webhook: the ping and the embed are sent to the URL.
+otherSetup()
+do
+    local sent
+    request = function(options) sent = options end
+    local http = game:GetService("HttpService")
+    local body
+    http.JSONEncode = function(_, value) body = value return "json" end
+    check("no URL: nothing sent", not Webhook.send("Test", "x"))
+    Settings.set("WebhookUrl", "https://discord.test/hook")
+    Settings.set("WebhookPing", true)
+    Settings.set("WebhookPingId", "123")
+    check("sent", Webhook.send("Test", "hello"))
+    eq("posted to the URL", sent and sent.Url, "https://discord.test/hook")
+    eq("user pinged", body and body.content, "<@123>")
+    eq("event in the embed", body and body.embeds[1].fields[1].value, "`Test`")
+    request = nil
 end
 
 ---------------------------------------------------------------------------

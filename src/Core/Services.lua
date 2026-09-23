@@ -124,6 +124,16 @@ function Services.netRemote(name, viaModule)
     return remote
 end
 
+-- Where the hub's own screen GUIs go: the executor's hidden container when
+-- it has one (the game cannot see it), CoreGui otherwise.
+function Services.guiParent()
+    if gethui then
+        local ok, parent = pcall(gethui)
+        if ok and parent then return parent end
+    end
+    return Services.get("CoreGui")
+end
+
 -- Test hook: forget every cached lookup.
 function Services.reset()
     services, modules, remotes = {}, {}, {}

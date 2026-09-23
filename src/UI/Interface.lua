@@ -22,10 +22,14 @@ Interface.SAVE_DELAY = 1
 Interface.TABS = {
     { name = "Farm", build = require("UI.Tabs.Farm") },
     { name = "Stack", build = require("UI.Tabs.Stack") },
+    { name = "Farm Other", build = require("UI.Tabs.Other") },
     { name = "Teleport", build = require("UI.Tabs.Teleport") },
     { name = "Shop", build = require("UI.Tabs.Shop") },
     { name = "Player", build = require("UI.Tabs.Player") },
+    { name = "PVP", build = require("UI.Tabs.Pvp") },
+    { name = "ESP", build = require("UI.Tabs.Esp") },
     { name = "Server", build = require("UI.Tabs.Server") },
+    { name = "Webhook", build = require("UI.Tabs.Webhook") },
     { name = "Settings", build = require("UI.Tabs.Settings") },
 }
 
