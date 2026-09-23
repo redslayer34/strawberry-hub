@@ -28,12 +28,16 @@ local Pvp = require("Features.Pvp")
 local Raids = require("Features.Raids")
 local RaceUpgrade = require("Features.Races.Upgrade")
 local RaceV4 = require("Features.Races.V4")
+local SeaEvents = require("Features.Sea.Events")
+local SeaIslands = require("Features.Sea.Islands")
+local Volcano = require("Features.Sea.Volcano")
 local Saber = require("Features.Items.Saber")
 local Simple = require("Features.Other.Simple")
 local Swords = require("Features.Items.Swords")
 
 -- Priority order: the first enabled mode is the one that runs. Stack events
--- first, then the Farming Other modes, then the main farms.
+-- first, then raids, races, sea events, items, the Farming Other modes, and
+-- the main farms last.
 Farm.MODES = {
     require("Features.Travel"),
     require("Features.StackFarm"),
@@ -51,6 +55,25 @@ Farm.MODES = {
     RaceUpgrade.cyborg,
     RaceUpgrade.v2v3,
     RaceV4.clock,
+    SeaIslands.leviathanAttack,
+    SeaIslands.leviathanHeart,
+    SeaIslands.leviathanStart,
+    SeaIslands.frozenTeleport,
+    SeaEvents.idk,
+    Volcano.fully,
+    Volcano.event,
+    Volcano.magnet,
+    SeaIslands.kitsuneEmbers,
+    SeaIslands.kitsuneSummon,
+    SeaIslands.kitsuneTeleport,
+    SeaIslands.kitsuneSpawn,
+    SeaIslands.multiLeviathan,
+    SeaIslands.findLeviathan,
+    SeaIslands.findMirage,
+    Volcano.find,
+    SeaEvents.auto,
+    SeaEvents.driveTiki,
+    SeaEvents.driveHydra,
     Cdk.mode,
     Swords.tushita,
     Swords.yama,

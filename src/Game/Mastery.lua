@@ -111,14 +111,17 @@ local weaponIndex = 1
 
 -- Aims the skills at `target` (a CFrame) and uses the next ready skill of
 -- the weapons the player owns, moving on to the next weapon when the
--- current one has nothing ready. Paced like Mastery.step.
-function Mastery.fireAt(target)
+-- current one has nothing ready. Paced like Mastery.step. `weapons` (a
+-- list of ToolTips) replaces Mastery.WEAPONS when given and not empty.
+function Mastery.fireAt(target, weapons)
     AimHook.install()
     AimHook.target = target
     local now = os.clock()
     if now - lastPress < Mastery.PRESS_EVERY then return end
-    for _ = 1, #Mastery.WEAPONS do
-        local tool = Player.equip(Mastery.WEAPONS[weaponIndex])
+    local list = (type(weapons) == "table" and #weapons > 0) and weapons or Mastery.WEAPONS
+    if weaponIndex > #list then weaponIndex = 1 end
+    for _ = 1, #list do
+        local tool = Player.equip(list[weaponIndex])
         if tool and tool.Parent == Player.character() then
             local key = Mastery.readySkill(tool, Mastery.ALL_KEYS)
             if key then
@@ -127,7 +130,7 @@ function Mastery.fireAt(target)
                 return
             end
         end
-        weaponIndex = weaponIndex % #Mastery.WEAPONS + 1
+        weaponIndex = weaponIndex % #list + 1
     end
 end
 

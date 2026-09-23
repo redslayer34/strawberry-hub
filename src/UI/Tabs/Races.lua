@@ -12,9 +12,9 @@ return function(Window)
 
     local upgrade = tab:AddSection("Upgrade Race")
     Bind.toggle(upgrade, "RaceV2V3", "Auto Race V2 - V3",
-        "Sea 2. V2: flowers (500k). V3 (2M): your race's quest. Fishman V3 needs a boat (next update).")
+        "Sea 2. V2: flowers (500k). V3 (2M): your race's quest (Fishman: a sea beast, by boat).")
     Bind.toggle(upgrade, "RaceDraco", "Auto Draco V2 - V3",
-        "Dragon Wizard: Fire Flowers for V2. V3 needs a Terrorshark (next update).")
+        "Dragon Wizard: Fire Flowers for V2, a Terrorshark at sea for V3.")
 
     local cyborg = tab:AddSection("Cyborg & Ghoul (Sea 2)")
     Bind.toggle(cyborg, "RaceCyborg", "Auto Cyborg", "Microchip (1000 fragments), Order, Core Brain, the trainer.")
@@ -37,11 +37,13 @@ return function(Window)
     Bind.toggle(lever, "RacePullLever", "Auto Pull Lever",
         "Valkyrie Helm + Mirror Fractal: the Mirage blue gear at night, then the lever.")
     Bind.toggle(lever, "RaceTrial", "Auto Trial", "Goes to your race door; finishes the trial inside.")
+    Bind.toggle(lever, "RaceFindMirage", "Sail To Find A Mirage", "No Mirage: drives your boat out to sea until one spawns.")
     Bind.toggle(lever, "RaceHop", "Hop For Mirage / Full Moon")
     Bind.toggle(lever, "RaceV3AtDoor", "Press T When 2 Players Are At Their Doors")
     Bind.toggle(lever, "RaceKillPlayers", "Kill Players After The Trial")
     Bind.toggle(lever, "RaceResetCharacter", "Reset When The Free-For-All Starts")
-    Bind.toggle(lever, "RaceDracoTrial", "Auto Draco Trial Of Flames", "Needs a Prehistoric Island.")
+    Bind.toggle(lever, "RaceDracoTrial", "Auto Draco Trial Of Flames",
+        "Crafts a Volcanic Magnet and finds a Prehistoric Island first if needed.")
 
     local multi = tab:AddSection("Multi Trial (accounts in this server)")
     local accounts = Bind.multiDropdown(multi, "RaceMultiAccounts", "Accounts", Pvp.playerNames())

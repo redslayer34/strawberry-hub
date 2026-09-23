@@ -15,14 +15,17 @@
 --                   the temple lever
 --    Trial          goes to the race door; inside, finishes the race trial
 --    Kill Players   after the trial, fights the players inside the border
---    Draco Trial    Trial of Flames: carries the three relics
+--    Draco Trial    Trial of Flames: carries the three relics (finds the
+--                   Prehistoric Island first, with a Volcanic Magnet)
 --=============================================================================
 
+local Boat = require("Game.Boat")
 local Common = require("Features.Stack.Common")
 local Data = require("Game.Data")
 local Duel = require("Features.Races.Duel")
 local Enemies = require("Game.Enemies")
 local Fight = require("Features.Fight")
+local Islands = require("Features.Sea.Islands")
 local Loop = require("Core.Loop")
 local Mastery = require("Game.Mastery")
 local Mode = require("Features.Other.Mode")
@@ -30,6 +33,7 @@ local Movement = require("Game.Movement")
 local Player = require("Core.Player")
 local Services = require("Core.Services")
 local Settings = require("Core.Settings")
+local Volcano = require("Features.Sea.Volcano")
 local World = require("Game.World")
 
 local V4 = {}
@@ -417,10 +421,12 @@ V4.lever = Mode({
             local _, status = mirageTop(island)
             return status .. " (waiting for the night)"
         end
+        if Settings.get("RaceFindMirage") then return Islands.findMirageStep() or "Mirage found" end
         Movement.stop()
         if Settings.get("RaceHop") then Common.hop("no Mirage Island", true) end
         return "Needs a Mirage Island"
     end,
+    stop = Boat.stop,
 })
 
 ---------------------------------------------------------------------------
@@ -652,7 +658,7 @@ V4.dracoTrial = Mode({
     sea = 3,
     want = isDraco,
     idleStatus = "Only for the Draco race",
-    tick = function()
+    tick = function(mode)
         if nearLocation("Trial of Flames", 3000) then
             local exit = Services.find(workspace, "Map.DracoTrial.TrialDoor.DoorTouch")
             if exit and exit:FindFirstChild("TouchInterest") then
@@ -667,12 +673,20 @@ V4.dracoTrial = Mode({
         end
         local teleport = Services.find(workspace, "Map.PrehistoricIsland.TrialTeleport")
         if teleport then
+            Boat.stop()
             Common.goTo(teleport.CFrame)
             return "Going to the trial"
         end
-        Movement.stop()
-        return "Needs a Prehistoric Island (Sea Events update)"
+        if Volcano.island() then
+            Boat.stop()
+            local expert = World.npcPosition("Fossil Expert")
+            if expert then Common.goTo(expert) else Movement.stop() end
+            return "Waiting for the trial teleport"
+        end
+        if not Common.item("Volcanic Magnet") then return "Magnet: " .. Volcano.magnetStep(mode) end
+        return Volcano.findStep() or "Island found"
     end,
+    stop = Boat.stop,
 })
 
 ---------------------------------------------------------------------------

@@ -30,9 +30,9 @@ return function(Window, ui)
     Bind.toggle(reports, "WebhookStoreFruit", "Report Stored Fruits", "Needs Auto Store Fruit (Fruit & Raid tab).")
     Bind.multiDropdown(reports, "WebhookFruitRarities", "Fruit Rarities To Report",
         { "Mythical", "Legendary", "Rare", "Uncommon", "Common" })
-    reports:AddParagraph({
-        Title = "More reports",
-        Content = "Prehistoric Island, Leviathan and Mirage reports come with their features.",
-    })
+    Bind.toggle(reports, "WebhookMirage", "Report Mirage Island")
+    Bind.toggle(reports, "WebhookPrehistoric", "Report Prehistoric Island")
+    Bind.toggle(reports, "WebhookLeviathan", "Report Frozen Dimension (Leviathan)")
+    Bind.toggle(reports, "WebhookIdk", "Report Destroy IDK Done")
     return tab
 end

@@ -36,13 +36,13 @@ check("no warning during load", #WARNINGS == 0, table.concat(WARNINGS, " | "))
 
 eq("library and both addons downloaded", #FAKE.urls, 3)
 eq("library URL", FAKE.urls[1], "https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua")
-eq("tabs built", #FAKE.record.tabs, 14)
+eq("tabs built", #FAKE.record.tabs, 15)
 eq("autoload applied", FAKE.record.autoloadCalls, 1)
 
 check("farm loop running", Loop.isRunning("Farm"))
 check("attack loop running", Loop.isRunning("Attack"))
 check("status loop running", Loop.isRunning("StatusPanel"))
-eq("movement driver and portal recorder on Heartbeat", heartbeat:Count(), 2)
+eq("movement, boat and portal recorder on Heartbeat", heartbeat:Count(), 3)
 eq("anti-AFK connected", player.Idled:Count(), 1)
 
 -- A few frames with the farm switched on must not throw.

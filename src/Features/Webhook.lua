@@ -97,6 +97,14 @@ function Webhook.send(event, detail)
     })
 end
 
+-- Sends `event` when the toggle `key` is on, without holding up the caller
+-- (the farm loop). Returns true when a message was queued.
+function Webhook.notify(key, event, detail)
+    if not Settings.get(key) or not Webhook.url() then return false end
+    task.spawn(function() pcall(Webhook.send, event, detail) end)
+    return true
+end
+
 ---------------------------------------------------------------------------
 -- Profile
 ---------------------------------------------------------------------------

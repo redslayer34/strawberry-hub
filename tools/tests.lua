@@ -60,7 +60,7 @@ local MODULES = {
     "Features.Webhook", "Features.Fruits", "Features.Raids", "Features.Dungeon",
     "Features.Items", "Features.Items.Swords", "Features.Items.Cdk", "Features.Items.Guitar",
     "Features.Items.Saber", "Features.Items.Mastery", "Features.Races.Duel", "Features.Races.Upgrade",
-    "Features.Races.V4",
+    "Features.Races.V4", "Game.Boat", "Features.Sea.Events", "Features.Sea.Islands", "Features.Sea.Volcano",
 }
 for _, name in ipairs(MODULES) do
     local ok, err = pcall(require, name)
@@ -2640,6 +2640,274 @@ do
     check("trial on", RaceV4.trial.enabled())
     RaceV4.trial.tick()
     eq("goes to the temple", RaceV4.trial.status, "Going to the Temple of Time")
+end
+
+
+---------------------------------------------------------------------------
+-- Sea events, islands, volcano
+---------------------------------------------------------------------------
+
+local Boat = require("Game.Boat")
+local SeaEvents = require("Features.Sea.Events")
+local SeaIslands = require("Features.Sea.Islands")
+local Volcano = require("Features.Sea.Volcano")
+
+local function seaSetup(place, inventory, answers)
+    itemsSetup(place or 7449423635, 2500, inventory, answers)
+    Boat.reset()
+    SeaEvents.reset()
+    SeaIslands.reset()
+    Volcano.reset()
+end
+
+local function makeBoat(position, owner)
+    local boats = workspace:FindFirstChild("Boats") or folder("Boats", workspace)
+    local model = newInstance("Model", "Guardian", boats)
+    newInstance("ObjectValue", "Owner", model).Value = owner or world.player.Name
+    newInstance("IntValue", "Humanoid", model).Value = 100
+    local seat = part("VehicleSeat", position, model)
+    return model, seat
+end
+
+local function hud(name, visible)
+    local main = world.player.PlayerGui.Main
+    local list = main:FindFirstChild("TopHUDList") or newInstance("Frame", "TopHUDList", main)
+    local timer = newInstance("Frame", name, list)
+    timer.Visible = visible
+    return timer
+end
+
+local function seaBeast(position, label)
+    local beasts = workspace:FindFirstChild("SeaBeasts") or folder("SeaBeasts", workspace)
+    local beast = newInstance("Model", "SeaBeast1", beasts)
+    part("HumanoidRootPart", position, beast)
+    newInstance("IntValue", "Health", beast).Value = 100
+    local bbg = newInstance("BillboardGui", "HealthBBG", beast)
+    local frame = newInstance("Frame", "Frame", bbg)
+    newInstance("TextLabel", "TextLabel", frame).Text = label
+    return beast
+end
+
+local function ship(position, name)
+    local model = newInstance("Model", name or "PirateBrigade", folder("Enemies", workspace))
+    part("Engine", position, model)
+    newInstance("IntValue", "Health", model).Value = 500
+    return model
+end
+
+-- Boat: bought at the dealer, boarded, then driven.
+seaSetup()
+do
+    local status = select(2, Boat.get())
+    eq("no boat: to the dealer", status, "Going to the boat dealer")
+    near("flying to the Sea 3 dealer", Movement.goal().Position, Boat.DEALERS[3])
+    world.hrp.Position = Boat.DEALERS[3]
+    eq("at the dealer: buying", select(2, Boat.get()), "Buying a boat")
+    local bought = calls(world.commF, "BuyBoat")
+    eq("BuyBoat sent once", #bought, 1)
+    eq("the chosen boat", bought[1] and bought[1][2], "Guardian")
+    eq("brigades get their prefix", Boat.buyName("GrandBrigade"), "PirateGrandBrigade")
+
+    local model, seat = makeBoat(Boat.DEALERS[3] + Vector3.new(20, 0, 0))
+    eq("boat there: boarding", select(2, Boat.get()), "Getting on the boat")
+    near("flying to the seat", Movement.goal().Position, seat.Position)
+    world.humanoid.SeatPart = seat
+    eq("seated: the boat", Boat.get(), model)
+    check("movement handed over", Movement.goal() == nil)
+
+    seat.Position = Vector3.new(0, 10, 0)
+    Boat.to(Vector3.new(1000, 10, 0))
+    Boat.step(0.1)
+    near("one step at SeaBoatSpeed", seat.Position, Vector3.new(35, 10, 0))
+    seat.Position = Vector3.new(-100, 10, 0)
+    Boat.step(0.1)
+    near("slower after a pull-back", seat.Position, Vector3.new(-100 + 24.5, 10, 0))
+    world.humanoid.SeatPart = nil
+    Boat.step(0.1)
+    check("leaving the seat stops the driver", Boat.goal() == nil)
+end
+
+-- Sea events: found in the reference's order, within range.
+seaSetup()
+do
+    local weak = seaBeast(Vector3.new(100, 0, 0), "40,000/60,000")
+    check("sea beast under 90k ignored", SeaEvents.find(SeaEvents.ALL) == nil)
+    check("any sea beast for the Fishman quest", SeaEvents.anySeaBeast() == weak)
+    local beast = seaBeast(Vector3.new(150, 0, 0), "90,000/120,000")
+    local brigade = ship(Vector3.new(50, 0, 0))
+    local shark = mob("Shark", Vector3.new(10, 0, 0))
+    eq("sea beast first", SeaEvents.find(SeaEvents.ALL), beast)
+    eq("ship next", SeaEvents.find({ Ship = true, Shark = true }), brigade)
+    eq("shark when chosen alone", SeaEvents.find({ Shark = true }), shark)
+    ship(Vector3.new(30, 0, 0), "PirateBasic")
+    eq("brigades only", SeaEvents.find({ Ship = true }, 2000, true), brigade)
+    check("out of range", SeaEvents.find({ Shark = true }, 5) == nil)
+end
+
+-- Auto Sea Event: sails to the zone, then fights what shows up.
+seaSetup()
+do
+    Settings.set("SeaAuto", true)
+    Settings.set("SeaEventKinds", { Ship = true })
+    local _, seat = makeBoat(Vector3.new(0, 0, 0))
+    world.humanoid.SeatPart = seat
+    SeaEvents.auto.tick()
+    eq("sails to the zone", SeaEvents.auto.status, "Sailing to Zone 1")
+    near("boat heads for Zone 1", Boat.goal().Position, Vector3.new(Boat.ZONES["Zone 1"].X, 0, Boat.ZONES["Zone 1"].Z))
+    local target = ship(Vector3.new(0, 0, 300))
+    SeaEvents.auto.tick()
+    eq("sinks the ship", SeaEvents.auto.status, "Sinking PirateBrigade")
+    near("under its engine", Movement.goal().Position, target.Engine.Position + Vector3.new(0, -15, 0))
+    check("boat driver stopped", Boat.goal() == nil)
+end
+
+-- Leviathan: tail, then head, then segments.
+seaSetup()
+do
+    local beasts = folder("SeaBeasts", workspace)
+    local function piece(name, attributes)
+        local model = newInstance("Model", name, beasts)
+        part("HumanoidRootPart", Vector3.new(0, 0, 0), model)
+        part("Hitbox11", Vector3.new(0, 0, 0), model)
+        newInstance("IntValue", "Health", model).Value = 1000
+        for key, value in pairs(attributes) do model:SetAttribute(key, value) end
+        return model
+    end
+    local segment = piece("Leviathan Segment", { SegmentId = 3 })
+    local head = piece("Leviathan", { Armored = true })
+    local tail = piece("Leviathan Tail", { HealthEnabled = true })
+    eq("exposed tail first", SeaIslands.leviathanTarget(), tail)
+    tail:SetAttribute("HealthEnabled", false)
+    eq("armored head skipped", SeaIslands.leviathanTarget(), segment)
+    head:SetAttribute("Armored", false)
+    eq("head when exposed", SeaIslands.leviathanTarget(), head)
+end
+
+-- Kitsune: embers are traded only during the event, once there are enough.
+seaSetup(nil, { { Name = "Azure Ember", Type = "Material", Count = 12 } })
+do
+    local pray = newInstance("RemoteFunction", "RF/KitsuneStatuePray", rs.Modules.Net)
+    check("no trade outside the event", not SeaIslands.tradeEmbers())
+    hud("RaidTimer", true)
+    check("trade during the event", SeaIslands.tradeEmbers())
+    eq("prayed once", #(pray.Invoked or {}), 1)
+    Settings.set("SeaAzureEmbers", 20)
+    check("not enough embers", not SeaIslands.tradeEmbers())
+end
+
+-- Spawn reports: once per appearance.
+seaSetup()
+do
+    Settings.set("WebhookMirage", true)
+    Settings.set("WebhookUrl", "https://example.invalid/hook")
+    local sent = {}
+    local realSend = Webhook.send
+    Webhook.send = function(event) sent[#sent + 1] = event return true end
+    local map = folder("Map", workspace)
+    local island = folder("MysticIsland", map)
+    SeaIslands.step()
+    SeaIslands.step()
+    eq("reported once", #sent, 1)
+    eq("report name", sent[1], "Mirage Island")
+    island.Parent = nil
+    SeaIslands.step()
+    island.Parent = map
+    SeaIslands.step()
+    eq("reported again after it left", #sent, 2)
+    Webhook.send = realSend
+end
+
+-- Volcano: start the event, golems before rocks, rocks from their offset.
+seaSetup()
+do
+    Settings.set("VolcanoEvent", true)
+    world.player:SetAttribute("CurrentLocation", "Prehistoric Island")
+    local map = folder("Map", workspace)
+    local island = folder("PrehistoricIsland", map)
+    local center = folder("Core", island)
+    local prompt = part("ActivationPrompt", Vector3.new(50, 0, 0), center)
+    newInstance("ProximityPrompt", "ProximityPrompt", prompt)
+    local lava = part("Lava", Vector3.new(0, 0, 0), island)
+    local burn = newInstance("TouchTransmitter", "TouchInterest", lava)
+    local teleport = part("TrialTeleport", Vector3.new(0, 0, 0), island)
+    local keep = newInstance("TouchTransmitter", "TouchInterest", teleport)
+    check("event mode on with the island", Volcano.event.enabled())
+    Volcano.event.tick()
+    eq("starts the volcano", Volcano.event.status, "Starting the volcano")
+    near("to the activation prompt", Movement.goal().Position, prompt.Position)
+    check("lava touch removed", burn.Parent == nil)
+    check("trial teleport kept", keep.Parent == teleport)
+
+    hud("PrehistoricRaidTimer", true)
+    local rocks = folder("VolcanoRocks", center)
+    local rock = newInstance("Model", "Rock", rocks)
+    rock.WorldPivot = CFrame.new(100, 273.5, 0)
+    local layer = newInstance("Folder", "VFXLayer", rock)
+    newInstance("ParticleEmitter", "Specs", layer).Enabled = true
+    local golem = mob("Lava Golem", Vector3.new(20, 0, 0))
+    Volcano.event.tick()
+    eq("golem first", Volcano.event.target, golem)
+    golem.Humanoid.Health = 0
+    Volcano.event.tick()
+    eq("then the rock", Volcano.event.status, "Plugging an erupting rock")
+    near("rock offset for its height", Movement.goal().Position, Vector3.new(140, 273.5, 0))
+end
+
+-- Volcanic Magnet: Scrap Metal first, crafted with everything.
+seaSetup(nil, {})
+do
+    Settings.set("VolcanoMagnet", true)
+    check("magnet wanted", Volcano.magnet.enabled())
+    Volcano.magnet.tick()
+    check("scrap metal first", Volcano.magnet.status:find("Scrap Metal 0/10", 1, true) ~= nil, Volcano.magnet.status)
+end
+seaSetup(nil, {
+    { Name = "Scrap Metal", Type = "Material", Count = 10 },
+    { Name = "Blaze Ember", Type = "Material", Count = 15 },
+})
+do
+    Settings.set("VolcanoMagnet", true)
+    local craft = newInstance("RemoteFunction", "RF/Craft", rs.Modules.Net)
+    Volcano.magnet.tick()
+    eq("crafting", Volcano.magnet.status, "Crafting the Volcanic Magnet")
+    eq("craft sent", craft.Invoked and craft.Invoked[1][2], "Volcanic Magnet")
+end
+
+-- Dojo Red belt: a Terrorshark at sea, counted once it is down.
+seaSetup()
+do
+    Settings.set("OtherDojo", true)
+    local quest = newInstance("RemoteFunction", "RF/InteractDragonQuest", rs.Modules.Net)
+    quest.OnInvoke = function() return { Quest = { BeltName = "Red", Progress = 0, Goal = 1 } } end
+    world.hrp.Position = Dragon.TRAINER
+    Dragon.dojo.tick()
+    eq("red belt started", Dragon.dojo.status, "Red belt started")
+    local shark = mob("Terrorshark", Dragon.TRAINER + Vector3.new(0, 0, 50))
+    Dragon.dojo.tick()
+    eq("fights the Terrorshark", Dragon.dojo.target, shark)
+    shark.Humanoid.Health = 0
+    Dragon.dojo.tick()
+    check("counted", Dragon.describe():find("Red belt, 1 done", 1, true) ~= nil, Dragon.describe())
+end
+
+-- Drive to Tiki: moves on to the next waypoint once reached.
+seaSetup()
+do
+    Settings.set("SeaDriveTiki", true)
+    local _, seat = makeBoat(SeaEvents.TIKI_ROUTE[1])
+    world.hrp.Position = SeaEvents.TIKI_ROUTE[1]
+    world.humanoid.SeatPart = seat
+    SeaEvents.driveTiki.tick()
+    eq("next waypoint", SeaEvents.driveTiki.status, "Driving (2/5)")
+end
+
+-- Fishman V3: by boat to the sea beasts.
+raceSetup(4442272183, "Fishman", { Alchemist = -2, Wenlocktoad = 1 })
+do
+    Settings.set("RaceV2V3", true)
+    Boat.reset()
+    RaceUpgrade.v2v3.tick()
+    eq("Fishman V3 goes for a boat", RaceUpgrade.v2v3.status, "Fishman V3: Going to the boat dealer")
 end
 
 ---------------------------------------------------------------------------

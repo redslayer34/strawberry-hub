@@ -7,18 +7,20 @@
 --    Human    kill Jeremy, Orbitus and Diamond
 --    Mink     collect 30 chests
 --    Cyborg   hold a fruit (a cheap stored one is taken out)
---    Fishman  a sea beast: needs the boat engine (Sea Events update)
+--    Fishman  a sea beast (Sea 2, by boat)
 --    Skypiea  defeat a Skypiea player      Ghoul  defeat any player
 --  Cyborg: the Law raid (optionally with a Fist of Darkness first), then the
 --  Cyborg Trainer. Ghoul: 100 Ectoplasm + the Cursed Captain's Hellfire
 --  Torch, then the Ectoplasm trade. Draco: the Dragon Wizard's ascension
---  (Fire Flowers for V2; a Terrorshark for V3, which needs a boat).
+--  (Fire Flowers for V2; a Terrorshark at sea for V3).
 --=============================================================================
 
+local Boat = require("Game.Boat")
 local ChestHunt = require("Features.ChestHunt")
 local Common = require("Features.Stack.Common")
 local Duel = require("Features.Races.Duel")
 local Enemies = require("Game.Enemies")
+local Events = require("Features.Sea.Events")
 local Fight = require("Features.Fight")
 local Mode = require("Features.Other.Mode")
 local Movement = require("Game.Movement")
@@ -36,6 +38,7 @@ Upgrade.HUMAN_BOSSES = { "Jeremy", "Orbitus", "Diamond" }
 Upgrade.SHIP_MOBS = { "Ship Deckhand", "Ship Steward", "Ship Officer", "Ship Engineer" }
 Upgrade.MINK_CHESTS = 30
 Upgrade.CYBORG_CHESTS = 20
+Upgrade.FISHMAN_SPOT = Vector3.new(753.0653686523438, 0, 6994.5146484375)
 
 local search = Fight.newSearch()
 local chests = ChestHunt.new()
@@ -149,8 +152,9 @@ local function v3(mode)
         return "Cyborg V3: holding a fruit"
     end
     if race == "Fishman" then
-        Movement.stop()
-        return "Fishman V3 needs a sea beast: coming with the Sea Events update"
+        local beast = Events.anySeaBeast()
+        if beast then return "Fishman V3: " .. Events.fight(mode, beast) end
+        return "Fishman V3: " .. Events.patrol(Upgrade.FISHMAN_SPOT, "the sea beasts", "Brigade")
     end
     local accept = race == "Skypiea" and function(player)
         local data = player:FindFirstChild("Data")
@@ -176,7 +180,10 @@ Upgrade.v2v3 = Mode({
         if Upgrade.version() == 1 then return v2(mode) end
         return v3(mode)
     end,
-    stop = function() search:reset() end,
+    stop = function()
+        search:reset()
+        Boat.stop()
+    end,
 })
 
 ---------------------------------------------------------------------------
@@ -275,7 +282,7 @@ Upgrade.ghoul = Mode({
 -- Draco V2 / V3
 ---------------------------------------------------------------------------
 
-local dracoQuest
+local dracoQuest, dracoShark
 
 local function wizard(command, action)
     return Common.netInvoke("RF/InteractDragonQuest", { NPC = "Dragon Wizard", Command = command, Action = action })
@@ -333,8 +340,15 @@ Upgrade.draco = Mode({
             return "Bringing the Fire Flowers"
         end
         if state == "V3InProgress" then
-            Movement.stop()
-            return "Draco V3 needs a Terrorshark: coming with the Sea Events update"
+            local shark = Events.find({ Terrorshark = true })
+            -- A Terrorshark fought and gone: ask the wizard whether it counted.
+            if dracoShark and dracoShark ~= shark and not Events.alive(dracoShark) then
+                dracoShark, dracoQuest = nil, nil
+                return "Draco V3: Terrorshark down"
+            end
+            dracoShark = shark or dracoShark
+            if shark then return "Draco V3: " .. Events.fight(mode, shark) end
+            return "Draco V3: " .. Events.patrol(Boat.ZONES["Zone 6"], "Zone 6")
         end
         local near, status = atWizard()
         if not near then return status end
@@ -348,13 +362,16 @@ Upgrade.draco = Mode({
         end
         return "Talking to the Dragon Wizard"
     end,
-    stop = function() search:reset() end,
+    stop = function()
+        search:reset()
+        Boat.stop()
+    end,
 })
 
 function Upgrade.reset()
     search:reset()
     chests:reset()
-    humanDone, humanTarget, fistGiven, dracoQuest = {}, nil, false, nil
+    humanDone, humanTarget, fistGiven, dracoQuest, dracoShark = {}, nil, false, nil, nil
 end
 
 return Upgrade

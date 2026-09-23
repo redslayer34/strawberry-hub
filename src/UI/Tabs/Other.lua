@@ -48,7 +48,7 @@ return function(Window, ui)
 
     local dragon = tab:AddSection("Dragon Quests (Sea 3)")
     Bind.toggle(dragon, "OtherDojo", "Auto Dojo Trainer",
-        "White and Purple belts. The boat belts come with the Sea Events update.")
+        "Every belt. Yellow, Green and Red use your boat (Sea Events tab settings).")
     Bind.toggle(dragon, "OtherDragonHunter", "Auto Dragon Hunter",
         "Hydra Enforcers, Venomous Assailants, trees, embers.")
 

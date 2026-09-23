@@ -3,10 +3,12 @@
 --=============================================================================
 --  Dojo Trainer (RF/InteractDragonQuest) hands out one belt task at a time:
 --    White   kill 20 mobs of your level quest
+--    Yellow  sink or kill 5 sea events (ships, sharks, piranhas) at Zone 6
+--    Green   sail in the danger-6 sea at Zone 6 for the quest's time
 --    Purple  kill 3 Elite Hunters
---    Yellow / Green / Red need a boat on the sea (sea events): they come
---    with the Sea Events part of the hub.
---  Once the trainer's Progress reaches its Goal the quest is claimed.
+--    Red     kill a Terrorshark
+--  The boat belts use the Sea Events boat. Once the trainer's Progress
+--  reaches its Goal the quest is claimed.
 --
 --  Dragon Hunter (RF/DragonHunter) asks for Hydra Enforcers, Venomous
 --  Assailants or trees to cut on Waterfall island (skills fired at them).
@@ -14,6 +16,7 @@
 --  the game says "Head back to the Dojo".
 --=============================================================================
 
+local Boat = require("Game.Boat")
 local Common = require("Features.Stack.Common")
 local EliteHunter = require("Features.Stack.EliteHunter")
 local Enemies = require("Game.Enemies")
@@ -31,9 +34,15 @@ Dragon.TRAINER = Vector3.new(5868.453125, 1211.7784423828125, 868.819580078125)
 Dragon.WATERFALL = Vector3.new(5251.900390625, 17.18115234375, 453.6025390625)
 Dragon.BELTS = {
     White = { kills = 20, what = "level quest mobs" },
+    Yellow = { kills = 5, what = "sea events" },
+    Green = { kills = 1, what = "a stay in the danger-6 sea" },
     Purple = { kills = 3, what = "Elite Hunters" },
+    Red = { kills = 1, what = "a Terrorshark" },
 }
-Dragon.BOAT_BELTS = { Yellow = true, Green = true, Red = true }
+Dragon.YELLOW_KINDS = { Ship = true, Shark = true, Piranha = true }
+Dragon.YELLOW_RADIUS = 500
+Dragon.DANGER_ZONE = "Zone 6"
+Dragon.MIN_STAY = 30      -- seconds in the danger-6 sea when the goal is unknown
 Dragon.TREE_TIME = 15     -- seconds on one tree
 Dragon.BACK_TO_DOJO = "Head back to the Dojo to complete more tasks."
 
@@ -41,7 +50,8 @@ Dragon.BACK_TO_DOJO = "Head back to the Dojo to complete more tasks."
 -- Dojo Trainer
 ---------------------------------------------------------------------------
 
-local belt, kills, lastTarget, restUntil
+local belt, kills, lastTarget, restUntil, stayFor, staySince
+local seaBelt
 
 local function trainer(command)
     return Common.netInvoke("RF/InteractDragonQuest", { NPC = "Dojo Trainer", Command = command })
@@ -71,13 +81,44 @@ local function askTrainer()
     end
     if Dragon.BELTS[quest.BeltName] then
         belt, kills, lastTarget = quest.BeltName, 0, nil
+        stayFor = math.max((tonumber(quest.Goal) or 0) - (tonumber(quest.Progress) or 0), Dragon.MIN_STAY)
+        staySince = nil
         return quest.BeltName .. " belt started"
     end
     restUntil = os.clock() + 300
-    if Dragon.BOAT_BELTS[quest.BeltName] then
-        return tostring(quest.BeltName) .. " belt needs a boat: coming with Sea Events"
-    end
     return "That's enough training for today"
+end
+
+-- The Compass' danger level, or 0 when it is hidden.
+function Dragon.danger()
+    local player = Services.player()
+    local level = player and Services.find(player, "PlayerGui.Main.Compass.Frame.DangerLevel")
+    local label = level and level.Visible and level:FindFirstChild("TextLabel")
+    return label and tonumber(label.Text) or 0
+end
+
+-- The boat belts: fights at sea, or sails to Zone 6.
+seaBelt = function(mode)
+    local Events = require("Features.Sea.Events")
+    local kinds = belt == "Red" and { Terrorshark = true } or belt == "Yellow" and Dragon.YELLOW_KINDS or nil
+    local target = kinds and Events.find(kinds, belt == "Yellow" and Dragon.YELLOW_RADIUS or Events.RADIUS)
+    if lastTarget and lastTarget ~= target and not Events.alive(lastTarget) then kills = kills + 1 end
+    lastTarget = target
+    if target then return Events.fight(mode, target) end
+
+    local status = Events.patrol(Boat.ZONES[Dragon.DANGER_ZONE], Dragon.DANGER_ZONE)
+    if belt ~= "Green" then return status end
+    if Dragon.danger() < 6 then
+        staySince = nil
+        return status
+    end
+    staySince = staySince or os.clock()
+    local left = stayFor - (os.clock() - staySince)
+    if left <= 0 then
+        kills = kills + 1
+        return "Stay done"
+    end
+    return string.format("In the danger-6 sea, %d s left", math.ceil(left))
 end
 
 Dragon.dojo = Mode({
@@ -89,7 +130,7 @@ Dragon.dojo = Mode({
         if belt == "Purple" then return EliteHunter.find() ~= nil end
         return true
     end,
-    idleStatus = "Resting (boat belt, or no task)",
+    idleStatus = "Resting (no task from the trainer)",
     tick = function(mode)
         local goal = belt and Dragon.BELTS[belt]
         if goal and kills >= goal.kills then belt = nil end
@@ -102,6 +143,7 @@ Dragon.dojo = Mode({
             countKill(LevelFarm.target)
             return prefix .. tostring(LevelFarm.status)
         end
+        if belt == "Yellow" or belt == "Red" or belt == "Green" then return prefix .. seaBelt(mode) end
         local elite, inWorld = EliteHunter.find()
         if not elite then
             Movement.stop()
@@ -113,6 +155,7 @@ Dragon.dojo = Mode({
     end,
     stop = function()
         LevelFarm.stop()
+        Boat.stop()
         lastTarget = nil
     end,
 })
@@ -200,49 +243,53 @@ local function cutTrees()
     return "Cutting a tree"
 end
 
+-- One step of the Dragon Hunter's tasks (also used to get Blaze Embers
+-- for the Volcanic Magnet). Returns the status.
+function Dragon.hunterStep(mode)
+    if taskFinished() then hunterTask = nil end
+    if not hunterTask then
+        local npc = World.npcPosition("Dragon Hunter")
+        if not npc then
+            Movement.stop()
+            return "Dragon Hunter not loaded (go to Hydra Island)"
+        end
+        Common.goTo(CFrame.new(npc) * CFrame.new(0, 0, 4))
+        if Common.near(npc, 8) and Common.every("DragonHunterAsk", 2) then
+            local check = dragonHunter("Check")
+            if type(check) == "table" and check.Text then
+                hunterTask = check.Text
+            else
+                local asked = dragonHunter("RequestQuest")
+                hunterTask = type(asked) == "table" and asked.Text or nil
+            end
+        end
+        return "Asking the Dragon Hunter"
+    end
+
+    local found, part = ember()
+    if found then
+        Common.goTo(part.CFrame)
+        if Common.near(part.Position, 5) then ignored[found] = true end
+        return "Collecting an ember"
+    end
+
+    local text = tostring(hunterTask)
+    if text:find("Hydra Enforcers", 1, true) then
+        return Common.farm(mode, { "Hydra Enforcer" }, hunterSearch)
+    end
+    if text:find("Venomous Assailants", 1, true) then
+        return Common.farm(mode, { "Venomous Assailant" }, hunterSearch)
+    end
+    if text:find("trees", 1, true) then return cutTrees() end
+    Movement.stop()
+    return "Unknown task: " .. text
+end
+
 Dragon.hunter = Mode({
     name = "Dragon Hunter",
     key = "OtherDragonHunter",
     sea = 3,
-    tick = function(mode)
-        if taskFinished() then hunterTask = nil end
-        if not hunterTask then
-            local npc = World.npcPosition("Dragon Hunter")
-            if not npc then
-                Movement.stop()
-                return "Dragon Hunter not loaded (go to Hydra Island)"
-            end
-            Common.goTo(CFrame.new(npc) * CFrame.new(0, 0, 4))
-            if Common.near(npc, 8) and Common.every("DragonHunterAsk", 2) then
-                local check = dragonHunter("Check")
-                if type(check) == "table" and check.Text then
-                    hunterTask = check.Text
-                else
-                    local asked = dragonHunter("RequestQuest")
-                    hunterTask = type(asked) == "table" and asked.Text or nil
-                end
-            end
-            return "Asking the Dragon Hunter"
-        end
-
-        local found, part = ember()
-        if found then
-            Common.goTo(part.CFrame)
-            if Common.near(part.Position, 5) then ignored[found] = true end
-            return "Collecting an ember"
-        end
-
-        local text = tostring(hunterTask)
-        if text:find("Hydra Enforcers", 1, true) then
-            return Common.farm(mode, { "Hydra Enforcer" }, hunterSearch)
-        end
-        if text:find("Venomous Assailants", 1, true) then
-            return Common.farm(mode, { "Venomous Assailant" }, hunterSearch)
-        end
-        if text:find("trees", 1, true) then return cutTrees() end
-        Movement.stop()
-        return "Unknown task: " .. text
-    end,
+    tick = function(mode) return Dragon.hunterStep(mode) end,
     stop = function()
         hunterSearch:reset()
         tree = nil
@@ -257,7 +304,7 @@ function Dragon.describe()
 end
 
 function Dragon.reset()
-    belt, kills, lastTarget, restUntil = nil, 0, nil, nil
+    belt, kills, lastTarget, restUntil, stayFor, staySince = nil, 0, nil, nil, Dragon.MIN_STAY, nil
     hunterTask, seenNotes, ignored, tree, treeSince = nil, {}, {}, nil, nil
     hunterSearch:reset()
 end
