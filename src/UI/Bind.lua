@@ -13,6 +13,7 @@
 --=============================================================================
 
 local Settings = require("Core.Settings")
+local TouchSlider = require("UI.TouchSlider")
 
 local Bind = {}
 
@@ -31,7 +32,7 @@ end
 -- ("3" instead of 3), and SaveManager reloads sliders from strings: the value
 -- is always converted before it reaches the settings.
 function Bind.slider(parent, key, title, min, max, rounding, description)
-    return parent:AddSlider(key, {
+    local slider = parent:AddSlider(key, {
         Title = title,
         Description = description,
         Default = Settings.get(key),
@@ -43,6 +44,8 @@ function Bind.slider(parent, key, title, min, max, rounding, description)
             if number then Settings.set(key, number) end
         end,
     })
+    pcall(TouchSlider.enhance, parent, slider)
+    return slider
 end
 
 function Bind.dropdown(parent, key, title, values, description)
@@ -54,6 +57,31 @@ function Bind.dropdown(parent, key, title, values, description)
         Default = Settings.get(key),
         Callback = function(value)
             if value ~= nil then Settings.set(key, value) end
+        end,
+    })
+end
+
+-- Multi-select: the setting holds a set ({ Z = true, X = true }).
+function Bind.multiDropdown(parent, key, title, values, description)
+    local current = Settings.get(key) or {}
+    local default = {}
+    for _, value in ipairs(values) do
+        if current[value] then default[#default + 1] = value end
+    end
+    return parent:AddDropdown(key, {
+        Title = title,
+        Description = description,
+        Values = values,
+        Multi = true,
+        Default = default,
+        Callback = function(selection)
+            local set = {}
+            if type(selection) == "table" then
+                for value, on in pairs(selection) do
+                    if on then set[value] = true end
+                end
+            end
+            Settings.set(key, set)
         end,
     })
 end

@@ -18,6 +18,26 @@ Settings.DEFAULTS = {
     BringCount = 3,
     FarmHeight = 20,
 
+    -- Farm modes
+    AutoBoss = false,
+    Boss = "",
+    AllBosses = false,
+    AutoKatakuri = false,
+    IgnoreKatakuri = false,
+    AutoBone = false,
+    AutoMaterial = false,
+    Material = "",
+    AutoKillMob = false,
+    Mob = "",
+    AutoAura = false,
+    AuraRadius = 300,
+
+    -- Mastery
+    MasteryFarm = false,
+    MasteryWeapon = "Blox Fruit",
+    MasteryHealth = 40,
+    MasterySkills = { Z = true, X = true, C = true, V = true, F = true },
+
     -- Combat
     AttackDelay = 0,
 
@@ -26,6 +46,7 @@ Settings.DEFAULTS = {
 }
 
 Settings.WEAPONS = { "Melee", "Sword", "Blox Fruit", "Gun" }
+Settings.MASTERY_WEAPONS = { "Blox Fruit", "Gun" }
 
 local values = {}
 local listeners = {}

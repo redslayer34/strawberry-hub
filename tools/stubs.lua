@@ -97,17 +97,25 @@ CFrame = {
 }
 
 -- UI value types -------------------------------------------------------------
-local function udim(scale, offset) return { Scale = scale, Offset = offset, __udim = true } end
+local UDimmt = { __eq = function(a, b) return a.Scale == b.Scale and a.Offset == b.Offset end }
+local function udim(scale, offset)
+    return setmetatable({ Scale = scale, Offset = offset, __udim = true }, UDimmt)
+end
 UDim = { new = udim }
+local UDim2mt = { __eq = function(a, b) return a.X == b.X and a.Y == b.Y end }
+local function udim2(xs, xo, ys, yo)
+    return setmetatable({ X = udim(xs, xo), Y = udim(ys, yo), __udim2 = true }, UDim2mt)
+end
 UDim2 = {
-    new = function(xs, xo, ys, yo)
-        return { X = udim(xs, xo), Y = udim(ys, yo), __udim2 = true }
-    end,
-    fromOffset = function(x, y)
-        return { X = udim(0, x), Y = udim(0, y), __udim2 = true }
-    end,
+    new = udim2,
+    fromOffset = function(x, y) return udim2(0, x, 0, y) end,
 }
-Color3 = { fromRGB = function(r, g, b) return { R = r, G = g, B = b, __color3 = true } end }
+local Color3mt = { __eq = function(a, b) return a.R == b.R and a.G == b.G and a.B == b.B end }
+local function color(r, g, b) return setmetatable({ R = r, G = g, B = b, __color3 = true }, Color3mt) end
+Color3 = {
+    new = color,
+    fromRGB = function(r, g, b) return color(r / 255, g / 255, b / 255) end,
+}
 
 -- Enum: every category and member is created on first read ------------------
 local function enumCategory(categoryName)

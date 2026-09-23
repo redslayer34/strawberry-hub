@@ -22,8 +22,9 @@ The hub is being rewritten in steps, each tested in game before the next.
 
 | Step | Content | State |
 |---|---|---|
-| 1 | Fluent UI, level farm (quest, attack, bring mob, flying), status panel | **this version** |
-| 2 | Bosses, mastery, materials, teleport, shop, stats, server | next |
+| 1 | Fluent UI, level farm (quest, attack, bring mob, flying), status panel | done |
+| 2a | Boss, Katakuri, Bones, Material, Kill Mob, Aura farms; Mastery; touch-friendly sliders | **this version** |
+| 2b | Teleport, shop, stats, server (hop to find bosses) | next |
 | 3+ | Stack farming, sea events, raids / dungeon, race, items, volcano, ESP, PVP, webhook | later |
 
 ## How it works
@@ -46,9 +47,9 @@ Everything comes from the game's own data, nothing is guessed:
 src/
 ├── main.lua              entry point: game ready → engine → interface → Unload
 ├── Core/                 Services, Settings, Loop, Player
-├── Game/                 Quests, Enemies, Movement, Combat, Bring
-├── Features/             Farm (runs one mode at a time), LevelFarm
-└── UI/                   Fluent loader, Interface, Bind, MobileButton, Tabs/
+├── Game/                 Quests, Enemies, Movement, Combat, Bring, Mastery, AimHook, Data
+├── Features/             Farm (one mode at a time), Fight, MobFarm, the farm modes
+└── UI/                   Fluent loader, Interface, Bind, TouchSlider, MobileButton, Tabs/
 tools/
 ├── pack.py               bundles src/ into StrawberryHub.lua
 ├── unpack.py             reverse, to inspect an older build

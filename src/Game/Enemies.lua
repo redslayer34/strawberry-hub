@@ -67,6 +67,65 @@ function Enemies.nearest(wanted, from, ignore)
     return best, bestDistance
 end
 
+-- The nearest alive mob of any kind within `radius` studs of the player.
+function Enemies.nearestWithin(radius)
+    local from = Player.position()
+    local enemies = folder()
+    if not from or not enemies then return nil end
+    local best, bestDistance = nil, radius
+    for _, model in ipairs(enemies:GetChildren()) do
+        if Enemies.isAlive(model) then
+            local distance = (model.HumanoidRootPart.Position - from).Magnitude
+            if distance <= bestDistance then
+                best, bestDistance = model, distance
+            end
+        end
+    end
+    return best
+end
+
+-- A boss named in `names`: alive in workspace.Enemies first, then waiting in
+-- ReplicatedStorage (the game parks bosses there while they are out of
+-- streaming range; flying to them loads them). Returns model, inWorld.
+function Enemies.findBoss(names)
+    local set = toSet(names)
+    local enemies = folder()
+    if enemies then
+        for _, model in ipairs(enemies:GetChildren()) do
+            if set[model.Name] and Enemies.isAlive(model) then return model, true end
+        end
+    end
+    local storage = game:GetService("ReplicatedStorage")
+    for _, model in ipairs(storage:GetChildren()) do
+        if set[model.Name] and Enemies.isAlive(model) then return model, false end
+    end
+    return nil
+end
+
+-- Every mob name the world knows about right now (spawn points and live
+-- mobs), sorted, for the "Kill Mob" dropdown.
+function Enemies.knownNames()
+    local seen, names = {}, {}
+    local function add(name)
+        name = Enemies.stripLevel(name)
+        if name ~= "" and not seen[name] then
+            seen[name] = true
+            names[#names + 1] = name
+        end
+    end
+    local origin = workspace:FindFirstChild("_WorldOrigin")
+    local spawns = origin and origin:FindFirstChild("EnemySpawns")
+    if spawns then
+        for _, node in ipairs(spawns:GetChildren()) do add(node.Name) end
+    end
+    local enemies = folder()
+    if enemies then
+        for _, model in ipairs(enemies:GetChildren()) do add(model.Name) end
+    end
+    table.sort(names)
+    return names
+end
+
 ---------------------------------------------------------------------------
 -- Spawn points
 ---------------------------------------------------------------------------

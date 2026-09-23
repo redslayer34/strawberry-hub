@@ -163,6 +163,21 @@ eq("rounded slider value", Settings.get("AttackDelay"), 0.25)
 Options.TweenSpeed:SetValue(9999)
 eq("slider clamped to its max", Settings.get("TweenSpeed"), 350)
 
+Options.MasterySkills:SetValue({ Z = true, C = true, X = false })
+local skills = Settings.get("MasterySkills")
+check("multi-dropdown writes a set", skills.Z and skills.C and not skills.X and not skills.V)
+eq("multi-dropdown keeps only the chosen skills", (function()
+    local n = 0
+    for _ in pairs(library.Options.MasterySkills.Value) do n = n + 1 end
+    return n
+end)(), 2)
+
+Options.Material:SetValue("Vampire Fang")
+eq("material dropdown writes its setting", Settings.get("Material"), "Vampire Fang")
+check("mob list refresh button", record.buttons["Refresh mob list"] ~= nil)
+record.buttons["Refresh mob list"]:Click()
+eq("refresh does not error", record.callbackErrors, nil)
+
 ---------------------------------------------------------------------------
 -- Autosave
 ---------------------------------------------------------------------------
@@ -255,6 +270,52 @@ do
 
     check("window without size is caught by the fake",
         not pcall(newFakeFluent().CreateWindow, newFakeFluent(), { Title = "x" }))
+end
+
+---------------------------------------------------------------------------
+-- Touch slider
+---------------------------------------------------------------------------
+
+reset()
+do
+    local TouchSlider = require("UI.TouchSlider")
+
+    -- The instance shape Fluent builds for a slider.
+    local section = { Container = newInstance("Frame", "Container") }
+    local element = newInstance("TextButton", "Element", section.Container)
+    local inner = newInstance("Frame", "SliderInner", element)
+    newInstance("UISizeConstraint", "UISizeConstraint", inner)
+    local rail = newInstance("Frame", "SliderRail", inner)
+    rail.AbsolutePosition = Vector2.new(100, 0)
+    rail.AbsoluteSize = Vector2.new(200, 4)
+    local dot = newInstance("ImageLabel", "SliderDot", rail)
+
+    local values = {}
+    local slider = { Min = 0, Max = 20 }
+    function slider:SetValue(v) values[#values + 1] = v end
+
+    check("touch area added", TouchSlider.enhance(section, slider))
+    local area = inner:FindFirstChild("StrawberryTouch")
+    check("touch area is a button", area and area.ClassName == "TextButton")
+    eq("touch area is tall", area and area.Size.Y.Offset, 36)
+    eq("dot enlarged", dot.Size.X.Offset, 22)
+
+    local touch = Enum.UserInputType.Touch
+    area.InputBegan:Fire({ UserInputType = touch, Position = Vector2.new(250, 0) })
+    eq("tap at 75 % sets 75 % of the range", values[1], 15)
+    local uis = game:GetService("UserInputService")
+    uis.InputChanged:Fire({ UserInputType = touch, Position = Vector2.new(400, 0) })
+    eq("dragging past the end clamps to max", values[2], 20)
+    uis.InputEnded:Fire({ UserInputType = touch, Position = Vector2.new(400, 0) })
+    uis.InputChanged:Fire({ UserInputType = touch, Position = Vector2.new(100, 0) })
+    eq("no update after release", #values, 2)
+
+    check("an enhanced slider is not enhanced twice", not TouchSlider.enhance(section, slider))
+    check("unknown layout leaves the slider stock",
+        not TouchSlider.enhance({ Container = newInstance("Frame", "Empty") }, slider))
+    TouchSlider.destroy()
+    uis.InputChanged:Fire({ UserInputType = touch, Position = Vector2.new(150, 0) })
+    eq("destroy drops the connections", #values, 2)
 end
 
 ---------------------------------------------------------------------------

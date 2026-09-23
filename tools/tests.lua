@@ -38,7 +38,10 @@ end
 local MODULES = {
     "Core.Services", "Core.Settings", "Core.Loop", "Core.Player",
     "Game.Quests", "Game.Enemies", "Game.Movement", "Game.Combat", "Game.Bring",
-    "Features.LevelFarm", "Features.Farm",
+    "Features.LevelFarm", "Features.Farm", "Features.Fight", "Features.MobFarm",
+    "Features.BossFarm", "Features.KatakuriFarm", "Features.BoneFarm",
+    "Features.MaterialFarm", "Features.KillMobFarm", "Features.AuraFarm",
+    "Game.Mastery", "Game.AimHook", "Game.Data",
 }
 for _, name in ipairs(MODULES) do
     local ok, err = pcall(require, name)
@@ -56,6 +59,15 @@ local Combat = require("Game.Combat")
 local Bring = require("Game.Bring")
 local LevelFarm = require("Features.LevelFarm")
 local Farm = require("Features.Farm")
+local Mastery = require("Game.Mastery")
+local AimHook = require("Game.AimHook")
+local Data = require("Game.Data")
+local BossFarm = require("Features.BossFarm")
+local KatakuriFarm = require("Features.KatakuriFarm")
+local BoneFarm = require("Features.BoneFarm")
+local MaterialFarm = require("Features.MaterialFarm")
+local KillMobFarm = require("Features.KillMobFarm")
+local AuraFarm = require("Features.AuraFarm")
 
 ---------------------------------------------------------------------------
 -- World builders
@@ -672,6 +684,198 @@ do
     eq("no active mode when disabled", Farm.current(), nil)
     check("character handed back", not Movement.moving())
     eq("idle status", Farm.status(), "Idle")
+end
+
+---------------------------------------------------------------------------
+-- Farm modes
+---------------------------------------------------------------------------
+
+local function resetModes()
+    for _, mode in ipairs(Farm.MODES) do mode.stop() end
+end
+
+-- Priority: Boss beats Aura beats Level.
+setup()
+do
+    resetModes()
+    Settings.set("AutoFarmLevel", true)
+    Settings.set("AutoAura", true)
+    Farm.tick()
+    eq("aura outranks level", Farm.current(), AuraFarm)
+    Settings.set("AutoBoss", true)
+    Farm.tick()
+    eq("boss outranks aura", Farm.current(), BossFarm)
+    Farm.stop()
+end
+
+-- Boss farm
+setup()
+do
+    resetModes()
+    Settings.set("AutoBoss", true)
+    BossFarm.tick()
+    eq("boss farm asks for a boss", BossFarm.status, "Choose a boss")
+
+    Settings.set("Boss", "Cyborg")
+    BossFarm.tick()
+    check("boss not spawned", BossFarm.status:find("Not spawned") ~= nil, BossFarm.status)
+
+    local parked = mob("Cyborg", Vector3.new(500, 0, 0), 100, rs)
+    BossFarm.tick()
+    near("flies to a boss parked in ReplicatedStorage", Movement.goal().Position, Vector3.new(500, 60, 0))
+    eq("no attack on a parked boss", BossFarm.target, nil)
+
+    parked.Parent = workspace.Enemies
+    BossFarm.tick()
+    eq("fights the boss once in the world", BossFarm.target, parked)
+
+    parked.Parent = nil
+    Settings.set("AllBosses", true)
+    local any = mob("Stone", Vector3.new(0, 0, 50))
+    BossFarm.tick()
+    eq("any boss", BossFarm.target, any)
+end
+
+-- Katakuri: Sea 3 only, boss first unless ignored.
+setup()
+do
+    resetModes()
+    KatakuriFarm.tick()
+    eq("katakuri needs sea 3", KatakuriFarm.status, "Only in Sea 3")
+    game.PlaceId = 7449423635
+    local cake = mob("Cake Guard", Vector3.new(30, 0, 0))
+    local prince = mob("Cake Prince", Vector3.new(90, 0, 0))
+    KatakuriFarm.tick()
+    eq("cake prince first", KatakuriFarm.target, prince)
+    Settings.set("IgnoreKatakuri", true)
+    KatakuriFarm.tick()
+    eq("ignored prince: cake mobs", KatakuriFarm.target, cake)
+end
+
+-- Bones: Sea 3 mobs, spawn tour when none alive.
+setup()
+do
+    resetModes()
+    game.PlaceId = 7449423635
+    local spawns = folder("EnemySpawns", folder("_WorldOrigin", workspace))
+    part("Reborn Skeleton [Lv. 1975]", Vector3.new(300, 0, 0), spawns)
+    BoneFarm.tick()
+    near("bone farm tours the spawn points", Movement.goal().Position, Vector3.new(300, 60, 0))
+    local skeleton = mob("Reborn Skeleton", Vector3.new(310, 0, 0))
+    BoneFarm.tick()
+    eq("bone farm fights a bone mob", BoneFarm.target, skeleton)
+end
+
+-- Material: wrong sea travels, right sea farms.
+setup()
+do
+    resetModes()
+    world.commF.OnInvoke = function() return true end
+    MaterialFarm.tick()
+    eq("material asks for a choice", MaterialFarm.status, "Choose a material")
+    Settings.set("Material", "Leather")
+    MaterialFarm.tick()
+    eq("wrong sea: travel action", world.commF.Invoked and world.commF.Invoked[1][1], "TravelZou")
+    MaterialFarm.tick()
+    eq("travel not spammed", #world.commF.Invoked, 1)
+    Settings.set("Material", "Vampire Fang")
+    local vampire = mob("Vampire", Vector3.new(20, 0, 0))
+    MaterialFarm.tick()
+    eq("right sea: farms the material's mob", MaterialFarm.target, vampire)
+end
+
+-- Kill mob and aura.
+setup()
+do
+    resetModes()
+    KillMobFarm.tick()
+    eq("kill mob asks for a choice", KillMobFarm.status, "Choose a mob")
+    Settings.set("Mob", "Zombie")
+    local zombie = mob("Zombie", Vector3.new(40, 0, 0))
+    KillMobFarm.tick()
+    eq("kill mob fights the chosen mob", KillMobFarm.target, zombie)
+
+    local spawns = folder("EnemySpawns", folder("_WorldOrigin", workspace))
+    part("Vampire [Lv. 975]", Vector3.new(0, 0, 0), spawns)
+    local names = Enemies.knownNames()
+    check("known names from spawns and live mobs",
+        table.find(names, "Vampire") ~= nil and table.find(names, "Zombie") ~= nil)
+
+    Settings.set("AuraRadius", 30)
+    AuraFarm.tick()
+    check("aura: nothing in range", AuraFarm.target == nil and AuraFarm.status:find("30") ~= nil)
+    Settings.set("AuraRadius", 100)
+    AuraFarm.tick()
+    eq("aura: nearest mob in range", AuraFarm.target, zombie)
+end
+
+---------------------------------------------------------------------------
+-- Mastery and aim
+---------------------------------------------------------------------------
+
+setup()
+do
+    Mastery.reset()
+    Mastery.HOLD = 0
+    local pressed = {}
+    local vim = game:GetService("VirtualInputManager")
+    function vim:SendKeyEvent(down, key) if down then pressed[#pressed + 1] = key end end
+
+    local melee = newInstance("Tool", "Combat", world.player.Backpack)
+    melee.ToolTip = "Melee"
+    local fruit = newInstance("Tool", "Flame-Flame", world.player.Backpack)
+    fruit.ToolTip = "Blox Fruit"
+
+    local skills = newInstance("Frame", "Skills", world.player.PlayerGui.Main)
+    local bar = newInstance("Frame", "Flame-Flame", skills)
+    local function skill(key, readyNow)
+        local frame = newInstance("Frame", key, bar)
+        local title = newInstance("TextLabel", "Title", frame)
+        title.TextColor3 = Color3.new(1, 1, 1)
+        local cooldown = newInstance("Frame", "Cooldown", frame)
+        cooldown.Size = readyNow and UDim2.new(0, 0, 1, -1) or UDim2.new(0.5, 0, 1, -1)
+    end
+    skill("Z", false)
+    skill("X", true)
+
+    local target = mob("Zombie", Vector3.new(0, 0, 0))
+    target.Humanoid.MaxHealth = 100
+
+    local Fight = require("Features.Fight")
+    Settings.set("MasteryFarm", true)
+    local mode = {}
+    Fight.engage(mode, target)
+    eq("healthy mob: normal weapon", melee.Parent, world.character)
+    eq("no aim while healthy", AimHook.target, nil)
+
+    target.Humanoid.Health = 30
+    Fight.engage(mode, target)
+    eq("low mob: mastery weapon", fruit.Parent, world.character)
+    eq("first ready selected skill pressed", pressed[1], "X")
+    check("skills aimed at the mob", AimHook.target ~= nil)
+
+    Settings.set("MasterySkills", { Z = true })
+    eq("unselected skill ignored", Mastery.readySkill(fruit), nil)
+
+    Settings.set("MasteryFarm", false)
+    Fight.engage(mode, target)
+    eq("mastery off: back to the normal weapon", AimHook.target, nil)
+
+    -- The aim rewrite itself.
+    local remote = newInstance("RemoteEvent", "RemoteEvent")
+    AimHook.target = CFrame.new(1, 2, 3)
+    AimHook.enabled = true
+    local swapped = AimHook.rewrite(remote, "FireServer", Vector3.new(9, 9, 9))
+    near("Vector3 aim replaced", swapped, Vector3.new(1, 2, 3))
+    local cf = AimHook.rewrite(remote, "FireServer", CFrame.new(9, 9, 9))
+    near("CFrame aim replaced", cf.Position, Vector3.new(1, 2, 3))
+    local a, b = AimHook.rewrite(remote, "FireServer", 1, 2)
+    check("multi-argument calls untouched", a == 1 and b == 2)
+    local other = newInstance("RemoteEvent", "RE/RegisterHit")
+    near("other remotes untouched", AimHook.rewrite(other, "FireServer", Vector3.new(9, 9, 9)), Vector3.new(9, 9, 9))
+    AimHook.disable()
+    near("disabled hook passes through", AimHook.rewrite(remote, "FireServer", Vector3.new(9, 9, 9)), Vector3.new(9, 9, 9))
+    AimHook.enabled = true
 end
 
 ---------------------------------------------------------------------------

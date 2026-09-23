@@ -11,6 +11,7 @@
 --  window to drive it from.
 --=============================================================================
 
+local AimHook = require("Game.AimHook")
 local Farm = require("Features.Farm")
 local FluentLoader = require("UI.Fluent")
 local Interface = require("UI.Interface")
@@ -90,6 +91,7 @@ function hub.Unload()
     unloaded = true
 
     pcall(Farm.stop)
+    pcall(AimHook.disable)
     pcall(Loop.stopAll)
     pcall(Movement.destroy)
     for _, connection in ipairs(connections) do

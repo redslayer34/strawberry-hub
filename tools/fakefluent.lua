@@ -123,7 +123,12 @@ function newFakeFluent()
         dropdown.Multi = config.Multi
         dropdown.Callback = config.Callback or function() end
         local default = config.Default
-        if type(default) == "number" then
+        if config.Multi then
+            dropdown.Value = {}
+            for _, value in ipairs(type(default) == "table" and default or {}) do
+                if table.find(dropdown.Values, value) then dropdown.Value[value] = true end
+            end
+        elseif type(default) == "number" then
             dropdown.Value = dropdown.Values[default]
         elseif type(default) == "string" and table.find(dropdown.Values, default) then
             dropdown.Value = default
@@ -131,7 +136,15 @@ function newFakeFluent()
         function dropdown:OnChanged(fn) dropdown.Changed = fn end
         function dropdown:SetValues(values) dropdown.Values = values end
         function dropdown:SetValue(value)
-            if value ~= nil and not table.find(dropdown.Values, value) then value = nil end
+            if dropdown.Multi then
+                local set = {}
+                for key, on in pairs(type(value) == "table" and value or {}) do
+                    if on and table.find(dropdown.Values, key) then set[key] = true end
+                end
+                value = set
+            elseif value ~= nil and not table.find(dropdown.Values, value) then
+                value = nil
+            end
             dropdown.Value = value
             Library:SafeCallback(dropdown.Callback, dropdown.Value)
             Library:SafeCallback(dropdown.Changed, dropdown.Value)

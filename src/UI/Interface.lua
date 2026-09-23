@@ -10,6 +10,7 @@
 
 local MobileButton = require("UI.MobileButton")
 local Settings = require("Core.Settings")
+local TouchSlider = require("UI.TouchSlider")
 
 local Interface = {}
 
@@ -129,6 +130,7 @@ end
 
 function Interface.destroy()
     state.closed = true
+    TouchSlider.destroy()
     if state.stopAutosave then state.stopAutosave() end
     if state.mobileButton then pcall(function() state.mobileButton:Destroy() end) end
     state = { closed = true }

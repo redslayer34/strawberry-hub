@@ -10,12 +10,20 @@
 
 local Combat = require("Game.Combat")
 local Loop = require("Core.Loop")
+local Mastery = require("Game.Mastery")
 local Movement = require("Game.Movement")
 local Settings = require("Core.Settings")
 
 local Farm = {}
 
+-- Priority order: the first enabled mode is the one that runs.
 Farm.MODES = {
+    require("Features.BossFarm"),
+    require("Features.KatakuriFarm"),
+    require("Features.BoneFarm"),
+    require("Features.MaterialFarm"),
+    require("Features.KillMobFarm"),
+    require("Features.AuraFarm"),
     require("Features.LevelFarm"),
 }
 
@@ -37,6 +45,7 @@ function Farm.tick()
     if chosen ~= current then
         if current then current.stop() end
         current = chosen
+        Mastery.reset()
         if not chosen then Movement.stop() end
     end
 
@@ -67,6 +76,7 @@ function Farm.stop()
     Loop.stop("Attack")
     if current then current.stop() end
     current = nil
+    Mastery.reset()
     Movement.stop()
 end
 
