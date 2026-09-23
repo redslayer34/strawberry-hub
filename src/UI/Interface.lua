@@ -21,8 +21,15 @@ Interface.SAVE_DELAY = 1
 
 Interface.TABS = {
     { name = "Farm", build = require("UI.Tabs.Farm") },
+    { name = "Teleport", build = require("UI.Tabs.Teleport") },
+    { name = "Shop", build = require("UI.Tabs.Shop") },
+    { name = "Player", build = require("UI.Tabs.Player") },
+    { name = "Server", build = require("UI.Tabs.Server") },
     { name = "Settings", build = require("UI.Tabs.Settings") },
 }
+
+-- Controls whose value must not come back on the next run.
+Interface.TRANSIENT = { "JoinJobId" }
 
 local state = {}
 
@@ -78,7 +85,7 @@ function Interface.build(library, saveManager, interfaceManager, options)
     if saveManager then
         saveManager:SetLibrary(library)
         saveManager:IgnoreThemeSettings()
-        saveManager:SetIgnoreIndexes({})
+        saveManager:SetIgnoreIndexes(Interface.TRANSIENT)
         saveManager:SetFolder(Interface.CONFIG_FOLDER)
     end
     if interfaceManager then

@@ -53,6 +53,8 @@ return function(Window)
     Bind.toggle(bosses, "AutoBoss", "Auto Boss", "Kills the chosen boss once it has spawned.")
     Bind.dropdown(bosses, "Boss", "Boss", Data.BOSSES)
     Bind.toggle(bosses, "AllBosses", "Any Boss", "Kills whichever boss is alive instead.")
+    Bind.toggle(bosses, "HopForBoss", "Hop to find it",
+        "Changes server when the boss has not spawned for 15 seconds.")
 
     local sea3 = tab:AddSection("Sea 3")
     Bind.toggle(sea3, "AutoKatakuri", "Auto Katakuri",

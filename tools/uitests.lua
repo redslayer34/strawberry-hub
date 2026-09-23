@@ -122,7 +122,7 @@ eq("minimize key", config.MinimizeKey and config.MinimizeKey.Name, "LeftControl"
 
 local titles = {}
 for _, tab in ipairs(record.tabs) do titles[#titles + 1] = tab.Title end
-eq("tabs in order", table.concat(titles, ","), "Farm,Settings")
+eq("tabs in order", table.concat(titles, ","), "Farm,Teleport,Shop,Player,Server,Settings")
 eq("first tab selected", record.selectedTab, 1)
 
 for key in pairs(Settings.DEFAULTS) do
@@ -178,6 +178,43 @@ check("mob list refresh button", record.buttons["Refresh mob list"] ~= nil)
 record.buttons["Refresh mob list"]:Click()
 eq("refresh does not error", record.callbackErrors, nil)
 
+-- Shop and teleport buttons.
+do
+    local rs = game:GetService("ReplicatedStorage")
+    local remotes = rs:FindFirstChild("Remotes") or newInstance("Folder", "Remotes", rs)
+    local commF = remotes:FindFirstChild("CommF_") or newInstance("RemoteFunction", "CommF_", remotes)
+    commF.OnInvoke = function() return "ok" end
+    commF.Invoked = nil
+
+    record.buttons["Buso Haki"]:Click()
+    local call = commF.Invoked and commF.Invoked[1]
+    check("Buso Haki buys through CommF_", call and call[1] == "BuyHaki" and call[2] == "Buso")
+    local note = record.notifications[#record.notifications]
+    eq("purchase result shown", note and note.SubContent, "ok")
+
+    local before = #commF.Invoked
+    record.buttons["Reroll race"]:Click()
+    eq("reroll waits for confirmation", #commF.Invoked, before)
+    local dialog = record.dialogs[#record.dialogs]
+    dialog.Buttons[1].Callback()
+    local reroll = commF.Invoked[#commF.Invoked]
+    check("confirmed reroll", reroll[1] == "BlackbeardReward" and reroll[2] == "Reroll")
+
+    local Travel = require("Features.Travel")
+    Options.FightingStyle:SetValue("Godhuman")
+    record.buttons["Buy fighting style"]:Click()
+    eq("fighting style travels to its teacher", Travel.pending() and Travel.pending().label, "Ancient Monk")
+    Travel.cancel()
+
+    Options.Team:SetValue("Marines")
+    record.buttons["Switch team"]:Click()
+    local team = commF.Invoked[#commF.Invoked]
+    check("switch team", team[1] == "SetTeam" and team[2] == "Marines")
+
+    check("JobId input not saved", saveManager.Ignore.JoinJobId == true)
+    check("server panel", record.paragraphs.Server ~= nil)
+end
+
 ---------------------------------------------------------------------------
 -- Autosave
 ---------------------------------------------------------------------------
@@ -210,7 +247,7 @@ check("status panel refreshed", status and tostring(status.Description):find("Le
     status and status.Description)
 
 record.buttons.Unload:Click()
-local dialog = record.dialogs[1]
+local dialog = record.dialogs[#record.dialogs]
 check("unload asks first", dialog ~= nil and not unloaded)
 eq("dialog has two buttons", dialog and #dialog.Buttons, 2)
 if dialog then dialog.Buttons[1].Callback() end
@@ -247,7 +284,7 @@ do
     eq("broken tab reported", failedList and failedList[1], "Broken")
     local names = {}
     for _, tab in ipairs(brokenRecord.tabs) do names[#names + 1] = tab.Title end
-    eq("other tabs still built", table.concat(names, ","), "Broken,Farm,Settings")
+    eq("other tabs still built", table.concat(names, ","), "Broken,Farm,Teleport,Shop,Player,Server,Settings")
     local note = brokenRecord.notifications[#brokenRecord.notifications]
     check("player told which tab failed", note and note.Content:find("Broken") ~= nil)
     check("failure logged", #WARNINGS > 0)

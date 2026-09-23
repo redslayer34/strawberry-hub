@@ -18,8 +18,10 @@ local Interface = require("UI.Interface")
 local Loop = require("Core.Loop")
 local Movement = require("Game.Movement")
 local Player = require("Core.Player")
+local PlayerTweaks = require("Features.PlayerTweaks")
 local Services = require("Core.Services")
 local Settings = require("Core.Settings")
+local Stats = require("Features.Stats")
 
 local VERSION = "2.0.0"
 
@@ -78,6 +80,8 @@ if afk then connections[#connections + 1] = afk end
 
 guard("movement", Movement.start)
 guard("farm", Farm.start)
+guard("auto stats", Stats.start)
+guard("player tweaks", PlayerTweaks.start)
 
 ---------------------------------------------------------------------------
 -- Unload

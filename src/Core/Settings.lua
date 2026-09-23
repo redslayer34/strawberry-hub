@@ -38,6 +38,25 @@ Settings.DEFAULTS = {
     MasteryHealth = 40,
     MasterySkills = { Z = true, X = true, C = true, V = true, F = true },
 
+    -- Teleport / shop selections
+    Island = "",
+    Npc = "",
+    FightingStyle = "",
+
+    -- Player
+    AutoStats = false,
+    StatTargets = { Melee = true, Defense = true },
+    Team = "Pirates",
+    WalkSpeedOn = false,
+    WalkSpeed = 50,
+    JumpPowerOn = false,
+    JumpPower = 100,
+    Noclip = false,
+
+    -- Server
+    AutoExecute = true,
+    HopForBoss = false,
+
     -- Combat
     AttackDelay = 0,
 

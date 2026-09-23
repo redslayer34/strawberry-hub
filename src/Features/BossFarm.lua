@@ -7,9 +7,15 @@ local Enemies = require("Game.Enemies")
 local Fight = require("Features.Fight")
 local Movement = require("Game.Movement")
 local Player = require("Core.Player")
+local Server = require("Game.Server")
 local Settings = require("Core.Settings")
 
 local BossFarm = { name = "Boss Farm", status = "Idle", target = nil }
+
+BossFarm.HOP_AFTER = 15   -- seconds without the boss before hopping
+BossFarm.HOP_RETRY = 30
+
+local missingSince, lastHop
 
 function BossFarm.enabled()
     return Settings.get("AutoBoss") == true
@@ -40,8 +46,17 @@ function BossFarm.tick()
     if not boss then
         BossFarm.status = "Not spawned: " .. (Settings.get("AllBosses") and "any boss" or names[1])
         Movement.stop()
+        local now = os.clock()
+        missingSince = missingSince or now
+        if Settings.get("HopForBoss") and now - missingSince >= BossFarm.HOP_AFTER
+            and (not lastHop or now - lastHop >= BossFarm.HOP_RETRY) then
+            lastHop = now
+            BossFarm.status = BossFarm.status .. " -- hopping server"
+            Server.hop()
+        end
         return
     end
+    missingSince = nil
 
     if not inWorld then
         -- Parked out of streaming range: flying there loads it.
@@ -54,6 +69,7 @@ function BossFarm.tick()
 end
 
 function BossFarm.stop()
+    missingSince = nil
     BossFarm.target = nil
     BossFarm.status = "Idle"
 end

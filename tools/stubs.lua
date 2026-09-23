@@ -385,6 +385,14 @@ local players = newInstance("Players", "Players")
 function players:GetPlayerFromCharacter(character)
     return rawget(character, "OwnerPlayer")
 end
+function players:GetPlayers()
+    local list = {}
+    for _, child in ipairs(self:GetChildren()) do
+        if child.ClassName == "Player" then list[#list + 1] = child end
+    end
+    return list
+end
+players.MaxPlayers = 12
 
 local services = {
     Players = players,

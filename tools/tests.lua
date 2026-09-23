@@ -42,6 +42,7 @@ local MODULES = {
     "Features.BossFarm", "Features.KatakuriFarm", "Features.BoneFarm",
     "Features.MaterialFarm", "Features.KillMobFarm", "Features.AuraFarm",
     "Game.Mastery", "Game.AimHook", "Game.Data",
+    "Features.Travel", "Features.Stats", "Features.PlayerTweaks", "Game.World", "Game.Server",
 }
 for _, name in ipairs(MODULES) do
     local ok, err = pcall(require, name)
@@ -68,6 +69,10 @@ local BoneFarm = require("Features.BoneFarm")
 local MaterialFarm = require("Features.MaterialFarm")
 local KillMobFarm = require("Features.KillMobFarm")
 local AuraFarm = require("Features.AuraFarm")
+local Travel = require("Features.Travel")
+local World = require("Game.World")
+local Stats = require("Features.Stats")
+local Server = require("Game.Server")
 
 ---------------------------------------------------------------------------
 -- World builders
@@ -876,6 +881,145 @@ do
     AimHook.disable()
     near("disabled hook passes through", AimHook.rewrite(remote, "FireServer", Vector3.new(9, 9, 9)), Vector3.new(9, 9, 9))
     AimHook.enabled = true
+end
+
+---------------------------------------------------------------------------
+-- Travel, world, stats, server
+---------------------------------------------------------------------------
+
+setup()
+do
+    resetModes()
+    Travel.cancel()
+    Settings.set("AutoFarmLevel", true)
+    Farm.tick()
+    eq("level farm running", Farm.current(), LevelFarm)
+
+    local arrived = 0
+    Travel.go("Somewhere", Vector3.new(100, 0, 0), function() arrived = arrived + 1 end)
+    Farm.tick()
+    eq("travel pauses the farm", Farm.current(), Travel)
+    near("travel flies to the place", Movement.goal().Position, Vector3.new(100, 4, 2))
+    check("travel status shows the distance", Travel.status:find("Somewhere") ~= nil, Travel.status)
+
+    world.hrp.Position = Vector3.new(100, 4, 2)
+    Farm.tick()
+    eq("arrival runs the callback", arrived, 1)
+    Farm.tick()
+    eq("farm resumes after arrival", Farm.current(), LevelFarm)
+    eq("callback runs once", arrived, 1)
+
+    Travel.go("Nowhere", function() return nil end)
+    Travel.tick()
+    check("unloaded destination cancels", Travel.pending() == nil and Travel.status:find("not loaded") ~= nil)
+    Farm.stop()
+end
+
+setup()
+do
+    local locations = folder("Locations", folder("_WorldOrigin", workspace))
+    part("Kingdom of Rose", Vector3.new(5, 6, 7), locations)
+    local islands = World.islands()
+    near("live location marker", islands["Kingdom of Rose"], Vector3.new(5, 6, 7))
+    check("known islands of this sea", islands["Cafe"] ~= nil and islands["Port Town"] == nil)
+    check("island names sorted", World.islandNames()[1] <= World.islandNames()[2])
+
+    local npcs = folder("NPCs", workspace)
+    local stored = folder("NPCs", rs)
+    local near1 = newInstance("Model", "Ancient Monk", npcs)
+    part("HumanoidRootPart", Vector3.new(10, 0, 0), near1)
+    local far1 = newInstance("Model", "Ancient Monk", stored)
+    part("HumanoidRootPart", Vector3.new(900, 0, 0), far1)
+    newInstance("Model", "Boat Dealer", npcs)
+    near("nearest NPC of that name", World.npcPosition("Ancient Monk"), Vector3.new(10, 0, 0))
+    local names = World.npcNames()
+    check("NPC names without boats", table.find(names, "Ancient Monk") ~= nil and table.find(names, "Boat Dealer") == nil)
+    eq("NPC names unique", #names, 1)
+
+    local lighting = game:GetService("Lighting")
+    local sky = newInstance("Sky", "FantasySky", lighting)
+    sky.MoonTextureId = Data.MOON_FULL
+    eq("full moon", World.moon(), "Full Moon")
+    sky.MoonTextureId = Data.MOON_NEXT
+    eq("full moon next night", World.moon(), "Next Night")
+    lighting.ClockTime = 18.5
+    eq("game clock", World.clock(), "18:30")
+
+    eq("no elite hunter", World.eliteHunter(), nil)
+    mob("Urban", Vector3.new(0, 0, 0))
+    eq("elite hunter alive", World.eliteHunter(), "Urban")
+end
+
+do
+    local plan = Stats.plan(10, { Melee = 0, Defense = 0 }, { Melee = true, Defense = true })
+    eq("points split in two", plan[1].points + plan[2].points, 10)
+    eq("even split", plan[1].points, 5)
+    local capped = Stats.plan(100, { Melee = 2795, Defense = 0 }, { Melee = true, Defense = true })
+    eq("capped stat gets only what fits", capped[1].points, 5)
+    local maxed = Stats.plan(10, { Melee = 2800, Defense = 0 }, { Melee = true, Defense = true })
+    eq("maxed stat skipped", #maxed, 1)
+    eq("remaining stat gets everything", maxed[1].points, 10)
+    eq("no points, no plan", #Stats.plan(0, {}, { Melee = true }), 0)
+    local odd = Stats.plan(3, {}, { Melee = true, Sword = true })
+    eq("odd points: first stat gets the extra", odd[1].points, 2)
+end
+
+setup()
+do
+    Server.reset()
+    Settings.set("AutoStats", true)
+    Settings.set("StatTargets", { Sword = true })
+    local points = newInstance("IntValue", "Points", world.player.Data)
+    points.Value = 6
+    world.commF.OnInvoke = function() return true end
+    Stats.tick()
+    local call = world.commF.Invoked and world.commF.Invoked[1]
+    eq("AddPoint action", call and call[1], "AddPoint")
+    eq("AddPoint stat", call and call[2], "Sword")
+    eq("AddPoint amount", call and call[3], 6)
+
+    local browser = newInstance("RemoteFunction", "__ServerBrowser", rs)
+    browser.OnInvoke = function(page)
+        if page == 1 then return { [game.JobId] = {}, ["job-a"] = {} } end
+        if page == "teleport" then return true end
+        return {}
+    end
+    local queued
+    queue_on_teleport = function(code) queued = code end
+    check("hop sends a teleport", Server.hop())
+    local last = browser.Invoked[#browser.Invoked]
+    eq("hop teleports through the server browser", last[1], "teleport")
+    eq("hop picks another server", last[2], "job-a")
+    check("loader queued for the next server", queued and queued:find("StrawberryHub.lua", 1, true) ~= nil)
+    check("tried server remembered", Server.isVisited("job-a"))
+    check("no server left to try", not Server.hop())
+
+    queued = nil
+    Settings.set("AutoExecute", false)
+    Server.join("job-b")
+    eq("no reload queued when disabled", queued, nil)
+    check("empty JobId refused", not Server.join("  "))
+    queue_on_teleport = nil
+end
+
+setup()
+do
+    resetModes()
+    Server.reset()
+    local browser = newInstance("RemoteFunction", "__ServerBrowser", rs)
+    browser.OnInvoke = function(page)
+        if page == 1 then return { ["job-z"] = {} } end
+        return true
+    end
+    Settings.set("AutoBoss", true)
+    Settings.set("Boss", "Cyborg")
+    Settings.set("HopForBoss", true)
+    local BossFarmModule = require("Features.BossFarm")
+    BossFarmModule.HOP_AFTER = 0
+    BossFarmModule.tick()
+    local last = browser.Invoked and browser.Invoked[#browser.Invoked]
+    eq("missing boss makes the farm hop", last and last[2], "job-z")
+    BossFarmModule.HOP_AFTER = 15
 end
 
 ---------------------------------------------------------------------------
