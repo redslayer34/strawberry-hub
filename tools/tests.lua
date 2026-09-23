@@ -1371,6 +1371,7 @@ do
     PortalRecorder.step()
     world.hrp.Position = MANSION_EXIT
     PortalRecorder.step()
+    stepTasks()
     local learned = PortalRecorder.portals()
     eq("a jump teaches a portal", #learned, 1)
     near("entrance recorded", learned[1].entrance, MANSION_DOOR)
@@ -1489,11 +1490,47 @@ do
     local remote = newInstance("RemoteEvent", "RemoteEvent")
     local out = Hook.dispatch(remote, "FireServer", true, Vector3.new(5, 5, 5))
     near("rewriter applied through the shared hook", out, Vector3.new(1, 1, 1))
+    eq("observers wait until the call has gone", #seen, 0)
+    stepTasks()
     eq("observer saw the call", seen[1] and seen[1][1], "FireServer")
     local a, b, c = Hook.dispatch(remote, "InvokeServer", false, "x", nil, "z")
     check("nil in the middle kept", a == "x" and b == nil and c == "z")
     AimHook.target = nil
     Hook.reset()
+end
+
+-- Telemetry and pings are never taken for the portal's call.
+setup()
+do
+    game.PlaceId = 7449423635
+    Settings.set("LearnPortals", true)
+    local net = folder("Net", folder("Modules", rs))
+    local telemetry = newInstance("RemoteEvent", "RE/InputTelemetry", net)
+    local boat = newInstance("RemoteFunction", "RF/BoatCastleTeleporters", net)
+    local door = part("MapTeleportC", MANSION_DOOR, folder("Boat Castle", folder("Map", workspace)))
+    PortalRecorder.observe(boat, "InvokeServer", { n = 2, "InitiateTeleport", door }, true)
+    PortalRecorder.observe(telemetry, "FireServer", { n = 1, { x = 1 } }, true)
+    local portal = PortalRecorder.learn(MANSION_DOOR, MANSION_EXIT, os.clock())
+    eq("teleport call kept over later telemetry", portal.call and portal.call.path,
+        "ReplicatedStorage.Modules.Net.RF/BoatCastleTeleporters")
+
+    local noisy = PortalRecorder.learn(MANSION_EXIT, MANSION_DOOR, os.clock() + 100)
+    eq("telemetry alone: a touch portal", noisy.call, nil)
+
+    -- Replay finds the same remote and the same teleporter part.
+    local sent
+    boat.OnInvoke = function(action, target) sent = { action, target } end
+    PortalRecorder.trigger(portal)
+    eq("replayed action", sent and sent[1], "InitiateTeleport")
+    eq("replayed teleporter part", sent and sent[2], door)
+    check("teleporter listed in the log", PortalRecorder.log():find("MapTeleportC", 1, true) ~= nil)
+
+    -- Proven to work from far away: used without flying to the entrance.
+    PortalRecorder.setFar(portal, true)
+    world.hrp.Position = Vector3.new(0, 50, 0)
+    local plan = Router.plan(world.hrp.Position, MANSION_EXIT + Vector3.new(100, 0, 0), 300)
+    eq("far portal chosen", plan.kind, "learned")
+    eq("far portal used from here", plan.dock, nil)
 end
 
 ---------------------------------------------------------------------------

@@ -152,9 +152,12 @@ function Router.plan(here, goal, speed)
     local now = os.clock()
     for _, portal in ipairs(PortalRecorder.portals()) do
         if not isLocked(portal.name) and now - (lastUsed[portal.name] or -math.huge) >= Router.COOLDOWN then
+            -- A portal proven to work from far away is used from here.
+            local far = portal.far == true and portal.call ~= nil
             consider({
-                kind = "learned", name = portal.name, portal = portal, dock = portal.entrance,
-                cost = (here - portal.entrance).Magnitude / speed + Router.OVERHEAD
+                kind = "learned", name = portal.name, portal = portal,
+                dock = not far and portal.entrance or nil,
+                cost = (far and 0 or (here - portal.entrance).Magnitude / speed) + Router.OVERHEAD
                     + (portal.exit - goal).Magnitude / speed,
             })
         end
@@ -376,6 +379,19 @@ function Router.testAll(onDone)
                 lastUsed[point.name] = os.clock()
                 local ok, err = pcall(actions.entrance, plan)
                 if not ok then recordResult(point.name, false, tostring(err)) end
+            end
+        end
+        -- Learned portals with a game call: does the call work from here?
+        for _, portal in ipairs(PortalRecorder.portals()) do
+            if portal.call and Player.distanceTo(portal.entrance) > Router.TOO_CLOSE then
+                local start = Player.position()
+                pcall(PortalRecorder.trigger, portal, true)
+                local works = waitUntil(Router.VERIFY_STEPS, function()
+                    local here = Player.position()
+                    return here ~= nil and start ~= nil and (here - start).Magnitude > Router.MOVED
+                end)
+                PortalRecorder.setFar(portal, works)
+                if works then break end   -- moved: the other results would be wrong
             end
         end
         route = nil

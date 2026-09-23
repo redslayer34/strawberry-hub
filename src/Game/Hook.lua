@@ -9,6 +9,12 @@
 --    rewriters   may replace the arguments of a call (AimHook)
 --
 --  With the hub unloaded, the hook becomes a pure pass-through.
+--
+--  Nothing inside the hook may call a method on an Instance: a namecall made
+--  there replaces the pending namecall method, and the game's own
+--  InvokeServer would then run as that method instead ("you cannot access
+--  this portal yet"). Observers therefore run deferred, after the call, and
+--  the method is restored before forwarding when the executor allows it.
 --=============================================================================
 
 local Hook = {
@@ -43,10 +49,12 @@ function Hook.dispatch(remote, method, fromGame, ...)
     if not Hook.enabled or not REMOTE_METHODS[method] then return ... end
 
     if #observers > 0 then
-        local args = pack(...)
-        for _, observer in ipairs(observers) do
-            pcall(observer, remote, method, args, fromGame)
-        end
+        local args, at = pack(...), os.clock()
+        task.defer(function()
+            for _, observer in ipairs(observers) do
+                pcall(observer, remote, method, args, fromGame, at)
+            end
+        end)
     end
 
     if #rewriters == 0 then return ... end
@@ -68,7 +76,11 @@ function Hook.install()
             local method = getnamecallmethod()
             if REMOTE_METHODS[method] then
                 local fromGame = not (checkcaller and checkcaller())
-                return original(self, Hook.dispatch(self, method, fromGame, ...))
+                local function forward(...)
+                    if setnamecallmethod then setnamecallmethod(method) end
+                    return original(self, ...)
+                end
+                return forward(Hook.dispatch(self, method, fromGame, ...))
             end
         end
         return original(self, ...)

@@ -66,7 +66,8 @@ return function(Window, ui)
     portals:AddParagraph({
         Title = "How to teach a portal",
         Content = "Turn on Learn portals, stop the farm, then walk through the portal yourself once "
-            .. "(Castle <-> Mansion, Castle <-> Hydra...). Smart travel uses it from then on.",
+            .. "(Castle <-> Mansion, Castle <-> Hydra...). Smart travel uses it from then on. "
+            .. "Then press Test portals far from them: the ones that work from anywhere skip the flight.",
     })
     Bind.toggle(portals, "LearnPortals", "Learn portals", "Watches you take portals and remembers them.")
     local learned = portals:AddParagraph({ Title = "Learned portals", Content = PortalRecorder.describe() })

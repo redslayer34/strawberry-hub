@@ -24,7 +24,7 @@ local PortalRecorder = {}
 
 PortalRecorder.FILE = "StrawberryHub/portals.json"
 PortalRecorder.JUMP = 300           -- studs in one frame that mean a teleport
-PortalRecorder.CALL_WINDOW = 1.5    -- seconds a call stays linked to a jump
+PortalRecorder.CALL_WINDOW = 5      -- seconds a call stays linked to a jump
 PortalRecorder.TOUCH_RADIUS = 25    -- studs around the entrance for its part
 PortalRecorder.KEEP_CALLS = 20
 PortalRecorder.SAME_ENTRANCE = 50
@@ -60,6 +60,14 @@ local function serialise(value)
     if kind == "string" or kind == "number" or kind == "boolean" then
         return { t = kind, v = value }
     end
+    if kind == "table" then
+        local parts = {}
+        for key, item in pairs(value) do
+            parts[#parts + 1] = tostring(key) .. "=" .. tostring(item)
+            if #parts >= 6 then break end
+        end
+        return { t = "other", v = "{" .. table.concat(parts, ", ") .. "}" }
+    end
     return { t = "other", v = tostring(value) }
 end
 
@@ -94,6 +102,26 @@ local function describe(entry)
     return tostring(entry.v)
 end
 
+-- Only calls that look like a teleport are linked to a portal: the game
+-- also sends telemetry, clock pings and profile requests all the time.
+-- Seen in game: RF/BoatCastleTeleporters:InvokeServer("InitiateTeleport", part).
+local TELEPORT_WORDS = { "teleport", "entrance", "portal", "travel" }
+
+local function teleportLike(call)
+    local texts = { tostring(call.path) }
+    for _, entry in ipairs(call.args or {}) do
+        if entry.t == "string" or entry.t == "Instance" then texts[#texts + 1] = tostring(entry.v) end
+    end
+    for _, text in ipairs(texts) do
+        local lower = text:lower()
+        for _, word in ipairs(TELEPORT_WORDS) do
+            if lower:find(word, 1, true) then return true end
+        end
+    end
+    return false
+end
+PortalRecorder.teleportLike = teleportLike
+
 local function toVector(xyz) return Vector3.new(xyz[1], xyz[2], xyz[3]) end
 local function fromVector(v) return { v.X, v.Y, v.Z } end
 
@@ -120,7 +148,10 @@ local function load()
                         name = saved.name,
                         entrance = toVector(saved.entrance),
                         exit = toVector(saved.exit),
-                        call = saved.call,
+                        -- Portals learned before the filter may carry a
+                        -- telemetry call: those are touch portals.
+                        call = type(saved.call) == "table" and teleportLike(saved.call) and saved.call or nil,
+                        far = saved.far,
                     }
                 end
             end
@@ -139,6 +170,7 @@ local function save()
                 entrance = fromVector(portal.entrance),
                 exit = fromVector(portal.exit),
                 call = portal.call,
+                far = portal.far,
             }
         end
         data[tostring(sea)] = out
@@ -158,7 +190,7 @@ function PortalRecorder.enabled()
 end
 
 -- Hook observer: keeps the game's own remote calls for a moment.
-function PortalRecorder.observe(remote, method, args, fromGame)
+function PortalRecorder.observe(remote, method, args, fromGame, at)
     if not fromGame or not PortalRecorder.enabled() then return end
     local ok, path = pcall(function() return remote:GetFullName() end)
     local serialised = {}
@@ -166,7 +198,7 @@ function PortalRecorder.observe(remote, method, args, fromGame)
         serialised[index] = serialise(args[index])
     end
     calls[#calls + 1] = {
-        at = os.clock(),
+        at = at or os.clock(),
         path = ok and path or tostring(remote),
         method = method,
         args = serialised,
@@ -186,7 +218,7 @@ end
 local function recentCall(now)
     for index = #calls, 1, -1 do
         local call = calls[index]
-        if now - call.at <= PortalRecorder.CALL_WINDOW then
+        if now - call.at <= PortalRecorder.CALL_WINDOW and teleportLike(call) then
             return { path = call.path, method = call.method, args = call.args }
         end
     end
@@ -269,7 +301,8 @@ end
 
 -- Triggers a learned portal while standing on its entrance: replays the
 -- game's call when one was recorded, and touches the portal part.
-function PortalRecorder.trigger(portal)
+-- `callOnly` skips the touch (used to test the call from far away).
+function PortalRecorder.trigger(portal, callOnly)
     local answer
     if portal.call then
         local remote = resolve(portal.call.path)
@@ -284,6 +317,7 @@ function PortalRecorder.trigger(portal)
         end
     end
 
+    if callOnly then return answer end
     local part = touchPart(portal.entrance)
     local hrp = Player.hrp()
     if part and hrp and firetouchinterest then
@@ -291,6 +325,29 @@ function PortalRecorder.trigger(portal)
         pcall(firetouchinterest, hrp, part, 1)
     end
     return answer
+end
+
+-- Result of "Test portals" for a learned portal replayed from far away.
+function PortalRecorder.setFar(portal, works)
+    portal.far = works
+    save()
+end
+
+-- Parts of the map named like a teleporter, for the log: they show every
+-- portal of the sea, even the ones not taken yet.
+function PortalRecorder.scan()
+    local lines = {}
+    local map = workspace:FindFirstChild("Map")
+    if not map then return lines end
+    for _, descendant in ipairs(map:GetDescendants()) do
+        if descendant:IsA("BasePart") and descendant.Name:lower():find("teleport", 1, true) then
+            local position = descendant.Position
+            lines[#lines + 1] = string.format("%s (%.0f, %.0f, %.0f)",
+                descendant:GetFullName(), position.X, position.Y, position.Z)
+            if #lines >= 40 then break end
+        end
+    end
+    return lines
 end
 
 function PortalRecorder.forget()
@@ -310,6 +367,8 @@ function PortalRecorder.describe()
             how = "by " .. tostring(portal.call.path):match("[^%.]+$") .. " " .. portal.call.method
                 .. "(" .. table.concat(args, ", ") .. ")"
         end
+        if portal.far == true then how = how .. " (works from anywhere)"
+        elseif portal.far == false then how = how .. " (only at the entrance)" end
         lines[#lines + 1] = portal.name .. ", " .. how
     end
     if #lines == 0 then return "No portal learned in this sea yet." end
@@ -323,6 +382,10 @@ function PortalRecorder.log()
         for index, entry in ipairs(call.args) do args[index] = describe(entry) end
         lines[#lines + 1] = string.format("%.1f  %s:%s(%s)", call.at, call.path, call.method, table.concat(args, ", "))
     end
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "Teleporter parts:"
+    local ok, found = pcall(PortalRecorder.scan)
+    for _, line in ipairs(ok and found or {}) do lines[#lines + 1] = line end
     return table.concat(lines, "\n")
 end
 

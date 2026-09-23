@@ -382,6 +382,10 @@ function task.delay(_seconds, fn, ...)
     queue[#queue + 1] = coroutine.create(function() fn(table.unpack(args, 1, args.n)) end)
 end
 
+function task.defer(fn, ...)
+    task.delay(0, fn, ...)
+end
+
 -- Resumes every waiting task once.
 function stepTasks()
     local current = queue
