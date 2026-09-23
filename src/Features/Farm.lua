@@ -26,6 +26,8 @@ local ItemMastery = require("Features.Items.Mastery")
 local Observation = require("Features.Other.Observation")
 local Pvp = require("Features.Pvp")
 local Raids = require("Features.Raids")
+local RaceUpgrade = require("Features.Races.Upgrade")
+local RaceV4 = require("Features.Races.V4")
 local Saber = require("Features.Items.Saber")
 local Simple = require("Features.Other.Simple")
 local Swords = require("Features.Items.Swords")
@@ -39,6 +41,16 @@ Farm.MODES = {
     Dungeon.join,
     Raids.multi,
     Raids.solo,
+    RaceV4.killPlayers,
+    RaceV4.trial,
+    RaceV4.dracoTrial,
+    RaceV4.lever,
+    RaceV4.train,
+    RaceUpgrade.draco,
+    RaceUpgrade.ghoul,
+    RaceUpgrade.cyborg,
+    RaceUpgrade.v2v3,
+    RaceV4.clock,
     Cdk.mode,
     Swords.tushita,
     Swords.yama,

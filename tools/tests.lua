@@ -59,7 +59,8 @@ local MODULES = {
     "Features.Other.Dragon", "Features.Other.Fishing", "Features.Esp", "Features.Pvp", "Features.Screen",
     "Features.Webhook", "Features.Fruits", "Features.Raids", "Features.Dungeon",
     "Features.Items", "Features.Items.Swords", "Features.Items.Cdk", "Features.Items.Guitar",
-    "Features.Items.Saber", "Features.Items.Mastery",
+    "Features.Items.Saber", "Features.Items.Mastery", "Features.Races.Duel", "Features.Races.Upgrade",
+    "Features.Races.V4",
 }
 for _, name in ipairs(MODULES) do
     local ok, err = pcall(require, name)
@@ -2546,6 +2547,99 @@ do
     ItemMastery.upgradeSword.tick()
     check("farms the missing material", ItemMastery.upgradeSword.status:find("Scrap Metal 0/5", 1, true) ~= nil,
         ItemMastery.upgradeSword.status)
+end
+
+
+---------------------------------------------------------------------------
+-- Races
+---------------------------------------------------------------------------
+
+local RaceUpgrade = require("Features.Races.Upgrade")
+local RaceV4 = require("Features.Races.V4")
+local Duel = require("Features.Races.Duel")
+
+local function raceSetup(place, race, answers)
+    itemsSetup(place, 2000, {}, answers)
+    RaceUpgrade.reset()
+    RaceV4.reset()
+    Duel.reset()
+    newInstance("StringValue", "Race", world.player.Data).Value = race
+end
+
+-- V2: the Alchemist's quest is taken with enough Beli.
+raceSetup(4442272183, "Human", { Alchemist = 0, Wenlocktoad = 0 })
+do
+    newInstance("IntValue", "Beli", world.player.Data).Value = 600000
+    Settings.set("RaceV2V3", true)
+    check("v2v3 on", RaceUpgrade.v2v3.enabled())
+    RaceUpgrade.v2v3.tick()
+    local asked = false
+    for _, call in ipairs(calls(world.commF, "Alchemist")) do
+        if call[2] == "2" then asked = true end
+    end
+    check("Alchemist quest taken", asked, RaceUpgrade.v2v3.status)
+end
+
+-- V3 done: the mode lets the next farm run.
+raceSetup(4442272183, "Human", { Alchemist = -2, Wenlocktoad = -2 })
+do
+    Settings.set("RaceV2V3", true)
+    check("already V3: v2v3 off", not RaceUpgrade.v2v3.enabled())
+end
+
+-- Human V3: the listed bosses are fought.
+raceSetup(4442272183, "Human", { Alchemist = -2, Wenlocktoad = 1 })
+do
+    Settings.set("RaceV2V3", true)
+    local jeremy = mob("Jeremy", Vector3.new(0, 0, 10))
+    RaceUpgrade.v2v3.tick()
+    eq("Jeremy fought", RaceUpgrade.v2v3.target, jeremy)
+end
+
+-- Cyborg: bought once the trainer allows it.
+raceSetup(4442272183, "Human", { CyborgTrainer = true })
+do
+    Settings.set("RaceCyborg", true)
+    RaceUpgrade.cyborg.tick()
+    local bought = false
+    for _, call in ipairs(calls(world.commF, "CyborgTrainer")) do
+        if call[2] == "Buy" then bought = true end
+    end
+    check("Cyborg bought", bought, RaceUpgrade.cyborg.status)
+end
+
+-- Gear selection follows the temple's rules.
+do
+    eq("no level: gear 1", RaceV4.selectableGear({ HadPoint = false, RaceLevel = 1,
+        RaceDetails = { A = 0, B = 0, C = 0, Gears = {} } }), "Gear1")
+    eq("first point: gear 2", RaceV4.selectableGear({ HadPoint = true, RaceLevel = 2,
+        RaceDetails = { A = 0, B = 0, C = 0, Gears = {} } }), "Gear2")
+    eq("second point: gear 3", RaceV4.selectableGear({ HadPoint = true, RaceLevel = 2,
+        RaceDetails = { A = 1, B = 0, C = 0, Gears = { "A" } } }), "Gear3")
+    eq("no point: nothing", RaceV4.selectableGear({ HadPoint = false, RaceLevel = 3,
+        RaceDetails = { A = 1, B = 0, C = 0, Gears = { "A" } } }), nil)
+end
+
+-- Buy gear: the Ancient One's offer is taken.
+raceSetup(7449423635, "Mink", { UpgradeRace = function(what) if what == "Check" then return 2, 0, 1000 end end })
+do
+    newInstance("BoolValue", "RaceTransformed", world.character)
+    check("gear offered", RaceV4.status():find("Can Buy Gear", 1, true) ~= nil, RaceV4.status())
+    check("gear bought", RaceV4.buyGear())
+    local bought = false
+    for _, call in ipairs(calls(world.commF, "UpgradeRace")) do
+        if call[2] == "Buy" then bought = true end
+    end
+    check("Buy sent", bought)
+end
+
+-- Trial: without the temple, fly to it.
+raceSetup(7449423635, "Mink", {})
+do
+    Settings.set("RaceTrial", true)
+    check("trial on", RaceV4.trial.enabled())
+    RaceV4.trial.tick()
+    eq("goes to the temple", RaceV4.trial.status, "Going to the Temple of Time")
 end
 
 ---------------------------------------------------------------------------

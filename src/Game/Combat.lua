@@ -178,7 +178,9 @@ function Combat.strike(target)
     if tool and tool.ToolTip == "Blox Fruit" and Combat.fruitClick(root.Position) then
         return true
     end
-    return Combat.attack(Combat.RANGE)
+    -- A player's character (race quests, trials) is only hit when asked for.
+    local isPlayer = Services.get("Players"):GetPlayerFromCharacter(target) ~= nil
+    return Combat.attack(Combat.RANGE, isPlayer)
 end
 
 return Combat
