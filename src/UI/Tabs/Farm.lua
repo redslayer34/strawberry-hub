@@ -23,9 +23,7 @@ local function statusText()
         lines[#lines + 1] = "Quest: none"
     end
 
-    local held = Quests.target()
-    lines[#lines + 1] = "Quest panel: " .. (Quests.panelVisible() and "visible" or "hidden")
-        .. "  |  QuestData: " .. (held and held.mob or "none")
+    lines[#lines + 1] = Quests.describe()
     lines[#lines + 1] = Farm.status()
     return table.concat(lines, "\n")
 end

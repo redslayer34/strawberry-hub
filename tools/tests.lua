@@ -110,6 +110,8 @@ local function setup(options)
     Enemies.reset()
     Bring.reset()
     Movement.reset()
+    Quests.reset()
+    Quests.SCAN_EVERY = 0
     Loop.stopAll()
     WARNINGS = {}
     game.PlaceId = 4442272183
@@ -191,6 +193,7 @@ local function setup(options)
         },
         BartiloQuest = { { LevelReq = 955, Task = { ["Swan Pirate"] = 50 } } },
         BossQuest = { { LevelReq = 958, Task = { ["Some Boss"] = 1 } } },
+        PirateQuest = { { LevelReq = 5000, Task = { Pirate = 5 } } },
     })
 
     world = {
@@ -350,6 +353,8 @@ do
     eq("active quest mob", target and target.mob, "Zombie")
     eq("active quest count", target and target.count, 8)
 
+    local titleLabel = newInstance("TextLabel", "Title", world.questPanel)
+    titleLabel.Text = "Defeat 8 Zombies"
     local label = newInstance("TextLabel", "Progress", world.questPanel)
     label.Text = "3/8"
     local current, required = Quests.progress()
@@ -362,6 +367,53 @@ do
     eq("StartQuest action", call[1], "StartQuest")
     eq("StartQuest quest name", call[2], "HauntedQuest1")
     eq("StartQuest id", call[3], 1)
+end
+
+-- The in-game case: GuideModule's QuestData stays empty (frozen copy) and
+-- the objective is only readable on screen, under an unexpected path.
+setup()
+do
+    local screen = newInstance("ScreenGui", "SomethingElse", world.player.PlayerGui)
+    local box = newInstance("Frame", "Box", screen)
+    local titleFrame = newInstance("Frame", "QuestTitle", box)
+    local title = newInstance("TextLabel", "Title", titleFrame)
+    title.Text = "Defeat 8 Vampires"
+    local counter = newInstance("TextLabel", "Counter", box)
+    counter.Text = "0/8"
+
+    check("objective on screen counts as a quest", Quests.active())
+    local target = Quests.target()
+    eq("mob read from the title", target and target.mob, "Vampire")
+    eq("count read from the title", target and target.count, 8)
+    eq("source is the screen", target and target.source, "screen")
+    local current, required = Quests.progress()
+    eq("progress next to the title", current, 0)
+    eq("progress total", required, 8)
+
+    box.Visible = false
+    local panel = Quests.readPanel()
+    check("hidden objective still counts while incomplete", panel ~= nil and panel.hidden)
+    counter.Text = "8/8"
+    check("hidden completed objective ignored", Quests.readPanel() == nil)
+    check("no quest once completed and hidden", not Quests.active())
+
+    eq("longest mob name wins", Quests.mobFromTitle("Defeat 50 Swan Pirates"), "Swan Pirate")
+    check("describe mentions the objective", Quests.describe():find("objective") ~= nil)
+end
+
+setup()
+do
+    LevelFarm.stop()
+    LevelFarm.QUEST_SETTLE = 0
+    world.commF.OnInvoke = function() return true end
+    local title = newInstance("TextLabel", "Title", world.questPanel)
+    title.Text = "Defeat 8 Vampires"
+    world.questPanel.Visible = true
+    world.hrp.Position = Vector3.new(1000, 14, 1002)
+    local vampire = mob("Vampire", Vector3.new(1050, 5, 1000))
+    LevelFarm.tick()
+    eq("screen objective: no StartQuest", world.commF.Invoked, nil)
+    eq("screen objective: fights the vampire", LevelFarm.target, vampire)
 end
 
 ---------------------------------------------------------------------------
