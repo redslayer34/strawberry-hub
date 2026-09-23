@@ -1904,32 +1904,6 @@ local function otherSetup(place, level)
     Webhook.reset()
 end
 
-local function worldMob(name, position, parent)
-    local model = mob(name, position, 100, parent)
-    model:SetAttribute("Level", 10)
-    model:SetAttribute("FruitType", "None")
-    return model
-end
-
--- Attack All: mobs of the world only, then the next farm when none is left.
-otherSetup()
-do
-    Settings.set("OtherAttackAll", true)
-    Settings.set("AutoFarmLevel", true)
-    local tree = worldMob("Spirit Tree", Vector3.new(10, 0, 0))
-    local plain = mob("Summon", Vector3.new(5, 0, 0))   -- no Level / FruitType
-    local target = worldMob("Pirate", Vector3.new(80, 0, 0))
-    check("spirit tree is not a world mob", not Simple.isWorldMob(tree))
-    check("a mob without level is not a world mob", not Simple.isWorldMob(plain))
-    Farm.tick()
-    eq("attack all fights the world mob", Farm.target(), target)
-    target.Humanoid.Health = 0
-    tree.Humanoid.Health = 0
-    Farm.tick()
-    eq("nothing left: the level farm runs", Farm.current(), LevelFarm)
-    Farm.stop()
-end
-
 -- Auto Chest: hops after the chosen number of chests.
 otherSetup()
 do

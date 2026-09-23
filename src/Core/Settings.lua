@@ -55,14 +55,12 @@ Settings.DEFAULTS = {
     StackHopDarkbeard = false,
 
     -- Farming Other
-    OtherAttackAll = false,
     OtherChest = false,
     OtherChestHop = false,
     OtherChestHopAfter = 20,
     OtherChestTeleport = false,
     OtherBerry = false,
     OtherHopBerry = false,
-    OtherEaster = false,
     OtherLaw = false,
     OtherObservation = false,
     OtherObservationHop = false,

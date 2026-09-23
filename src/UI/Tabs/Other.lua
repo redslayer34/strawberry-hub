@@ -7,7 +7,6 @@ local Dragon = require("Features.Other.Dragon")
 local Farm = require("Features.Farm")
 local Fishing = require("Features.Other.Fishing")
 local Loop = require("Core.Loop")
-local Simple = require("Features.Other.Simple")
 
 return function(Window, ui)
     local tab = Window:AddTab({ Title = "Farm Other", Icon = "list" })
@@ -16,18 +15,14 @@ return function(Window, ui)
     status:AddParagraph({
         Title = "One farm at a time",
         Content = "These run like the farms of the Farm tab: the first one on wins "
-            .. "(Law > Observation V2 > Observation > Dojo > Dragon Hunter > Easter > Berries > Chests > "
-            .. "Fishing > Attack All), Stack events still come first, and when one has nothing to do "
+            .. "(Law > Observation V2 > Observation > Dojo > Dragon Hunter > Berries > Chests > "
+            .. "Fishing), Stack events still come first, and when one has nothing to do "
             .. "the next farm runs.",
     })
     local panel = status:AddParagraph({ Title = "Now", Content = Farm.status() })
     Loop.start("OtherPanel", 1, function()
         panel:SetDesc(Farm.status() .. "\n" .. Dragon.describe())
     end)
-
-    local attack = tab:AddSection("Attack All Mobs")
-    Bind.toggle(attack, "OtherAttackAll", "Auto Attack All Mobs And Bosses",
-        "Kills every mob of the world, nearest first.")
 
     local chests = tab:AddSection("Chests")
     Bind.toggle(chests, "OtherChest", "Auto Chest", "Collects every chest, touring the spawns to find more.")
@@ -77,17 +72,6 @@ return function(Window, ui)
         "Quests of other rarities are dropped. None selected = keep all.")
     Bind.toggle(fishing, "OtherAnglerQuest", "Auto Accept Angler Quests")
     Bind.toggle(fishing, "OtherSlapBattle", "Auto Slap Battle", "Times the jumps. It can still miss.")
-
-    local easter = tab:AddSection("Easter (event only)")
-    easter:AddButton({
-        Title = "Open Easter Shop",
-        Callback = function()
-            if not Simple.openEasterShop() then
-                ui.Library:Notify({ Title = "Easter", Content = "The Easter shop is not available", Duration = 4 })
-            end
-        end,
-    })
-    Bind.toggle(easter, "OtherEaster", "Auto Collect Easter Eggs")
 
     return tab
 end

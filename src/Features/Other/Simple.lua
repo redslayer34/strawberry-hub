@@ -1,5 +1,5 @@
 --=============================================================================
--- FARMING OTHER: ATTACK ALL, CHESTS, BERRIES, EASTER EGGS, RAID LAW
+-- FARMING OTHER: CHESTS, BERRIES, RAID LAW
 --=============================================================================
 --  The short Farming Other modes of the reference, one Mode each.
 --=============================================================================
@@ -19,47 +19,6 @@ local function tagged(tag)
     local ok, list = pcall(function() return Services.get("CollectionService"):GetTagged(tag) end)
     return ok and list or {}
 end
-
----------------------------------------------------------------------------
--- Attack All Mobs: every mob of the world, bosses included
----------------------------------------------------------------------------
-
--- A mob of the world: it has a level and a fruit type (players' summons and
--- decorations do not), and is not the Spirit Tree.
-function Simple.isWorldMob(model)
-    return model.Name ~= "Spirit Tree" and model:GetAttribute("Level") ~= nil
-        and model:GetAttribute("FruitType") ~= nil and Enemies.isAlive(model)
-end
-
-function Simple.worldMob()
-    local here = Player.position()
-    if not here then return nil end
-    local best, bestDistance
-    local enemies = workspace:FindFirstChild("Enemies")
-    for _, model in ipairs(enemies and enemies:GetChildren() or {}) do
-        if Simple.isWorldMob(model) then
-            local distance = (model.HumanoidRootPart.Position - here).Magnitude
-            if not bestDistance or distance < bestDistance then best, bestDistance = model, distance end
-        end
-    end
-    if best then return best, true end
-    for _, model in ipairs(Services.replicated():GetChildren()) do
-        if Simple.isWorldMob(model) then return model, false end
-    end
-    return nil
-end
-
-Simple.attackAll = Mode({
-    name = "Attack All",
-    key = "OtherAttackAll",
-    want = function() return Simple.worldMob() ~= nil end,
-    idleStatus = "No mob around",
-    tick = function(mode)
-        local mob, inWorld = Simple.worldMob()
-        if not mob then return "No mob around" end
-        return Common.fight(mode, mob, inWorld)
-    end,
-})
 
 ---------------------------------------------------------------------------
 -- Auto Chest: collect every chest, hop after N
@@ -137,45 +96,6 @@ Simple.berry = Mode({
         return "Picking a berry"
     end,
 })
-
----------------------------------------------------------------------------
--- Easter eggs (event only)
----------------------------------------------------------------------------
-
-function Simple.egg()
-    local here = Player.position()
-    if not here then return nil end
-    local best, bestDistance, bestPlace
-    for _, egg in ipairs(tagged("EasterEgg26")) do
-        local place = egg:GetAttribute("CFrame")
-        if typeof(place) == "CFrame" then
-            local distance = (place.Position - here).Magnitude
-            if not bestDistance or distance < bestDistance then best, bestDistance, bestPlace = egg, distance, place end
-        end
-    end
-    return best, bestPlace
-end
-
-Simple.easter = Mode({
-    name = "Easter Eggs",
-    key = "OtherEaster",
-    want = function() return Simple.egg() ~= nil end,
-    idleStatus = "No egg (event over?)",
-    tick = function()
-        local _, place = Simple.egg()
-        if not place then return "No egg" end
-        Common.goTo(place)
-        return "Collecting an egg"
-    end,
-})
-
-function Simple.openEasterShop()
-    local shop = Services.module("Controllers.UI.EventShop")
-    if type(shop) == "table" and shop.Open then
-        return pcall(shop.Open, shop, "Easter2026")
-    end
-    return false
-end
 
 ---------------------------------------------------------------------------
 -- Raid Law (Sea 2): buy a Microchip, summon Order, kill it
