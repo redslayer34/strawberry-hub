@@ -63,6 +63,7 @@ Settings.DEFAULTS = {
     -- Movement
     TweenSpeed = 300,
     SmartTravel = true,
+    LearnPortals = false,
     RespawnShortcut = false,
 }
 

@@ -163,6 +163,9 @@ function Movement.speed()
     return math.min(Settings.get("TweenSpeed"), cap)
 end
 
+-- The portal recorder must not learn the hub's own flights.
+require("Game.PortalRecorder").movingCheck = Movement.moving
+
 -- Test hook.
 function Movement.reset()
     goal, lastPlaced, lastCharacter = nil, nil, nil

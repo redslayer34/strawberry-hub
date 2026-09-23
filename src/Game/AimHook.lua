@@ -8,8 +8,10 @@
 --  through untouched.
 --
 --  Needs the executor's hookmetamethod; without it skills simply aim where
---  the camera looks.
+--  the camera looks. The hook itself is the shared one in Game/Hook.
 --=============================================================================
+
+local Hook = require("Game.Hook")
 
 local AimHook = {
     target = nil,     -- CFrame to aim at, or nil
@@ -33,23 +35,11 @@ function AimHook.rewrite(remote, method, ...)
 end
 
 function AimHook.install()
-    if AimHook.installed then return true end
-    if not hookmetamethod or not getnamecallmethod then return false end
-
-    local original
-    local function handler(self, ...)
-        if AimHook.target and AimHook.enabled then
-            return original(self, AimHook.rewrite(self, getnamecallmethod(), ...))
-        end
-        return original(self, ...)
+    if not AimHook.installed then
+        AimHook.installed = true
+        Hook.rewrite(AimHook.rewrite)
     end
-    local wrapped = newcclosure and newcclosure(handler) or handler
-
-    local ok = pcall(function()
-        original = hookmetamethod(game, "__namecall", wrapped)
-    end)
-    AimHook.installed = ok and original ~= nil
-    return AimHook.installed
+    return Hook.install()
 end
 
 -- A metamethod hook cannot be removed safely, so Unload turns it into a

@@ -306,6 +306,15 @@ function methods:FindFirstChildWhichIsA(className)
     end
     return nil
 end
+function methods:GetFullName()
+    local names, node = {}, self
+    while node and rawget(node, "_props") do
+        table.insert(names, 1, node.Name)
+        node = node.Parent
+    end
+    return table.concat(names, ".")
+end
+
 function methods:Destroy()
     self.Parent = nil
     rawset(self, "Destroyed", true)

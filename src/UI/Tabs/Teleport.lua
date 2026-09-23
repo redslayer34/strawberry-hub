@@ -3,6 +3,8 @@
 --=============================================================================
 
 local Bind = require("UI.Bind")
+local Loop = require("Core.Loop")
+local PortalRecorder = require("Game.PortalRecorder")
 local Data = require("Game.Data")
 local Services = require("Core.Services")
 local Settings = require("Core.Settings")
@@ -57,6 +59,38 @@ return function(Window, ui)
             if not started then
                 ui.Library:Notify({ Title = "Portals", Content = "A teleport is already running", Duration = 4 })
             end
+        end,
+    })
+
+    local portals = tab:AddSection("Portals")
+    portals:AddParagraph({
+        Title = "How to teach a portal",
+        Content = "Turn on Learn portals, stop the farm, then walk through the portal yourself once "
+            .. "(Castle <-> Mansion, Castle <-> Hydra...). Smart travel uses it from then on.",
+    })
+    Bind.toggle(portals, "LearnPortals", "Learn portals", "Watches you take portals and remembers them.")
+    local learned = portals:AddParagraph({ Title = "Learned portals", Content = PortalRecorder.describe() })
+    Loop.start("LearnedPanel", 2, function() learned:SetDesc(PortalRecorder.describe()) end)
+    portals:AddButton({
+        Title = "Copy log",
+        Description = "Copies the learned portals and the game's last calls, to send them.",
+        Callback = function()
+            if setclipboard then
+                setclipboard(PortalRecorder.log())
+                ui.Library:Notify({ Title = "Portals", Content = "Log copied", Duration = 4 })
+            else
+                ui.Library:Notify({ Title = "Portals", Content = "Your executor cannot copy", Duration = 4 })
+            end
+        end,
+    })
+    portals:AddButton({
+        Title = "Forget learned portals",
+        Callback = function()
+            Window:Dialog({
+                Title = "Forget every learned portal?",
+                Content = "You will have to walk through them again.",
+                Buttons = { { Title = "Forget", Callback = PortalRecorder.forget }, { Title = "Cancel" } },
+            })
         end,
     })
 

@@ -13,6 +13,7 @@
 
 local AimHook = require("Game.AimHook")
 local Entrances = require("Game.Entrances")
+local PortalRecorder = require("Game.PortalRecorder")
 local Farm = require("Features.Farm")
 local FluentLoader = require("UI.Fluent")
 local Interface = require("UI.Interface")
@@ -81,6 +82,7 @@ if afk then connections[#connections + 1] = afk end
 
 guard("movement", Movement.start)
 guard("portal unlocks", Entrances.refresh)
+guard("portal recorder", PortalRecorder.start)
 guard("farm", Farm.start)
 guard("auto stats", Stats.start)
 guard("player tweaks", PlayerTweaks.start)
@@ -100,6 +102,8 @@ function hub.Unload()
     pcall(AimHook.disable)
     pcall(Loop.stopAll)
     pcall(Movement.destroy)
+    pcall(PortalRecorder.destroy)
+    pcall(require("Game.Hook").disable)
     for _, connection in ipairs(connections) do
         pcall(function() connection:Disconnect() end)
     end

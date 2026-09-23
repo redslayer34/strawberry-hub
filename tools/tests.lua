@@ -52,7 +52,7 @@ local MODULES = {
     "Features.MaterialFarm", "Features.KillMobFarm", "Features.AuraFarm",
     "Game.Mastery", "Game.AimHook", "Game.Data",
     "Features.Travel", "Features.Stats", "Features.PlayerTweaks", "Game.World", "Game.Server",
-    "Game.Router", "Game.Entrances",
+    "Game.Router", "Game.Entrances", "Game.PortalRecorder", "Game.Hook",
 }
 for _, name in ipairs(MODULES) do
     local ok, err = pcall(require, name)
@@ -85,6 +85,8 @@ local Stats = require("Features.Stats")
 local Server = require("Game.Server")
 local Router = require("Game.Router")
 local Entrances = require("Game.Entrances")
+local PortalRecorder = require("Game.PortalRecorder")
+local Hook = require("Game.Hook")
 
 ---------------------------------------------------------------------------
 -- World builders
@@ -143,6 +145,7 @@ local function setup(options)
     Quests.SCAN_EVERY = 0
     Router.reset()
     Entrances.reset(nil)
+    PortalRecorder.reset()
     require("Features.PlayerTweaks").reset()
     Loop.stopAll()
     WARNINGS = {}
@@ -1080,7 +1083,7 @@ do
     local plan = Router.plan(Vector3.new(0, 0, 0), goal, 300)
     eq("far goal: portal route", plan.kind, "entrance")
     eq("portal nearest the goal", plan.name, "Castle on the Sea")
-    check("saving computed", plan.saving > 15, plan.saving)
+    check("saving computed", plan.saving > 10, plan.saving)
 
     local short = Router.plan(Vector3.new(0, 0, 0), Vector3.new(1400, 0, 0), 300)
     eq("small saving: fly directly", short.kind, "direct")
@@ -1345,6 +1348,152 @@ do
     check("working portal reported", text:find("Cursed Ship: works", 1, true) ~= nil, text)
     check("failed portal reported", text:find("no move", 1, true) ~= nil, text)
     Router.VERIFY_STEPS = 24
+end
+
+---------------------------------------------------------------------------
+-- Learned portals
+---------------------------------------------------------------------------
+
+local MANSION_DOOR = Vector3.new(-5000, 315, -3100)
+local MANSION_EXIT = Vector3.new(-12460, 375, -7520)
+
+setup()
+do
+    game.PlaceId = 7449423635
+    Settings.set("LearnPortals", true)
+
+    -- The game's own call just before the jump is linked to the portal.
+    local remote = world.commF
+    PortalRecorder.observe(remote, "InvokeServer",
+        { n = 2, "requestEntrance", Vector3.new(1, 2, 3) }, true)
+    PortalRecorder.observe(remote, "InvokeServer", { n = 1, "OurOwnCall" }, false)
+    world.hrp.Position = MANSION_DOOR
+    PortalRecorder.step()
+    world.hrp.Position = MANSION_EXIT
+    PortalRecorder.step()
+    local learned = PortalRecorder.portals()
+    eq("a jump teaches a portal", #learned, 1)
+    near("entrance recorded", learned[1].entrance, MANSION_DOOR)
+    near("exit recorded", learned[1].exit, MANSION_EXIT)
+    eq("game call linked", learned[1].call and learned[1].call.args[1].v, "requestEntrance")
+    check("describe names the call", PortalRecorder.describe():find("requestEntrance", 1, true) ~= nil,
+        PortalRecorder.describe())
+    check("our own calls are not recorded", PortalRecorder.log():find("OurOwnCall", 1, true) == nil)
+
+    -- Moving without learning (off), so only the portal itself is a jump.
+    local function walkTo(position)
+        Settings.set("LearnPortals", false)
+        world.hrp.Position = position
+        PortalRecorder.step()
+        Settings.set("LearnPortals", true)
+    end
+
+    -- The same portal taken again replaces, not duplicates.
+    walkTo(MANSION_DOOR + Vector3.new(10, 0, 0))
+    world.hrp.Position = MANSION_EXIT
+    PortalRecorder.step()
+    eq("same portal not duplicated", #PortalRecorder.portals(), 1)
+
+    -- No learning while the hub itself is moving the character.
+    walkTo(Vector3.new(0, 0, 0))
+    PortalRecorder.movingCheck = function() return true end
+    world.hrp.Position = Vector3.new(9000, 0, 0)
+    PortalRecorder.step()
+    eq("hub flights are not learned", #PortalRecorder.portals(), 1)
+    PortalRecorder.movingCheck = Movement.moving
+
+    -- Off: nothing learned.
+    walkTo(Vector3.new(0, 0, 0))
+    Settings.set("LearnPortals", false)
+    world.hrp.Position = Vector3.new(0, 0, 9000)
+    PortalRecorder.step()
+    eq("nothing learned when off", #PortalRecorder.portals(), 1)
+end
+
+-- Saved and loaded back through the file.
+setup()
+do
+    game.PlaceId = 7449423635
+    local files = {}
+    isfile = function(path) return files[path] ~= nil end
+    writefile = function(path, content) files[path] = content end
+    readfile = function(path) return files[path] end
+    local http = game:GetService("HttpService")
+    local stored
+    function http:JSONEncode(value) stored = value; return "json" end
+    function http:JSONDecode() return stored end
+
+    PortalRecorder.learn(MANSION_DOOR, MANSION_EXIT, os.clock())
+    check("portals written to the file", files[PortalRecorder.FILE] ~= nil)
+    PortalRecorder.reset()
+    PortalRecorder.resetLoaded()
+    eq("portals read back", #PortalRecorder.portals(), 1)
+    near("entrance read back", PortalRecorder.portals()[1].entrance, MANSION_DOOR)
+    isfile, writefile, readfile = nil, nil, nil
+end
+
+-- The Router flies to a learned entrance, triggers it, continues from the exit.
+setup()
+do
+    game.PlaceId = 7449423635
+    Entrances.reset({})
+    world.hrp.Position = MANSION_DOOR + Vector3.new(300, 0, 0)
+    PortalRecorder.learn(MANSION_DOOR, MANSION_EXIT, -100)   -- a touch portal (no call)
+    local goal = MANSION_EXIT + Vector3.new(200, 0, 0)
+    local plan = Router.plan(world.hrp.Position, goal, 300)
+    eq("learned portal chosen", plan.kind, "learned")
+
+    local handled, aim = Router.update(world.hrp.Position, goal, 300)
+    check("fly to the learned entrance first", not handled and aim ~= nil and (aim - MANSION_DOOR).Magnitude < 1)
+
+    local touched = {}
+    local door = part("PortalDoor", MANSION_DOOR, workspace)
+    newInstance("TouchTransmitter", "TouchInterest", door)
+    workspace.GetPartBoundsInRadius = function() return { door } end
+    firetouchinterest = function(_, target, state)
+        touched[#touched + 1] = state
+        if state == 0 and target == door then world.hrp.Position = MANSION_EXIT end
+    end
+    world.hrp.Position = MANSION_DOOR
+    check("at the entrance: portal triggered", Router.update(MANSION_DOOR, goal, 300))
+    stepTasks()
+    eq("portal part touched", touched[1], 0)
+    check("learned portal works", Router.describe ~= nil and not Router.busy())
+    firetouchinterest = nil
+    workspace.GetPartBoundsInRadius = function() return {} end
+end
+
+-- A learned portal with a recorded call replays the same arguments.
+setup()
+do
+    game.PlaceId = 7449423635
+    Settings.set("LearnPortals", true)
+    PortalRecorder.observe(world.commF, "InvokeServer",
+        { n = 2, "requestEntrance", Vector3.new(7, 8, 9) }, true)
+    local portal = PortalRecorder.learn(MANSION_DOOR, MANSION_EXIT, os.clock())
+    world.commF.OnInvoke = function() return "ok" end
+    PortalRecorder.trigger(portal)
+    local replay = calls(world.commF, "requestEntrance")
+    eq("recorded call replayed", #replay, 1)
+    check("with the same arguments", replay[1] and replay[1][2] == Vector3.new(7, 8, 9))
+end
+
+-- One hook for every feature: an observer and the aim rewriter together.
+do
+    Hook.reset()
+    local seen = {}
+    Hook.observe(function(_, method, args, fromGame) seen[#seen + 1] = { method, args[1], fromGame } end)
+    AimHook.target = CFrame.new(1, 1, 1)
+    AimHook.enabled = true
+    Hook.rewrite(AimHook.rewrite)
+    local remote = newInstance("RemoteEvent", "RemoteEvent")
+    local out = Hook.dispatch(remote, "FireServer", true, Vector3.new(5, 5, 5))
+    near("rewriter applied through the shared hook", out, Vector3.new(1, 1, 1))
+    eq("observer saw the call", seen[1] and seen[1][1], "FireServer")
+    local a, b, c = Hook.dispatch(remote, "InvokeServer", false, "x", nil, "z")
+    check("nil in the middle kept", a == "x" and b == nil and c == "z")
+    AimHook.target = nil
+    Hook.reset()
 end
 
 ---------------------------------------------------------------------------

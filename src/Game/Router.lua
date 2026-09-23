@@ -20,6 +20,7 @@
 --=============================================================================
 
 local Entrances = require("Game.Entrances")
+local PortalRecorder = require("Game.PortalRecorder")
 local Player = require("Core.Player")
 local Services = require("Core.Services")
 local Settings = require("Core.Settings")
@@ -37,6 +38,7 @@ Router.MOVED = 300           -- studs the character must move for a jump to coun
 Router.FAILS_TO_LOCK = 2     -- failures in a row before a portal is locked
 Router.LOCK_TIME = 120       -- seconds a locked portal stays locked
 Router.UNCONFIRMED_COST = 2  -- seconds added to a portal its unlock flag does not confirm
+Router.GUESSED_COST = 3      -- seconds added to hard-coded points: learned portals win
 Router.RESPAWN_COST = 6      -- seconds a respawn costs
 Router.RESPAWN_STEPS = 60    -- x 0.25 s to wait for the new character
 
@@ -145,17 +147,29 @@ function Router.plan(here, goal, speed)
         }
     end
 
+    -- Portals learned by watching the player take them: fly to the
+    -- entrance, trigger it, continue from the exit.
+    local now = os.clock()
+    for _, portal in ipairs(PortalRecorder.portals()) do
+        if not isLocked(portal.name) and now - (lastUsed[portal.name] or -math.huge) >= Router.COOLDOWN then
+            consider({
+                kind = "learned", name = portal.name, portal = portal, dock = portal.entrance,
+                cost = (here - portal.entrance).Magnitude / speed + Router.OVERHEAD
+                    + (portal.exit - goal).Magnitude / speed,
+            })
+        end
+    end
+
     -- Why the plan ends up flying, for the status line.
     local points = Entrances.available()
     local reason
-    if #points == 0 then
+    if #points == 0 and #PortalRecorder.portals() == 0 then
         reason = "no portal known for sea " .. tostring(Player.sea() or "?")
     end
     local bestPortal, bestPortalCost, lockedName
 
-    local now = os.clock()
     for _, point in ipairs(points) do
-        local cost = Router.OVERHEAD + (point.position - goal).Magnitude / speed
+        local cost = Router.OVERHEAD + Router.GUESSED_COST + (point.position - goal).Magnitude / speed
         if not Entrances.confirmed(point) then cost = cost + Router.UNCONFIRMED_COST end
         if isLocked(point.name) then
             if not lockedName or cost < (bestPortalCost or math.huge) then lockedName = point.name end
@@ -240,6 +254,22 @@ function actions.entrance(plan)
         recordResult(plan.name, true, string.format("moved %d studs", math.floor(moved())))
     else
         recordResult(plan.name, false, "no move, server answered " .. tostring(answer))
+    end
+end
+
+function actions.learned(plan)
+    local start = Player.position()
+    local answer = PortalRecorder.trigger(plan.portal)
+    local function moved()
+        local here = Player.position()
+        if not here or not start then return 0 end
+        return (here - start).Magnitude
+    end
+    local ok = waitUntil(Router.VERIFY_STEPS, function() return moved() > Router.MOVED end)
+    if ok then
+        recordResult(plan.name, true, string.format("moved %d studs", math.floor(moved())))
+    else
+        recordResult(plan.name, false, "no move, answer " .. tostring(answer))
     end
 end
 
@@ -377,6 +407,8 @@ function Router.describe()
     lines[#lines + 1] = "Sea: " .. tostring(Player.sea() or "unknown")
     return table.concat(lines, "\n")
 end
+
+PortalRecorder.busyCheck = Router.busy
 
 -- Test hook.
 function Router.reset()
