@@ -122,7 +122,7 @@ eq("minimize key", config.MinimizeKey and config.MinimizeKey.Name, "LeftControl"
 
 local titles = {}
 for _, tab in ipairs(record.tabs) do titles[#titles + 1] = tab.Title end
-eq("tabs in order", table.concat(titles, ","), "Farm,Teleport,Shop,Player,Server,Settings")
+eq("tabs in order", table.concat(titles, ","), "Farm,Stack,Teleport,Shop,Player,Server,Settings")
 eq("first tab selected", record.selectedTab, 1)
 
 for key in pairs(Settings.DEFAULTS) do
@@ -171,6 +171,10 @@ eq("multi-dropdown keeps only the chosen skills", (function()
     for _ in pairs(library.Options.MasterySkills.Value) do n = n + 1 end
     return n
 end)(), 2)
+
+Options.StackEliteHunter:SetValue(true)
+eq("stack toggle writes its setting", Settings.get("StackEliteHunter"), true)
+Options.StackEliteHunter:SetValue(false)
 
 Options.Material:SetValue("Vampire Fang")
 eq("material dropdown writes its setting", Settings.get("Material"), "Vampire Fang")
@@ -284,7 +288,7 @@ do
     eq("broken tab reported", failedList and failedList[1], "Broken")
     local names = {}
     for _, tab in ipairs(brokenRecord.tabs) do names[#names + 1] = tab.Title end
-    eq("other tabs still built", table.concat(names, ","), "Broken,Farm,Teleport,Shop,Player,Server,Settings")
+    eq("other tabs still built", table.concat(names, ","), "Broken,Farm,Stack,Teleport,Shop,Player,Server,Settings")
     local note = brokenRecord.notifications[#brokenRecord.notifications]
     check("player told which tab failed", note and note.Content:find("Broken") ~= nil)
     check("failure logged", #WARNINGS > 0)

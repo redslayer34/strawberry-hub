@@ -48,7 +48,7 @@ return function(Window)
     local bosses = tab:AddSection("Bosses")
     bosses:AddParagraph({
         Title = "One farm at a time",
-        Content = "If several are on, the first one wins: Boss > Katakuri > Bones > Material > Kill Mob > Aura > Level.",
+        Content = "If several are on, the first one wins: Stack events > Boss > Katakuri > Bones > Material > Kill Mob > Aura > Level.",
     })
     Bind.toggle(bosses, "AutoBoss", "Auto Boss", "Kills the chosen boss once it has spawned.")
     Bind.dropdown(bosses, "Boss", "Boss", Data.BOSSES)

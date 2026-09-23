@@ -53,6 +53,8 @@ local MODULES = {
     "Game.Mastery", "Game.AimHook", "Game.Data",
     "Features.Travel", "Features.Stats", "Features.PlayerTweaks", "Game.World", "Game.Server",
     "Game.Router", "Game.Entrances", "Game.PortalRecorder", "Game.Hook",
+    "Features.StackFarm", "Features.Stack.Common", "Features.Stack.World", "Features.Stack.Chests",
+    "Features.Stack.Bosses", "Features.Stack.Summons", "Features.Stack.EliteHunter", "Features.Stack.Events",
 }
 for _, name in ipairs(MODULES) do
     local ok, err = pcall(require, name)
@@ -1633,6 +1635,249 @@ do
     check("10 studs off: portal used", Router.update(close, goal, 300))
     for _ = 1, 10 do stepTasks() end
     check("called while standing exactly on the entrance", where and (where - CASTLE_DOOR).Magnitude < 0.01, tostring(where))
+end
+
+---------------------------------------------------------------------------
+-- Stack farming
+---------------------------------------------------------------------------
+
+local StackFarm = require("Features.StackFarm")
+local StackCommon = require("Features.Stack.Common")
+local Chests = require("Features.Stack.Chests")
+local Summons = require("Features.Stack.Summons")
+local StackEvents = require("Features.Stack.Events")
+local StackWorld = require("Features.Stack.World")
+local ServerModule = require("Game.Server")
+
+local function stackSetup(place, level)
+    setup({ level = level })
+    StackFarm.reset()
+    Farm.stop()
+    game.PlaceId = place or 7449423635
+    world.commF.OnInvoke = function() return nil end
+end
+
+local function questTitle(text)
+    local container = newInstance("Frame", "Container", world.questPanel)
+    local titleFrame = newInstance("Frame", "QuestTitle", container)
+    local label = newInstance("TextLabel", "Title", titleFrame)
+    label.Text = text
+    world.questPanel.Visible = true
+    return label
+end
+
+local function tool(name, parent)
+    local item = newInstance("Tool", name, parent or world.player.Backpack)
+    part("Handle", Vector3.new(0, 0, 0), item)
+    return item
+end
+
+-- Nothing on, or nothing to do: the stack stays out of the way.
+stackSetup()
+check("stack idle when nothing is on", not StackFarm.enabled())
+Settings.set("StackEliteHunter", true)
+check("elite toggle alone, no elite: idle", not StackFarm.enabled())
+
+-- An elite takes the character from the level farm, quest first.
+do
+    Settings.set("AutoFarmLevel", true)
+    local elite = mob("Diablo", Vector3.new(100, 0, 0))
+    Farm.tick()
+    eq("stack beats the level farm", Farm.current(), StackFarm)
+    eq("quest asked: abandon", #calls(world.commF, "AbandonQuest"), 1)
+    eq("quest asked: elite hunter", #calls(world.commF, "EliteHunter"), 1)
+    eq("no target before the quest", Farm.target(), nil)
+    check("status names the task", Farm.status():find("Stack: Elite Hunter", 1, true) ~= nil, Farm.status())
+
+    questTitle("Defeat Diablo (0/1)")
+    Farm.tick()
+    eq("with the quest: fights the elite", Farm.target(), elite)
+    eq("quest not asked again", #calls(world.commF, "EliteHunter"), 1)
+
+    -- rip_indra True Form comes first in the reference's order.
+    Settings.set("StackRipIndra", true)
+    local indra = mob("rip_indra True Form", Vector3.new(200, 0, 0))
+    Farm.tick()
+    eq("rip indra beats the elite", Farm.target(), indra)
+
+    indra.Humanoid.Health = 0
+    elite.Humanoid.Health = 0
+    Farm.tick()
+    eq("nothing left: back to the level farm", Farm.current(), LevelFarm)
+    Farm.stop()
+end
+
+-- Haki pads: the pad's colour picks the haki colour worn.
+stackSetup()
+do
+    Settings.set("StackHakiPads", true)
+    local summoner = folder("Summoner", folder("Boat Castle", folder("Map", workspace)))
+    local circle = folder("Circle", summoner)
+    local lit = part("PadA", Vector3.new(10, 0, 0), circle)
+    lit.BrickColor = { Name = "Hot pink" }
+    local litLight = part("Part", Vector3.new(10, 0, 0), lit)
+    litLight.BrickColor = { Name = "Lime green" }
+    local pad = part("PadB", Vector3.new(20, 0, 0), circle)
+    pad.BrickColor = { Name = "Really red" }
+    local light = part("Part", Vector3.new(20, 0, 0), pad)
+    light.BrickColor = { Name = "Really red" }
+    local customizer = newInstance("RemoteFunction", "RF/FruitCustomizerRF", rs.Modules.Net)
+
+    eq("pending pad found", Summons.pendingPad(), pad)
+    eq("red pad wants Pure Red", Summons.colourFor(pad), "Pure Red")
+    check("pads to light: stack on", StackFarm.enabled())
+    StackFarm.tick()
+    local worn = customizer.Invoked and customizer.Invoked[1] and customizer.Invoked[1][1]
+    eq("aura equipped", worn and worn.StorageName, "Pure Red")
+    eq("colour activated", #calls(world.commF, "activateColor"), 1)
+    check("status says pad", StackFarm.status:find("Haki pad (Pure Red)", 1, true) ~= nil, StackFarm.status)
+
+    light.BrickColor = { Name = "Lime green" }
+    check("all pads lit: stack off", not StackFarm.enabled())
+
+    world.commF.OnInvoke = function(action)
+        if action == "getColors" then
+            return { { HiddenName = "Winter Sky", Unlocked = true }, { HiddenName = "Snow White", Unlocked = false } }
+        end
+    end
+    eq("locked haki colours listed", table.concat(Summons.missingColours(), ","), "Snow White")
+end
+
+-- Chests: the window opens at the spawn time and closes after the item.
+stackSetup()
+do
+    Settings.set("StackChests", true)
+    local locations = folder("Locations", folder("_WorldOrigin", workspace))
+    local location = part("Island", Vector3.new(0, 0, 0), locations)
+    location:SetAttribute("TimeIn", 1000)
+    local clock = Chests.now
+    Chests.now = function() return 1000 + Chests.CYCLE - 60 end
+    check("a minute before the spawn: nothing", not StackFarm.enabled())
+    check("countdown shown", Chests.describe():find("0:01:00", 1, true) ~= nil, Chests.describe())
+    Chests.now = function() return 1000 + Chests.CYCLE - 3 end
+
+    local chest = part("Chest1", Vector3.new(30, 0, 0), workspace)
+    local collection = game:GetService("CollectionService")
+    collection.GetTagged = function() return { chest } end
+    check("at spawn time: collecting", StackFarm.enabled())
+    StackFarm.tick()
+    check("heading for the chest", StackFarm.status:find("Collecting chest 1/10", 1, true) ~= nil, StackFarm.status)
+
+    tool("God's Chalice")
+    check("item obtained: done", not StackFarm.enabled())
+    Chests.now = clock
+end
+
+-- A fruit on the ground is picked up; none and hop on: a paced hop.
+stackSetup()
+do
+    Settings.set("StackFruit", true)
+    local fruit = tool("Kilo Fruit", workspace)
+    fruit.Handle.Position = Vector3.new(3, 0, 0)
+    local touched = {}
+    firetouchinterest = function(_, target, state) touched[#touched + 1] = { target, state } end
+    check("fruit on the ground: stack on", StackFarm.enabled())
+    StackFarm.tick()
+    eq("fruit handle touched", touched[1] and touched[1][1], fruit.Handle)
+    firetouchinterest = nil
+
+    fruit.Parent = nil
+    Settings.set("StackHopFruit", true)
+    local hops = 0
+    local realHop = ServerModule.hop
+    ServerModule.hop = function() hops = hops + 1 return true end
+    StackCommon.HOP_AFTER = 0
+    check("no fruit: stack off", not StackFarm.enabled())
+    eq("hop asked", hops, 1)
+    StackFarm.enabled()
+    eq("hops are paced", hops, 1)
+    ServerModule.hop = realHop
+    StackCommon.HOP_AFTER = 15
+end
+
+-- Pirate raid: raiders near the castle, not the excluded ones.
+stackSetup()
+do
+    Settings.set("StackPirateRaid", true)
+    local friend = mob("Friendly Pirate", StackEvents.CASTLE + Vector3.new(10, 0, 0))
+    check("friends are not raiders", not StackEvents.isRaider(friend))
+    local far = mob("Pirate", StackEvents.CASTLE + Vector3.new(5000, 0, 0))
+    check("far pirates are not raiders", not StackEvents.isRaider(far))
+    check("no raider: idle", not StackFarm.enabled())
+    local raider = mob("Pirate", StackEvents.CASTLE + Vector3.new(50, 0, 0))
+    check("raider: stack on", StackFarm.enabled())
+    StackFarm.tick()
+    eq("fights the raider", StackFarm.target, raider)
+    raider.Humanoid.Health = 0
+    check("waits for the next wave", StackFarm.enabled())
+end
+
+-- Server answers are cached, not asked every frame.
+stackSetup(2753915549, 800)   -- Sea 1, level 800
+do
+    Settings.set("StackNewWorld", true)
+    world.commF.OnInvoke = function(action) if action == "DressrosaQuestProgress" then return 1 end end
+    for _ = 1, 10 do StackFarm.enabled() end
+    eq("quest progress asked once", #calls(world.commF, "DressrosaQuestProgress"), 1)
+    StackFarm.tick()
+    check("no ice door loaded: waits for the admiral", StackFarm.status:find("Ice Admiral", 1, true) ~= nil, StackFarm.status)
+
+    local door = part("Door", Vector3.new(500, 0, 0), folder("Ice", folder("Map", workspace)))
+    door.CanCollide = true
+    StackFarm.tick()
+    check("door shut, no key: detective", StackFarm.status:find("detective", 1, true) ~= nil, StackFarm.status)
+end
+
+-- Third sea: the valuable fruit is taken out of the inventory for Trevor.
+stackSetup(4442272183, 1600)   -- Sea 2
+do
+    Settings.set("StackThirdWorld", true)
+    world.commF.OnInvoke = function(action)
+        if action == "BartiloQuestProgress" then return 3 end
+        if action == "TalkTrevor" then return 1 end
+        if action == "GetFruits" then
+            return { { Name = "Kilo-Kilo", Price = 5000 }, { Name = "Leopard-Leopard", Price = 5000000 },
+                { Name = "Dough-Dough", Price = 2800000 } }
+        end
+        if action == "getInventory" then
+            return { { Name = "Leopard-Leopard", Type = "Blox Fruit", Count = 1 },
+                { Name = "Dough-Dough", Type = "Blox Fruit", Count = 1 } }
+        end
+    end
+    check("Trevor with a stored fruit: stack on", StackFarm.enabled())
+    StackFarm.tick()
+    local loaded = calls(world.commF, "LoadFruit")
+    eq("cheapest valuable fruit loaded", loaded[1] and loaded[1][2], "Dough-Dough")
+
+    tool("Dough Fruit")
+    world.hrp.Position = StackWorld.TREVOR
+    StackCommon.forget()
+    StackFarm.tick()
+    eq("Trevor talked to", #calls(world.commF, "TalkTrevor") >= 3, true)
+end
+
+-- Dough King summon: cocoa first, then an elite's chalice.
+stackSetup()
+do
+    Settings.set("StackDoughKing", true)
+    Settings.set("StackSummonDoughKing", true)
+    local cocoa = 3
+    world.commF.OnInvoke = function(action)
+        if action == "SweetChaliceNpc" then return "Where are the items?" end
+        if action == "getInventory" then return { { Name = "Conjured Cocoa", Type = "Material", Count = cocoa } } end
+    end
+    local warrior = mob("Cocoa Warrior", Vector3.new(40, 0, 0))
+    check("missing cocoa: stack on", StackFarm.enabled())
+    StackFarm.tick()
+    eq("farms cocoa", StackFarm.target, warrior)
+
+    cocoa = 10
+    StackCommon.forget()
+    check("cocoa done, no elite: idle", not StackFarm.enabled())
+    local elite = mob("Urban", Vector3.new(60, 0, 0))
+    check("elite for the chalice: stack on", StackFarm.enabled())
+    StackFarm.tick()
+    check("status says chalice", StackFarm.status:find("God's Chalice", 1, true) ~= nil, StackFarm.status)
 end
 
 ---------------------------------------------------------------------------

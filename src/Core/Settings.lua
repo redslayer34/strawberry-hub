@@ -32,6 +32,28 @@ Settings.DEFAULTS = {
     AutoAura = false,
     AuraRadius = 300,
 
+    -- Stack farming: tasks that interrupt the main farm
+    StackNewWorld = false,
+    StackThirdWorld = false,
+    StackChests = false,
+    StackFruit = false,
+    StackHopFruit = false,
+    StackFactory = false,
+    StackPirateRaid = false,
+    StackEliteHunter = false,
+    StackHopElite = false,
+    StackHakiPads = false,
+    StackSummonRipIndra = false,
+    StackRipIndra = false,
+    StackSoulReaper = false,
+    StackSummonSoulReaper = false,
+    StackDoughKing = false,
+    StackSummonDoughKing = false,
+    StackHopDoughKing = false,
+    StackDarkbeard = false,
+    StackSummonDarkbeard = false,
+    StackHopDarkbeard = false,
+
     -- Mastery
     MasteryFarm = false,
     MasteryWeapon = "Blox Fruit",

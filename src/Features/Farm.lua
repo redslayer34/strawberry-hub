@@ -20,6 +20,7 @@ local Farm = {}
 -- Priority order: the first enabled mode is the one that runs.
 Farm.MODES = {
     require("Features.Travel"),
+    require("Features.StackFarm"),
     require("Features.BossFarm"),
     require("Features.KatakuriFarm"),
     require("Features.BoneFarm"),
