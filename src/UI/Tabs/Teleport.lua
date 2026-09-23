@@ -46,6 +46,19 @@ return function(Window, ui)
 
     local control = tab:AddSection("Control")
     control:AddButton({ Title = "Stop travelling", Callback = Travel.cancel })
+    control:AddButton({
+        Title = "Test portals",
+        Description = "Tries every portal of this sea once. Results in Settings > Portals.",
+        Callback = function()
+            local started = require("Game.Router").testAll(function()
+                ui.Library:Notify({ Title = "Portals", Content = "Test finished",
+                    SubContent = "See Settings > Movement > Portals", Duration = 6 })
+            end)
+            if not started then
+                ui.Library:Notify({ Title = "Portals", Content = "A teleport is already running", Duration = 4 })
+            end
+        end,
+    })
 
     local seas = tab:AddSection("Seas")
     local labels = { "First Sea", "Second Sea", "Third Sea" }

@@ -1085,9 +1085,10 @@ do
     local short = Router.plan(Vector3.new(0, 0, 0), Vector3.new(1400, 0, 0), 300)
     eq("small saving: fly directly", short.kind, "direct")
 
-    Entrances.reset({ DefeatedIndraTrueForm = false })
-    local locked = Router.plan(Vector3.new(0, 0, 0), goal, 300)
-    check("Indra portals need the unlock", locked.name ~= "Castle on the Sea", locked.name)
+    Entrances.reset({})
+    local unflagged = Router.plan(Vector3.new(0, 0, 0), goal, 300)
+    eq("missing unlock flag: portal still tried", unflagged.name, "Castle on the Sea")
+    check("shown as unconfirmed", Router.describe():find("unlock not confirmed", 1, true) ~= nil, Router.describe())
     Entrances.reset({ DefeatedIndraTrueForm = true })
 
     -- A jump that works: requestEntrance sent, portal confirmed.
@@ -1205,6 +1206,83 @@ do
     Movement.to(CFrame.new(100, 0, 0))
     Movement.step(1 / 60)
     near("short trip set in one go", world.hrp.Position, Vector3.new(100, 0, 0))
+end
+
+-- The user's case: Teleport tab to the Sea 3 Mansion, far away.
+setup()
+do
+    game.PlaceId = 7449423635
+    Entrances.reset(nil)   -- unlocks not read (or flag missing)
+    world.commF.OnInvoke = function() return true end
+    Travel.cancel()
+    Travel.go("Mansion", Vector3.new(-12548.0, 337.0, -7481.0))
+    Farm.tick()
+    Movement.step(1 / 60)
+    local sent = calls(world.commF, "requestEntrance")
+    eq("teleport to the Mansion uses a portal", #sent, 1)
+    near("the Mansion portal", sent[1] and sent[1][2] or Vector3.new(), Vector3.new(-12463.9, 374.9, -7523.8))
+    check("status names the portal", Farm.status():find("Turtle Mansion", 1, true) ~= nil, Farm.status())
+    Travel.cancel()
+    Farm.stop()
+end
+
+-- Sea read from the game when the PlaceId is unknown.
+setup()
+do
+    game.PlaceId = 123456789
+    Player.resetSea()
+    workspace:SetAttribute("MAP", "Sea3")
+    eq("sea from the MAP attribute", Player.sea(), 3)
+    workspace:SetAttribute("MAP", nil)
+    local util = folder("Util", rs)
+    moduleScript("Realm", util, { safeGetCurrentSeaAsync = function() return "Sea2" end })
+    Player.resetSea()
+    Player.sea()
+    eq("sea from the Realm module", Player.sea(), 2)
+    Player.resetSea()
+end
+
+-- Why a trip flies directly.
+setup()
+do
+    game.PlaceId = 123456789
+    Player.resetSea()
+    local plan = Router.plan(Vector3.new(0, 0, 0), Vector3.new(9000, 0, 0), 300)
+    check("reason: no portal for this sea", plan.reason and plan.reason:find("no portal known", 1, true) ~= nil, plan.reason)
+
+    game.PlaceId = 7449423635
+    Entrances.reset({ DefeatedIndraTrueForm = true })
+    local near1 = Router.plan(Vector3.new(0, 0, 0), Vector3.new(1600, 0, 0), 300)
+    eq("medium trip flies", near1.kind, "direct")
+    check("reason: saving too small", near1.reason and near1.reason:find("saves only", 1, true) ~= nil, near1.reason)
+    Router.update(Vector3.new(0, 0, 0), Vector3.new(1600, 0, 0), 300)
+    check("note starts with flying", (Router.note() or ""):find("flying:", 1, true) == 1, Router.note())
+end
+
+-- Test portals: one request per portal, each result recorded.
+setup()
+do
+    game.PlaceId = 4442272183
+    Entrances.reset({})
+    Router.VERIFY_STEPS = 2
+    local moved = 0
+    world.commF.OnInvoke = function(action)
+        if action == "requestEntrance" then
+            moved = moved + 1
+            if moved == 1 then world.hrp.Position = Vector3.new(923, 127, 32852) end
+        end
+        return true
+    end
+    local done = false
+    check("test started", Router.testAll(function() done = true end))
+    check("second test refused while running", not Router.testAll())
+    for _ = 1, 20 do stepTasks() end
+    check("test finished", done)
+    eq("one request per portal", #calls(world.commF, "requestEntrance"), #Entrances.POINTS[2])
+    local text = Router.describe()
+    check("working portal reported", text:find("Cursed Ship: works", 1, true) ~= nil, text)
+    check("failed portal reported", text:find("no move", 1, true) ~= nil, text)
+    Router.VERIFY_STEPS = 24
 end
 
 ---------------------------------------------------------------------------

@@ -37,6 +37,7 @@ Router.MOVED = 500           -- studs moved from the start that prove a jump
 Router.LANDED = 1000         -- studs from the point that also prove it
 Router.FAILS_TO_LOCK = 2     -- failures in a row before a portal is locked
 Router.LOCK_TIME = 120       -- seconds a locked portal stays locked
+Router.UNCONFIRMED_COST = 2  -- seconds added to a portal its unlock flag does not confirm
 Router.RESPAWN_COST = 6      -- seconds a respawn costs
 Router.RESPAWN_STEPS = 60    -- x 0.25 s to wait for the new character
 
@@ -119,21 +120,35 @@ function Router.plan(here, goal, speed)
             saving = 0,
         }
     elseif fromIsland and not toIsland then
-        best = {
+        -- As in the reference, the submarine comes first: portals are not
+        -- used from the island.
+        return {
             kind = "submarine", name = "Submarine", goal = goal, dock = Router.DOCK, enter = false,
             cost = (here - Router.DOCK).Magnitude / speed + Router.OVERHEAD + (Router.TIKI - goal).Magnitude / speed,
+            saving = 0,
         }
-        direct = math.huge
     end
 
+    -- Why the plan ends up flying, for the status line.
+    local points = Entrances.available()
+    local reason
+    if #points == 0 then
+        reason = "no portal known for sea " .. tostring(Player.sea() or "?")
+    end
+    local bestPortal, bestPortalCost, lockedName
+
     local now = os.clock()
-    for _, point in ipairs(Entrances.available()) do
-        if not isLocked(point.name) and now - (lastUsed[point.name] or -math.huge) >= Router.COOLDOWN
+    for _, point in ipairs(points) do
+        local cost = Router.OVERHEAD + (point.position - goal).Magnitude / speed
+        if not Entrances.confirmed(point) then cost = cost + Router.UNCONFIRMED_COST end
+        if isLocked(point.name) then
+            if not lockedName or cost < (bestPortalCost or math.huge) then lockedName = point.name end
+        elseif now - (lastUsed[point.name] or -math.huge) >= Router.COOLDOWN
             and (here - point.position).Magnitude > Router.ARRIVED then
-            consider({
-                kind = "entrance", name = point.name, point = point,
-                cost = Router.OVERHEAD + (point.position - goal).Magnitude / speed,
-            })
+            if not bestPortalCost or cost < bestPortalCost then
+                bestPortal, bestPortalCost = point, cost
+            end
+            consider({ kind = "entrance", name = point.name, point = point, cost = cost })
         end
     end
 
@@ -148,8 +163,20 @@ function Router.plan(here, goal, speed)
 
     best.saving = direct - best.cost
     if best.kind ~= "direct" and best.kind ~= "submarine" and best.saving < Router.MIN_SAVING then
-        return { kind = "direct", cost = direct, goal = goal, saving = 0 }
+        best = { kind = "direct", cost = direct, goal = goal, saving = 0 }
     end
+
+    if best.kind == "direct" and not reason then
+        if bestPortal then
+            reason = string.format("best portal %s saves only %d s", bestPortal.name,
+                math.max(0, math.floor(direct - bestPortalCost)))
+        elseif lockedName then
+            reason = lockedName .. " locked (" .. tostring(attempts[lockedName]) .. ")"
+        else
+            reason = "no portal usable from here"
+        end
+    end
+    best.reason = reason
     return best
 end
 
@@ -262,7 +289,7 @@ function Router.update(here, goal, speed)
     end
 
     if route.kind == "direct" then
-        note = nil
+        note = route.reason and ("flying: " .. route.reason) or nil
         return false
     end
 
@@ -280,6 +307,27 @@ function Router.update(here, goal, speed)
     return true
 end
 
+-- Requests every portal of this sea in turn and records what happened, so
+-- the player can see once which ones work. Returns false if a shortcut is
+-- already running.
+function Router.testAll(onDone)
+    if busy then return false end
+    busy = true
+    task.spawn(function()
+        for _, point in ipairs(Entrances.available()) do
+            local plan = { kind = "entrance", name = point.name, point = point }
+            lastUsed[point.name] = os.clock()
+            local ok, err = pcall(actions.entrance, plan)
+            if not ok then recordResult(point.name, false, tostring(err)) end
+        end
+        route = nil
+        busy = false
+        justJumped = true
+        if onDone then pcall(onDone) end
+    end)
+    return true
+end
+
 function Router.busy() return busy end
 function Router.note() return note end
 
@@ -291,13 +339,14 @@ function Router.describe()
         local state
         if isLocked(point.name) then state = "locked"
         elseif confirmed[point.name] then state = "works"
-        elseif point.unlock and known and not Entrances.unlocks()[point.unlock] then state = "not unlocked"
+        elseif not Entrances.confirmed(point) then state = "unlock not confirmed"
         else state = "untested" end
         if attempts[point.name] then state = state .. " (" .. attempts[point.name] .. ")" end
         lines[#lines + 1] = point.name .. ": " .. state
     end
     if #lines == 0 then return "No portal known in this sea." end
     if not known then lines[#lines + 1] = "(unlocks not read yet)" end
+    lines[#lines + 1] = "Sea: " .. tostring(Player.sea() or "unknown")
     return table.concat(lines, "\n")
 end
 

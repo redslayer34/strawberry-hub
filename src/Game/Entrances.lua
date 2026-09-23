@@ -62,17 +62,19 @@ function Entrances.refresh()
     end)
 end
 
--- Points of the current sea the player may use. While the unlockables are
--- unknown a locked point is still offered: a failed jump teaches the Router
--- to skip it.
+-- Whether the unlockables confirm this point (points without a
+-- requirement are always confirmed).
+function Entrances.confirmed(point)
+    if not point.unlock then return true end
+    return unlocks ~= nil and unlocks[point.unlock] == true
+end
+
+-- Every point of the current sea. The unlock flag is only a hint: its name
+-- may differ on a given server, and a player who owns the portal must not
+-- lose it to a missing flag. A point the game refuses is soft-locked by the
+-- Router after two misses.
 function Entrances.available()
-    local out = {}
-    for _, point in ipairs(Entrances.POINTS[Player.sea() or 0] or {}) do
-        if not point.unlock or not unlocks or unlocks[point.unlock] then
-            out[#out + 1] = point
-        end
-    end
-    return out
+    return Entrances.POINTS[Player.sea() or 0] or {}
 end
 
 -- The Temple of Time map lives in ReplicatedStorage.MapStash until the

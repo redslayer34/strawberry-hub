@@ -60,8 +60,43 @@ function Player.level()
     return Player.data("Level") or 0
 end
 
+local realmSea
+
+local function seaNumber(text)
+    local number = tonumber(tostring(text or ""):match("[Ss]ea%s*(%d)"))
+    if number and number >= 1 and number <= 3 then return number end
+    return nil
+end
+
+-- The current sea. Blox Fruits keeps adding places per sea (and the
+-- anti-cheat Badlands places), so an unknown PlaceId falls back to what the
+-- game says itself: workspace's "MAP" attribute ("Sea2"), then the Realm
+-- module. Realm may yield, and sea() is called from Heartbeat, so it is
+-- read once in the background; until it answers the sea stays unknown.
 function Player.sea()
-    return Player.SEAS[game.PlaceId]
+    local known = Player.SEAS[game.PlaceId]
+    if known then return known end
+
+    local ok, map = pcall(function() return workspace:GetAttribute("MAP") end)
+    local fromMap = ok and seaNumber(map)
+    if fromMap then return fromMap end
+
+    if realmSea == nil then
+        realmSea = false
+        task.spawn(function()
+            local realm = Services.module("Util.Realm")
+            if type(realm) == "table" and realm.safeGetCurrentSeaAsync then
+                local okRealm, result = pcall(realm.safeGetCurrentSeaAsync)
+                realmSea = okRealm and seaNumber(result) or false
+            end
+        end)
+    end
+    return realmSea or nil
+end
+
+-- Test hook.
+function Player.resetSea()
+    realmSea = nil
 end
 
 -- True while the character is stunned: the server rejects attacks then.
