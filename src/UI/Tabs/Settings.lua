@@ -3,6 +3,8 @@
 --=============================================================================
 
 local Bind = require("UI.Bind")
+local Loop = require("Core.Loop")
+local Router = require("Game.Router")
 
 return function(Window, ui)
     local tab = Window:AddTab({ Title = "Settings", Icon = "settings" })
@@ -14,6 +16,12 @@ return function(Window, ui)
     local movement = tab:AddSection("Movement")
     Bind.slider(movement, "TweenSpeed", "Fly Speed", 100, 350, 0,
         "Studs per second. Lower it if the server keeps pulling you back.")
+    Bind.toggle(movement, "SmartTravel", "Smart travel (portals)",
+        "Uses the game's portals (Rip Indra, Cursed Ship, Doflamingo...) when it is faster than flying.")
+    Bind.toggle(movement, "RespawnShortcut", "Respawn shortcut",
+        "Moves your spawn near far goals and resets. Kills your character -- off by default.")
+    local portals = movement:AddParagraph({ Title = "Portals in this server", Content = Router.describe() })
+    Loop.start("PortalPanel", 2, function() portals:SetDesc(Router.describe()) end)
 
     local hub = tab:AddSection("Hub")
     hub:AddParagraph({

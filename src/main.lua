@@ -12,6 +12,7 @@
 --=============================================================================
 
 local AimHook = require("Game.AimHook")
+local Entrances = require("Game.Entrances")
 local Farm = require("Features.Farm")
 local FluentLoader = require("UI.Fluent")
 local Interface = require("UI.Interface")
@@ -79,6 +80,7 @@ if afk then connections[#connections + 1] = afk end
 ---------------------------------------------------------------------------
 
 guard("movement", Movement.start)
+guard("portal unlocks", Entrances.refresh)
 guard("farm", Farm.start)
 guard("auto stats", Stats.start)
 guard("player tweaks", PlayerTweaks.start)

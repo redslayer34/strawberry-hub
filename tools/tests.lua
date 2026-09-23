@@ -43,6 +43,7 @@ local MODULES = {
     "Features.MaterialFarm", "Features.KillMobFarm", "Features.AuraFarm",
     "Game.Mastery", "Game.AimHook", "Game.Data",
     "Features.Travel", "Features.Stats", "Features.PlayerTweaks", "Game.World", "Game.Server",
+    "Game.Router", "Game.Entrances",
 }
 for _, name in ipairs(MODULES) do
     local ok, err = pcall(require, name)
@@ -73,6 +74,8 @@ local Travel = require("Features.Travel")
 local World = require("Game.World")
 local Stats = require("Features.Stats")
 local Server = require("Game.Server")
+local Router = require("Game.Router")
+local Entrances = require("Game.Entrances")
 
 ---------------------------------------------------------------------------
 -- World builders
@@ -129,6 +132,8 @@ local function setup(options)
     Movement.reset()
     Quests.reset()
     Quests.SCAN_EVERY = 0
+    Router.reset()
+    Entrances.reset(nil)
     Loop.stopAll()
     WARNINGS = {}
     game.PlaceId = 4442272183
@@ -567,6 +572,7 @@ end
 
 setup()
 do
+    Settings.set("SmartTravel", false)
     local dt = 1 / 60
     Movement.to(CFrame.new(100, 0, 0))
     Movement.step(dt)
@@ -979,20 +985,45 @@ do
     eq("AddPoint amount", call and call[3], 6)
 
     local browser = newInstance("RemoteFunction", "__ServerBrowser", rs)
-    browser.OnInvoke = function(page)
-        if page == 1 then return { [game.JobId] = {}, ["job-a"] = {} } end
-        if page == "teleport" then return true end
-        return {}
+    browser.OnInvoke = function() return true end
+    local pages = {
+        { data = {
+            { id = game.JobId, playing = 3, maxPlayers = 12 },
+            { id = "job-full", playing = 12, maxPlayers = 12 },
+            { id = "job-a", playing = 8, maxPlayers = 12 },
+        } },
+    }
+    local fetched = {}
+    game.HttpGet = function(_, url)
+        fetched[#fetched + 1] = url
+        return pages[1]
     end
+    local http = game:GetService("HttpService")
+    function http:JSONDecode(value) return value end
+
     local queued
     queue_on_teleport = function(code) queued = code end
     check("hop sends a teleport", Server.hop())
+    check("server list read from the public API", fetched[1] and fetched[1]:find("games.roblox.com", 1, true) ~= nil)
     local last = browser.Invoked[#browser.Invoked]
-    eq("hop teleports through the server browser", last[1], "teleport")
-    eq("hop picks another server", last[2], "job-a")
+    eq("hop teleports through the game server", last[1], "teleport")
+    eq("hop skips current and full servers", last[2], "job-a")
     check("loader queued for the next server", queued and queued:find("StrawberryHub.lua", 1, true) ~= nil)
     check("tried server remembered", Server.isVisited("job-a"))
     check("no server left to try", not Server.hop())
+
+    pages[1].data[#pages[1].data + 1] = { id = "job-low", playing = 2, maxPlayers = 12 }
+    pages[1].data[#pages[1].data + 1] = { id = "job-busy", playing = 9, maxPlayers = 12 }
+    eq("low player pick", Server.pickLow(), "job-low")
+
+    local teleportService = game:GetService("TeleportService")
+    local clientTeleports = 0
+    function teleportService:TeleportToPlaceInstance() clientTeleports = clientTeleports + 1 end
+    function teleportService:Teleport() clientTeleports = clientTeleports + 1 end
+    check("rejoin sent", Server.rejoin())
+    last = browser.Invoked[#browser.Invoked]
+    check("rejoin goes through the game server", last[1] == "teleport" and last[2] == game.JobId)
+    eq("no client-side teleport (restricted place)", clientTeleports, 0)
 
     queued = nil
     Settings.set("AutoExecute", false)
@@ -1000,6 +1031,7 @@ do
     eq("no reload queued when disabled", queued, nil)
     check("empty JobId refused", not Server.join("  "))
     queue_on_teleport = nil
+    game.HttpGet = nil
 end
 
 setup()
@@ -1007,10 +1039,10 @@ do
     resetModes()
     Server.reset()
     local browser = newInstance("RemoteFunction", "__ServerBrowser", rs)
-    browser.OnInvoke = function(page)
-        if page == 1 then return { ["job-z"] = {} } end
-        return true
-    end
+    browser.OnInvoke = function() return true end
+    game.HttpGet = function() return { data = { { id = "job-z", playing = 1, maxPlayers = 12 } } } end
+    local http = game:GetService("HttpService")
+    function http:JSONDecode(value) return value end
     Settings.set("AutoBoss", true)
     Settings.set("Boss", "Cyborg")
     Settings.set("HopForBoss", true)
@@ -1020,6 +1052,119 @@ do
     local last = browser.Invoked and browser.Invoked[#browser.Invoked]
     eq("missing boss makes the farm hop", last and last[2], "job-z")
     BossFarmModule.HOP_AFTER = 15
+    game.HttpGet = nil
+end
+
+---------------------------------------------------------------------------
+-- Smart travel
+---------------------------------------------------------------------------
+
+local CASTLE = Vector3.new(-4967.7, 314.9, -3157.1)
+
+setup()
+do
+    game.PlaceId = 7449423635   -- Sea 3
+    Entrances.reset({ DefeatedIndraTrueForm = true })
+    local goal = CASTLE + Vector3.new(60, 0, 60)
+
+    local plan = Router.plan(Vector3.new(0, 0, 0), goal, 300)
+    eq("far goal: portal route", plan.kind, "entrance")
+    eq("portal nearest the goal", plan.name, "Castle on the Sea")
+    check("saving computed", plan.saving > 15, plan.saving)
+
+    local short = Router.plan(Vector3.new(0, 0, 0), Vector3.new(1400, 0, 0), 300)
+    eq("small saving: fly directly", short.kind, "direct")
+
+    Entrances.reset({ DefeatedIndraTrueForm = false })
+    local locked = Router.plan(Vector3.new(0, 0, 0), goal, 300)
+    check("Indra portals need the unlock", locked.name ~= "Castle on the Sea", locked.name)
+    Entrances.reset({ DefeatedIndraTrueForm = true })
+
+    -- A jump that works: requestEntrance sent, portal confirmed.
+    world.commF.OnInvoke = function(action)
+        if action == "requestEntrance" then world.hrp.Position = CASTLE end
+        return true
+    end
+    check("shortcut running", Router.update(Vector3.new(0, 0, 0), goal, 300))
+    local call = world.commF.Invoked[#world.commF.Invoked]
+    eq("requestEntrance sent", call[1], "requestEntrance")
+    near("to the portal position", call[2], CASTLE)
+    check("busy while the jump happens", Router.busy())
+    check("movement holds still while busy", Router.update(Vector3.new(0, 0, 0), goal, 300))
+    stepTasks()
+    check("jump done", not Router.busy())
+    check("portal confirmed", Router.describe():find("Castle on the Sea: works", 1, true) ~= nil, Router.describe())
+    local handled = Router.update(CASTLE, goal, 300)
+    check("close goal after the jump: normal flight", not handled)
+    local cooling = Router.plan(Vector3.new(0, 0, 0), goal, 300)
+    check("same portal not reused during its cooldown", cooling.name ~= "Castle on the Sea", cooling.name)
+end
+
+setup()
+do
+    game.PlaceId = 7449423635
+    Entrances.reset({ DefeatedIndraTrueForm = true })
+    Router.VERIFY_STEPS = 3
+    world.commF.OnInvoke = function() return nil end   -- the jump never happens
+    local goal = CASTLE + Vector3.new(60, 0, 60)
+    Router.update(Vector3.new(0, 0, 0), goal, 300)
+    for _ = 1, 4 do stepTasks() end
+    check("failed portal locked", Router.describe():find("Castle on the Sea: locked", 1, true) ~= nil, Router.describe())
+    local again = Router.plan(Vector3.new(0, 0, 0), goal, 300)
+    check("locked portal no longer planned", again.name ~= "Castle on the Sea", again.name)
+    Router.VERIFY_STEPS = 10
+end
+
+setup()
+do
+    game.PlaceId = 7449423635
+    Entrances.reset({})
+    local island = Router.ISLAND + Vector3.new(100, 0, 0)
+    local handled, aim = Router.update(Vector3.new(0, 0, 0), island, 300)
+    check("submarine: fly to the worker first", not handled and aim ~= nil and (aim - Router.WORKER).Magnitude < 1)
+    local net = rs.Modules.Net
+    local worker = newInstance("RemoteFunction", "RF/SubmarineWorkerSpeak", net)
+    check("at the worker: submarine taken", Router.update(Router.WORKER, island, 300))
+    eq("worker asked to travel", worker.Invoked and worker.Invoked[1][1], "TravelToSubmergedIsland")
+    stepTasks()
+
+    Router.reset()
+    local plan = Router.plan(Router.ISLAND, Vector3.new(0, 0, 0), 300)
+    eq("leaving the island: submarine", plan.kind, "submarine")
+    near("leaves from the dock", plan.dock, Router.DOCK)
+end
+
+setup()
+do
+    game.PlaceId = 1   -- no known sea: no portal competes with the respawn route
+    Entrances.reset({})
+    local far = Vector3.new(20000, 0, 20000)
+    local spawns = folder("PlayerSpawns", folder("_WorldOrigin", workspace))
+    local group = folder("Pirates", spawns)
+    local spawnModel = newInstance("Model", "FarIsland", group)
+    spawnModel.WorldPivot = CFrame.new(20100, 0, 20000)
+    eq("respawn shortcut off by default", Router.plan(Vector3.new(0, 0, 0), far, 300).kind, "direct")
+    Settings.set("RespawnShortcut", true)
+    local plan = Router.plan(Vector3.new(0, 0, 0), far, 300)
+    eq("respawn shortcut when enabled", plan.kind, "respawn")
+    check("respawn at the spawn nearest the goal", plan.name:find("FarIsland", 1, true) ~= nil)
+end
+
+setup()
+do
+    game.PlaceId = 7449423635
+    Entrances.reset({ DefeatedIndraTrueForm = true })
+    world.commF.OnInvoke = function() return true end
+    Movement.to(CFrame.new(CASTLE + Vector3.new(60, 0, 60)))
+    Movement.step(1 / 60)
+    near("movement waits for the portal instead of flying", world.hrp.Position, Vector3.new(0, 0, 0))
+    check("status mentions the portal", (Router.note() or ""):find("Castle on the Sea", 1, true) ~= nil)
+
+    Router.reset()
+    Movement.reset()
+    Movement.to(CFrame.new(100, 0, 0))
+    Movement.step(1 / 60)
+    near("short trip set in one go", world.hrp.Position, Vector3.new(100, 0, 0))
 end
 
 ---------------------------------------------------------------------------

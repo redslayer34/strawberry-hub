@@ -310,6 +310,14 @@ function methods:Destroy()
     self.Parent = nil
     rawset(self, "Destroyed", true)
 end
+function methods:GetPivot()
+    local pivot = rawget(self, "WorldPivot")
+    if pivot then return pivot end
+    for _, child in ipairs(rawget(self, "_children")) do
+        if child:IsA("BasePart") then return child.CFrame end
+    end
+    return CFrame.new(0, 0, 0)
+end
 function methods:GetAttribute(key) return rawget(self, "_attributes")[key] end
 function methods:SetAttribute(key, value) rawget(self, "_attributes")[key] = value end
 function methods:FireServer(...)

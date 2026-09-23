@@ -62,6 +62,8 @@ Settings.DEFAULTS = {
 
     -- Movement
     TweenSpeed = 300,
+    SmartTravel = true,
+    RespawnShortcut = false,
 }
 
 Settings.WEAPONS = { "Melee", "Sword", "Blox Fruit", "Gun" }

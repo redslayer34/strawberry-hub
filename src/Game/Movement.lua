@@ -17,6 +17,7 @@
 --=============================================================================
 
 local Player = require("Core.Player")
+local Router = require("Game.Router")
 local Services = require("Core.Services")
 local Settings = require("Core.Settings")
 
@@ -104,8 +105,27 @@ function Movement.step(dt)
 
     local wanted = Settings.get("TweenSpeed")
     local speed = math.min(wanted, cap)
+
+    -- Smart travel: the Router may be running a teleport (hold still, and
+    -- forget where we placed the character: the jump is not a pull-back),
+    -- or send us to an intermediate point such as the submarine dock.
+    local destination = goal
+    local handled, aim = Router.update(here, target, speed)
+    if handled then
+        lastPlaced = nil
+        hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        return
+    end
+    if aim then
+        target = aim
+        destination = CFrame.new(aim)
+    end
+
     local stepLength = math.min(speed * dt, MAX_STEP)
     local remaining = (target - here).Magnitude
+    -- Short trips are set in one go, as the reference does.
+    local snap = SNAP
+    if Settings.get("SmartTravel") then snap = Router.SNAP end
 
     if remaining > stepLength and now >= nextRaise and cap < wanted then
         cap = math.min(cap * 1.08, wanted)
@@ -113,8 +133,8 @@ function Movement.step(dt)
     end
 
     local placed
-    if remaining <= math.max(stepLength, SNAP) then
-        placed = goal
+    if remaining <= math.max(stepLength, snap) then
+        placed = destination
     else
         placed = CFrame.new(here + (target - here).Unit * stepLength)
     end
@@ -136,6 +156,11 @@ function Movement.destroy()
         connection = nil
     end
     Movement.stop()
+end
+
+-- Current flying speed: the setting, lowered while the server pulls back.
+function Movement.speed()
+    return math.min(Settings.get("TweenSpeed"), cap)
 end
 
 -- Test hook.

@@ -12,6 +12,7 @@ local Combat = require("Game.Combat")
 local Loop = require("Core.Loop")
 local Mastery = require("Game.Mastery")
 local Movement = require("Game.Movement")
+local Router = require("Game.Router")
 local Settings = require("Core.Settings")
 
 local Farm = {}
@@ -59,7 +60,10 @@ end
 
 function Farm.status()
     if not current then return "Idle" end
-    return current.name .. ": " .. tostring(current.status)
+    local text = current.name .. ": " .. tostring(current.status)
+    local via = Router.note()
+    if via then text = text .. " -- " .. via end
+    return text
 end
 
 -- The farm decides where to be every frame; the attack loop hits whatever
