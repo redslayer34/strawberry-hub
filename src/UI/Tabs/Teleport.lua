@@ -3,8 +3,6 @@
 --=============================================================================
 
 local Bind = require("UI.Bind")
-local Loop = require("Core.Loop")
-local PortalRecorder = require("Game.PortalRecorder")
 local Data = require("Game.Data")
 local Services = require("Core.Services")
 local Settings = require("Core.Settings")
@@ -50,7 +48,7 @@ return function(Window, ui)
     control:AddButton({ Title = "Stop travelling", Callback = Travel.cancel })
     control:AddButton({
         Title = "Test portals",
-        Description = "Tries every portal of this sea once. Results in Settings > Portals.",
+        Description = "Tries every unlocked portal of this sea once, from where you are. Results in Settings > Movement.",
         Callback = function()
             local started = require("Game.Router").testAll(function()
                 ui.Library:Notify({ Title = "Portals", Content = "Test finished",
@@ -59,39 +57,6 @@ return function(Window, ui)
             if not started then
                 ui.Library:Notify({ Title = "Portals", Content = "A teleport is already running", Duration = 4 })
             end
-        end,
-    })
-
-    local portals = tab:AddSection("Portals")
-    portals:AddParagraph({
-        Title = "How to teach a portal",
-        Content = "Turn on Learn portals, stop the farm, then walk through the portal yourself once "
-            .. "(Castle <-> Mansion, Castle <-> Hydra...). Smart travel uses it from then on. "
-            .. "Then press Test portals far from them: the ones that work from anywhere skip the flight.",
-    })
-    Bind.toggle(portals, "LearnPortals", "Learn portals", "Watches you take portals and remembers them.")
-    local learned = portals:AddParagraph({ Title = "Learned portals", Content = PortalRecorder.describe() })
-    Loop.start("LearnedPanel", 2, function() learned:SetDesc(PortalRecorder.describe()) end)
-    portals:AddButton({
-        Title = "Copy log",
-        Description = "Copies the learned portals and the game's last calls, to send them.",
-        Callback = function()
-            if setclipboard then
-                setclipboard(PortalRecorder.log())
-                ui.Library:Notify({ Title = "Portals", Content = "Log copied", Duration = 4 })
-            else
-                ui.Library:Notify({ Title = "Portals", Content = "Your executor cannot copy", Duration = 4 })
-            end
-        end,
-    })
-    portals:AddButton({
-        Title = "Forget learned portals",
-        Callback = function()
-            Window:Dialog({
-                Title = "Forget every learned portal?",
-                Content = "You will have to walk through them again.",
-                Buttons = { { Title = "Forget", Callback = PortalRecorder.forget }, { Title = "Cancel" } },
-            })
         end,
     })
 

@@ -16,10 +16,16 @@ return function(Window, ui)
     local movement = tab:AddSection("Movement")
     Bind.slider(movement, "TweenSpeed", "Fly Speed", 100, 350, 0,
         "Studs per second. Lower it if the server keeps pulling you back.")
-    Bind.toggle(movement, "SmartTravel", "Smart travel (portals)",
-        "Uses the game's portals (Rip Indra, Cursed Ship, Doflamingo...) when it is faster than flying.")
-    Bind.toggle(movement, "RespawnShortcut", "Respawn shortcut",
-        "Moves your spawn near far goals and resets. Kills your character -- off by default.")
+    Bind.toggle(movement, "SmartTravel", "Smart travel (Banana Cat Hub portals)",
+        "Goal 3000+ studs away: requestEntrance to the unlocked portal nearest it (Rip Indra, Cursed Ship, "
+            .. "Doflamingo, Temple of Time...). Also the temple exit, the submarine, the Cake mirror and the "
+            .. "Celestial Domain.")
+    Bind.toggle(movement, "PortalFruit", "Use Portal fruit (Gateway)",
+        "Portal fruit level 200+: opens the Gateway to the island nearest the goal when C is ready.")
+    Bind.toggle(movement, "RespawnShortcut", "Reset teleport (respawn near the goal)",
+        "Moves your spawn point to the goal's island and resets. Kills your character -- off by default.")
+    Bind.toggle(movement, "LoadIslands", "Load every island",
+        "Keeps every island loaded, like Banana Cat Hub. Uses more memory: turn it off if the game lags.")
     local portals = movement:AddParagraph({ Title = "Portals in this server", Content = Router.describe() })
     Loop.start("PortalPanel", 2, function() portals:SetDesc(Router.describe()) end)
 

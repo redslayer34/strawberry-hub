@@ -1,74 +1,87 @@
 --=============================================================================
--- ROUTER — picks the fastest way to a far goal
+-- ROUTER — the reference's (Banana Cat Hub) way to far goals
 --=============================================================================
---  Movement asks the Router every frame. Each possible route is priced in
---  seconds and the cheapest wins:
+--  Movement asks the Router every frame. The rules are the reference's
+--  toTarget, in its order:
 --
---    direct      fly all the way (distance / current speed)
---    learned     a portal learned in game: fly to its entrance (or use it
---                from here when it is known to reach), trigger it, fly on
---    entrance    requestEntrance to a hard-coded point: rejected by the
---                server now, kept for "Test portals" only
---    submarine   Sea 3: the only way in and out of the Submerged Island
---    respawn     opt-in: move the spawn point near the goal, then reset
+--    temple      Sea 3: out of the Temple of Time, its own way back
+--    submarine   Sea 3: the only way to and from the Submerged Island
+--    gateway     opt-in: the Portal fruit's Gateway to the island nearest the
+--                goal (fruit level 200+, C skill ready)
+--    entrance    requestEntrance to the unlocked portal point nearest the
+--                goal, when the goal is FAR studs away and the point within
+--                FAR studs of it
+--    celestial   Sea 3: the Celestial Domain's own transports
+--    mirror      Sea 3: the Cake Loaf's big mirror
+--    respawn     opt-in ("Reset Teleport"): move the spawn point to the
+--                goal's island, then reset the character
+--    direct      fly
 --
---  A shortcut is only taken when it saves MIN_SAVING seconds. The game does
---  not drop the player exactly on the requested point (the Rip Indra and
---  Doflamingo portals land on the destination's own spawn), so a jump counts
---  as done once the player has moved far away or landed near the point. A
---  portal that fails twice in a row is locked for a while; one that works is
---  confirmed. The chosen route is kept while the goal stays put, so
---  a moving mob does not cause a re-plan every frame, and two shortcuts are
---  never chained without flying in between.
+--  One thing is added to the reference: a shortcut that does not move the
+--  player is not tried forever. An entrance gets ENTRANCE_TRIES calls; when
+--  the player did not move, it cools down, and FAILS_TO_LOCK misses in a row
+--  pause it for LOCK_TIME while the Router flies.
 --=============================================================================
 
 local Entrances = require("Game.Entrances")
-local PortalRecorder = require("Game.PortalRecorder")
+local Gateway = require("Game.Gateway")
 local Player = require("Core.Player")
+local Regions = require("Game.Regions")
 local Services = require("Core.Services")
 local Settings = require("Core.Settings")
 
 local Router = {}
 
-Router.SNAP = 150            -- studs: closer goals are simply set
-Router.OVERHEAD = 1.5        -- seconds a teleport request costs
-Router.MIN_SAVING = 5        -- seconds a shortcut must save...
-Router.MIN_SAVED_STUDS = 2000 -- ...or studs of flight (fast flights still get pulled back)
-Router.REPLAN_MOVE = 300     -- studs the goal may move before re-planning
-Router.COOLDOWN = 4          -- seconds before the same portal is used again
-Router.VERIFY_STEPS = 24     -- x 0.25 s to see a jump happen (6 s: the area streams in)
-Router.TOO_CLOSE = 1000      -- studs: a portal this close is not worth a request
-Router.MOVED = 300           -- studs the character must move for a jump to count
-Router.FAILS_TO_LOCK = 2     -- failures in a row before a portal is locked
-Router.LOCK_TIME = 120       -- seconds a locked portal stays locked
-Router.UNCONFIRMED_COST = 2  -- seconds added to a portal its unlock flag does not confirm
-Router.GUESSED_COST = 3      -- seconds added to hard-coded points: learned portals win
-Router.RESPAWN_COST = 6      -- seconds a respawn costs
-Router.RESPAWN_STEPS = 60    -- x 0.25 s to wait for the new character
-Router.PORTAL_STEPS = 12     -- x 0.25 s to see a learned portal work (3 s)
-Router.EXIT_RADIUS = 500     -- studs from a portal's exit that count as arrived
-Router.PORTAL_DOCK = 3       -- studs from a learned entrance before triggering it
-Router.HOLD_STEPS = 3        -- x 0.2 s standing in the portal so the server sees it
+Router.SNAP = 150              -- studs: closer goals are simply set
+Router.FAR = 3000              -- the reference's distance for every shortcut
+Router.TOO_CLOSE = 1000        -- studs: a point this close is not requested
+Router.MOVED = 300             -- studs the character must move for a jump to count
+Router.ENTRANCE_TRIES = 10     -- requestEntrance calls before giving up
+Router.ENTRANCE_EVERY = 0.3    -- seconds between two calls
+Router.LAST_LOOK = 4           -- x 0.25 s: a jump may land just after the last call
+Router.COOLDOWN = 4            -- seconds before the same shortcut is tried again
+Router.FAILS_TO_LOCK = 2       -- misses in a row before a shortcut is paused
+Router.LOCK_TIME = 120         -- seconds a paused shortcut stays paused
+Router.REPLAN_MOVE = 300       -- studs the goal may move before re-planning
+Router.REPLAN_EVERY = 5        -- seconds a flight is kept before looking again
+Router.DOCK_RADIUS = 8         -- the reference calls at 8 studs from a dock
+Router.VERIFY_STEPS = 24       -- x 0.25 s to see a transport happen
+Router.RESPAWN_STEPS = 60      -- x 0.25 s to wait for the new character
+Router.MAX_RESPAWNS = 5        -- respawns for one goal, as the reference
+Router.GATEWAY_STEPS = 25      -- x 0.2 s to land after the Gateway
+Router.GATEWAY_ARRIVED = 500
 
 -- Sea 3 Submerged Island (reference): the island, the worker who sends you
 -- there, the dock to leave from, and where leaving lands.
-Router.ISLAND = Vector3.new(11538.6, -2154.7, 9827.3)
+Router.ISLAND = Vector3.new(11538.599609375, -2154.7021484375, 9827.3125)
 Router.ISLAND_RADIUS = 3000
-Router.WORKER = Vector3.new(-16269.4, 24.0, 1371.7)
-Router.DOCK = Vector3.new(11427.9, -2156.4, 9726.2)
+Router.WORKER = Vector3.new(-16269.4082, 23.9799957, 1371.66235)
+Router.DOCK = Vector3.new(11427.9189, -2156.36401, 9726.24023)
 Router.TIKI = Vector3.new(-16456.5, 530.3, 436.2)
 
 -- Sea 3 Temple of Time (reference): leaving it means standing on its exit
 -- point and asking the game to send you back.
 Router.TEMPLE = Vector3.new(28609.392578125, 14896.533203125, 106.4216537475586)
 Router.TEMPLE_RADIUS = 3000
-Router.AT_DOCK = 30
+
+-- Sea 3 Cake Loaf: the big mirror leads to this place in the sky.
+Router.MIRROR_INSIDE = Vector3.new(-1990.67, 4532.97, -14973.67)
+Router.MIRROR_RADIUS = 1000
+
+-- Sea 3 Celestial Domain: its NPC, and how close to it the transport works.
+Router.CELESTIAL = "Celestial Domain"
+Router.CELESTIAL_NPC = "Celestial Member"
+Router.CELESTIAL_RADIUS = 300
 
 local route, note
 local busy, justJumped = false, false
 local confirmed, lastUsed = {}, {}
 local failures, lockedAt, attempts = {}, {}, {}
-local decision   -- lines explaining the last far plan
+local respawns = { goal = nil, count = 0 }
+
+---------------------------------------------------------------------------
+-- Shortcut memory
+---------------------------------------------------------------------------
 
 local function isLocked(name)
     local since = lockedAt[name]
@@ -79,6 +92,14 @@ local function isLocked(name)
         return false
     end
     return true
+end
+
+local function coolingDown(name)
+    return os.clock() - (lastUsed[name] or -math.huge) < Router.COOLDOWN
+end
+
+local function usable(name)
+    return not isLocked(name) and not coolingDown(name)
 end
 
 local function recordResult(name, ok, detail)
@@ -95,150 +116,186 @@ local function recordResult(name, ok, detail)
     end
 end
 
-local function inTemple(position)
-    return Player.sea() == 3 and (position - Router.TEMPLE).Magnitude <= Router.TEMPLE_RADIUS
+local function within(position, center, radius)
+    return (position - center).Magnitude <= radius
 end
 
-local function onIsland(position)
-    return Player.sea() == 3 and (position - Router.ISLAND).Magnitude <= Router.ISLAND_RADIUS
-end
+---------------------------------------------------------------------------
+-- Rules
+---------------------------------------------------------------------------
 
-local function spawnPoints()
-    local points = {}
-    local origin = workspace:FindFirstChild("_WorldOrigin")
-    local spawns = origin and origin:FindFirstChild("PlayerSpawns")
-    if not spawns then return points end
-    for _, group in ipairs(spawns:GetChildren()) do
-        for _, model in ipairs(group:GetChildren()) do
-            if model:IsA("Model") then
-                local ok, pivot = pcall(function() return model:GetPivot() end)
-                if ok and pivot then points[#points + 1] = { name = model.Name, position = pivot.Position } end
+-- The unlocked point nearest the goal, within FAR studs of it. Returns the
+-- point, or nil and why none was taken.
+function Router.entranceFor(here, goal)
+    local points = Entrances.available()
+    local best, bestDistance, why
+    for _, point in ipairs(points) do
+        local toGoal = (goal - point.position).Magnitude
+        if toGoal <= Router.FAR then
+            if isLocked(point.name) then
+                why = point.name .. " paused (" .. tostring(attempts[point.name]) .. ")"
+            elseif coolingDown(point.name) then
+                why = point.name .. " just tried"
+            elseif within(here, point.position, Router.TOO_CLOSE) then
+                why = point.name .. " is right here"
+            elseif not bestDistance or toGoal < bestDistance then
+                best, bestDistance = point, toGoal
             end
         end
     end
-    return points
+    if not best and not why then
+        if #points == 0 then
+            why = "no unlocked portal in sea " .. tostring(Player.sea() or "?")
+        else
+            why = "no portal near the goal"
+        end
+    end
+    return best, why
 end
 
--- The cheapest route from `here` to `goal` at `speed` studs/s.
-function Router.plan(here, goal, speed)
-    speed = math.max(speed or 1, 1)
-    local direct = (goal - here).Magnitude / speed
-    local best = { kind = "direct", cost = direct, goal = goal }
+local function isInterior(part)
+    return part ~= nil and (part.Name == Router.CELESTIAL .. " (Interior)" or part.Name == Router.CELESTIAL .. " <Interior>")
+end
 
-    local function consider(option)
-        option.goal = goal
-        if option.cost < best.cost then best = option end
-    end
+local function isDomain(part)
+    return part ~= nil and part.Name == Router.CELESTIAL
+end
 
-    -- The Submerged Island is only reachable by submarine, both ways.
-    -- Out of the Temple of Time: its own way back, before anything else.
-    if inTemple(here) and not inTemple(goal) then
-        return {
-            kind = "temple", name = "Temple of Time exit", goal = goal, dock = Router.TEMPLE,
-            cost = (here - Router.TEMPLE).Magnitude / speed + Router.OVERHEAD, saving = 0,
-        }
-    end
-
-    local fromIsland, toIsland = onIsland(here), onIsland(goal)
-    if toIsland and not fromIsland then
-        return {
-            kind = "submarine", name = "Submarine", goal = goal, dock = Router.WORKER, enter = true,
-            cost = (here - Router.WORKER).Magnitude / speed + Router.OVERHEAD,
-            saving = 0,
-        }
-    elseif fromIsland and not toIsland then
-        -- As in the reference, the submarine comes first: portals are not
-        -- used from the island.
-        return {
-            kind = "submarine", name = "Submarine", goal = goal, dock = Router.DOCK, enter = false,
-            cost = (here - Router.DOCK).Magnitude / speed + Router.OVERHEAD + (Router.TIKI - goal).Magnitude / speed,
-            saving = 0,
-        }
-    end
-
-    -- Portals learned by watching the player take them: fly to the
-    -- entrance, trigger it, continue from the exit. A portal known to reach
-    -- this far is triggered from here. The hard-coded requestEntrance points
-    -- are not routed: the server only accepts the call at the portal.
-    local now = os.clock()
-    local learned = PortalRecorder.portals()
-    local lines = { string.format("speed %d studs/s, direct %d s", math.floor(speed), math.floor(direct)) }
-    local reason
-    if #learned == 0 then
-        reason = "no portal learned for sea " .. tostring(Player.sea() or "?")
-    end
-    local bestPortal, bestPortalCost, lockedName
-    for _, portal in ipairs(learned) do
-        local distance = (here - portal.entrance).Magnitude
-        local fromHere = PortalRecorder.canUseFrom(portal, distance)
-        local cost = (fromHere and 0 or distance / speed) + Router.OVERHEAD
-            + (portal.exit - goal).Magnitude / speed
-        if isLocked(portal.name) then
-            lockedName = portal.name
-            lines[#lines + 1] = string.format("%s: locked, %d s left (%s)", portal.name,
-                math.ceil(Router.LOCK_TIME - (now - lockedAt[portal.name])), tostring(attempts[portal.name]))
-        elseif now - (lastUsed[portal.name] or -math.huge) < Router.COOLDOWN then
-            lines[#lines + 1] = portal.name .. ": just used, cooling down"
-        else
-            lines[#lines + 1] = string.format("%s: %d s%s", portal.name, math.floor(cost),
-                fromHere and " (from here)" or "")
-            if not bestPortalCost or cost < bestPortalCost then
-                bestPortal, bestPortalCost = portal, cost
+-- The nearest ready "Celestial Member" NPC (the reference's DetectNpcOni).
+local function celestialMember()
+    local best, bestDistance
+    local folders = { workspace:FindFirstChild("NPCs"), Services.replicated():FindFirstChild("NPCs") }
+    for _, folder in pairs(folders) do
+        for _, npc in ipairs(folder:GetChildren()) do
+            local root = npc:FindFirstChild("HumanoidRootPart")
+            if root and npc:GetAttribute("NPCLoaded") and npc:GetAttribute("NPCReady")
+                and npc:GetAttribute("DisplayName") == Router.CELESTIAL_NPC then
+                local distance = Player.distanceTo(root.Position)
+                if not bestDistance or distance < bestDistance then best, bestDistance = npc, distance end
             end
-            consider({
-                kind = "learned", name = portal.name, portal = portal,
-                dock = not fromHere and portal.entrance or nil, dockRadius = Router.PORTAL_DOCK,
-                cost = cost,
-            })
         end
-    end
-
-    if Settings.get("RespawnShortcut") then
-        for _, spawn in ipairs(spawnPoints()) do
-            consider({
-                kind = "respawn", name = "respawn at " .. spawn.name, spawn = spawn,
-                cost = Router.RESPAWN_COST + (spawn.position - goal).Magnitude / speed,
-            })
-        end
-    end
-
-    best.saving = direct - best.cost
-    if best.kind ~= "direct" and best.kind ~= "submarine" and best.saving < Router.MIN_SAVING
-        and best.saving * speed < Router.MIN_SAVED_STUDS then
-        best = { kind = "direct", cost = direct, goal = goal, saving = 0 }
-    end
-
-    if best.kind == "direct" and not reason then
-        if bestPortal then
-            reason = string.format("best portal %s saves only %d s", bestPortal.name,
-                math.max(0, math.floor(direct - bestPortalCost)))
-        elseif lockedName then
-            reason = lockedName .. " locked (" .. tostring(attempts[lockedName]) .. ")"
-        else
-            reason = "no portal usable from here"
-        end
-    end
-    best.reason = reason
-    if direct >= Router.MIN_SAVING then
-        table.insert(lines, 1, best.kind == "direct" and ("chose: fly (" .. tostring(reason) .. ")")
-            or ("chose: " .. tostring(best.name)))
-        decision = lines
     end
     return best
 end
 
--- The last far trip's plan, for the panel and the log.
-function Router.lastDecision()
-    return decision and table.concat(decision, "\n") or nil
+local function celestialPlan(here, goal)
+    local hereIn, goalIn = Regions.containing(here), Regions.containing(goal)
+    local hereNear, goalNear = Regions.nearest(here), Regions.nearest(goal)
+    local function viaMember(step)
+        local npc = celestialMember()
+        if not npc then return nil end
+        local dock = (npc.HumanoidRootPart.CFrame * CFrame.new(0, 0, 20)).Position
+        return { kind = "celestial", step = step, name = "Celestial Domain transport", dock = dock,
+            dockRadius = Router.CELESTIAL_RADIUS }
+    end
+    if isDomain(goalIn) and not isDomain(hereIn) then return viaMember("temple") end
+    if isInterior(goalNear) then
+        if isDomain(hereIn) then
+            return { kind = "celestial", step = "interior", name = "Celestial Domain interior" }
+        end
+        if not hereIn or (not isDomain(hereIn) and not isInterior(hereNear)) then
+            return viaMember("temple+interior")
+        end
+    end
+    if isInterior(hereNear) and not isInterior(goalNear) then
+        return { kind = "celestial", step = "leave", name = "leaving the Celestial Domain" }
+    end
+    if isDomain(hereIn) and not isDomain(goalIn) then
+        return { kind = "celestial", step = "leave", name = "leaving the Celestial Domain" }
+    end
+    return nil
+end
+
+local function mirrorPlan(here, goal)
+    local mirror = Services.find(workspace, "Map.CakeLoaf.BigMirror.Main")
+    if not mirror then return nil end
+    if within(goal, Router.MIRROR_INSIDE, Router.MIRROR_RADIUS)
+        and not within(here, Router.MIRROR_INSIDE, Router.MIRROR_RADIUS) then
+        return { kind = "mirror", name = "Cake mirror", dock = mirror.Position, part = mirror }
+    end
+    return nil
+end
+
+local function respawnsLeft(goal)
+    if respawns.goal and within(goal, respawns.goal, Router.REPLAN_MOVE) then
+        return respawns.count < Router.MAX_RESPAWNS
+    end
+    return true
+end
+
+-- What to do to reach `goal` from `here`, following the reference's rules.
+function Router.plan(here, goal)
+    local distance = (goal - here).Magnitude
+    local direct = { kind = "direct" }
+    local plan = direct
+    local sea = Player.sea()
+
+    if distance < Router.SNAP then
+        plan = direct
+    elseif not sea then
+        direct.reason = "sea unknown"
+    else
+        local found
+        if sea == 3 then
+            local inTemple = within(here, Router.TEMPLE, Router.TEMPLE_RADIUS)
+            local fromIsland = within(here, Router.ISLAND, Router.ISLAND_RADIUS)
+            local toIsland = within(goal, Router.ISLAND, Router.ISLAND_RADIUS)
+            if inTemple and not within(goal, Router.TEMPLE, Router.TEMPLE_RADIUS) then
+                found = { kind = "temple", name = "Temple of Time exit", dock = Router.TEMPLE }
+            elseif toIsland and not fromIsland then
+                found = { kind = "submarine", name = "Submarine", dock = Router.WORKER, enter = true }
+            elseif fromIsland and not toIsland then
+                found = { kind = "submarine", name = "Submarine", dock = Router.DOCK, enter = false }
+            end
+        end
+
+        if not found and distance >= Router.FAR then
+            if Settings.get("PortalFruit") then
+                local island = Gateway.islandNear(goal, Router.FAR)
+                local key = island and ("Portal fruit to " .. island.name)
+                if island and usable(key) and Gateway.ready(true) then
+                    found = { kind = "gateway", name = key, island = island }
+                end
+            end
+            if not found then
+                local point, why = Router.entranceFor(here, goal)
+                if point then
+                    found = { kind = "entrance", name = point.name, point = point }
+                else
+                    direct.reason = why
+                end
+            end
+        end
+
+        if not found and sea == 3 then
+            found = celestialPlan(here, goal) or mirrorPlan(here, goal)
+            if found and not usable(found.name) then found = nil end
+        end
+
+        if not found and Settings.get("RespawnShortcut") and respawnsLeft(goal)
+            and Regions.shouldRespawn(here, goal) then
+            local spawn = Regions.respawnTarget(here, goal)
+            local name = spawn and ("respawn at " .. spawn.name)
+            if spawn and usable(name) then
+                found = { kind = "respawn", name = name, spawn = spawn }
+            end
+        end
+
+        plan = found or direct
+    end
+
+    plan.goal = goal
+    plan.at = os.clock()
+    return plan
 end
 
 ---------------------------------------------------------------------------
 -- Running a shortcut
 ---------------------------------------------------------------------------
 
-local function waitUntil(steps, test)
+local function waitUntil(steps, test, interval)
     for _ = 1, steps do
-        task.wait(0.25)
+        task.wait(interval or 0.25)
         if test() then return true end
     end
     return false
@@ -253,76 +310,50 @@ local function netInvoke(name, ...)
     local remote = Services.find(Services.replicated(), "Modules.Net")
     remote = remote and remote:FindFirstChild(name)
     if not remote then return nil end
-    local args = { ... }
-    local ok, result = pcall(function() return remote:InvokeServer((table.unpack or unpack)(args)) end)
+    local args = { n = select("#", ...), ... }
+    local ok, result = pcall(function() return remote:InvokeServer((table.unpack or unpack)(args, 1, args.n)) end)
     return ok and result or nil
 end
 
 local actions = {}
 
+-- The reference calls requestEntrance again and again while the goal is
+-- far; here the calls stop at the first move or after ENTRANCE_TRIES.
 function actions.entrance(plan)
     local start = Player.position()
-    local answer = Entrances.use(plan.point)
     local function moved()
         local here = Player.position()
         if not here or not start then return 0 end
         return (here - start).Magnitude
     end
-    -- Only a real move counts: being near the point already proves nothing.
-    local ok = waitUntil(Router.VERIFY_STEPS, function()
-        return moved() > Router.MOVED
-    end)
-    if ok then
+    local answer
+    for try = 1, Router.ENTRANCE_TRIES do
+        answer = Entrances.use(plan.point)
+        if waitUntil(1, function() return moved() > Router.MOVED end, Router.ENTRANCE_EVERY) then
+            recordResult(plan.name, true, string.format("moved %d studs, call %d", math.floor(moved()), try))
+            return
+        end
+    end
+    if waitUntil(Router.LAST_LOOK, function() return moved() > Router.MOVED end) then
         recordResult(plan.name, true, string.format("moved %d studs", math.floor(moved())))
-    else
-        recordResult(plan.name, false, "no move, server answered " .. tostring(answer))
+        return
     end
+    recordResult(plan.name, false, string.format("no move after %d calls, answer %s",
+        Router.ENTRANCE_TRIES, tostring(answer)))
 end
 
--- Replays a learned portal and waits to land near its exit. Returns
--- whether it worked, the distance it was triggered from, the answer.
--- Stands exactly on the entrance, still, long enough for the server to
--- receive that position: it checks the player is in the portal.
-local function standOn(position)
-    for _ = 1, math.max(Router.HOLD_STEPS, 1) do
-        local hrp = Player.hrp()
-        if not hrp then return end
-        pcall(function()
-            hrp.CFrame = CFrame.new(position)
-            hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-        end)
-        if Router.HOLD_STEPS > 0 then task.wait(0.2) end
+function actions.gateway(plan)
+    if not Gateway.open(plan.island.name) then
+        recordResult(plan.name, false, "the Gateway did not open")
+        return
     end
+    local ok = waitUntil(Router.GATEWAY_STEPS, function()
+        return near(plan.island.position, Router.GATEWAY_ARRIVED)
+    end, 0.2)
+    recordResult(plan.name, ok, ok and "arrived" or "no arrival after the Gateway")
 end
 
-local function tryPortal(portal, callOnly)
-    local here = Player.position()
-    if not callOnly and here and (here - portal.entrance).Magnitude <= PortalRecorder.AT_ENTRANCE then
-        standOn(portal.entrance)
-        here = Player.position()
-    end
-    local distance = here and (here - portal.entrance).Magnitude or math.huge
-    local answer = PortalRecorder.trigger(portal, callOnly)
-    local ok = waitUntil(Router.PORTAL_STEPS, function() return near(portal.exit, Router.EXIT_RADIUS) end)
-    PortalRecorder.recordUse(portal, distance, ok)
-    PortalRecorder.recordTry(portal, ok)
-    return ok, distance, answer
-end
-
-function actions.learned(plan)
-    local ok, distance, answer = tryPortal(plan.portal)
-    if ok then
-        recordResult(plan.name, true, string.format("worked from %d studs", math.floor(distance)))
-    elseif distance > PortalRecorder.AT_ENTRANCE then
-        -- Too far for the server: no lock, the next plan flies to the entrance.
-        attempts[plan.name] = string.format("too far from %d studs", math.floor(distance))
-        lastUsed[plan.name] = nil
-    else
-        recordResult(plan.name, false, "no teleport at the entrance, answer " .. tostring(answer))
-    end
-end
-
-function actions.temple(plan)
+function actions.temple()
     Services.invoke("RaceV4Progress", "Check")
     Services.invoke("RaceV4Progress", "TeleportBack")
     waitUntil(Router.VERIFY_STEPS, function() return not near(Router.TEMPLE, Router.TEMPLE_RADIUS) end)
@@ -340,18 +371,58 @@ function actions.submarine(plan)
     end
 end
 
+function actions.celestial(plan)
+    local function transport(what) return netInvoke("RF/CelestialDomainTransportation", what) end
+    if plan.step == "temple" or plan.step == "temple+interior" then
+        transport("InitiateTeleportToTemple")
+        local controller = Services.module("Controllers.MapServices.CelestialDomainController")
+        if type(controller) == "table" and controller.LoadMap then pcall(controller.LoadMap, controller) end
+        task.wait(1)
+        if plan.step == "temple+interior" then transport("InitiateTeleportToInterior") end
+    elseif plan.step == "interior" then
+        transport("InitiateTeleportToInterior")
+        task.wait(1)
+    else
+        transport("Leave")
+        task.wait(1)
+    end
+end
+
+function actions.mirror(plan)
+    local hrp = Player.hrp()
+    if firetouchinterest and hrp then
+        pcall(firetouchinterest, hrp, plan.part, 0)
+        pcall(firetouchinterest, hrp, plan.part, 1)
+    end
+    local ok = waitUntil(12, function() return near(Router.MIRROR_INSIDE, Router.MIRROR_RADIUS) end)
+    recordResult(plan.name, ok, ok and "inside" or "the mirror did not take you in")
+end
+
+-- The reference's TweenBypass: the character's own LastSpawnPoint script is
+-- switched off so it cannot put the old spawn point back, the spawn point
+-- is moved, then the character is reset.
 function actions.respawn(plan)
+    if respawns.goal and within(plan.goal, respawns.goal, Router.REPLAN_MOVE) then
+        respawns.count = respawns.count + 1
+    else
+        respawns.goal, respawns.count = plan.goal, 1
+    end
+    local character = Player.character()
+    local script = character and character:FindFirstChild("LastSpawnPoint")
+    if script then pcall(function() script.Disabled = true end) end
     Services.invoke("SetLastSpawnPoint", plan.spawn.name)
     if Player.data("LastSpawnPoint") ~= plan.spawn.name then
+        if script then pcall(function() script.Disabled = false end) end
         recordResult(plan.name, false, "spawn point refused")
         return
     end
-    local old = Player.character()
     local humanoid = Player.humanoid()
     if humanoid then humanoid.Health = 0 end
-    waitUntil(Router.RESPAWN_STEPS, function()
-        return Player.character() ~= old and Player.alive()
+    local ok = waitUntil(Router.RESPAWN_STEPS, function()
+        return Player.character() ~= character and Player.alive()
     end)
+    if script and script.Parent then pcall(function() script.Disabled = false end) end
+    recordResult(plan.name, ok, ok and "respawned" or "no new character")
 end
 
 local function run(plan)
@@ -368,8 +439,8 @@ end
 
 -- Called by Movement each frame. Returns handled (true: a shortcut is
 -- running, do not move this frame) and an optional Vector3 to fly to
--- instead of the goal (the submarine dock, for instance).
-function Router.update(here, goal, speed)
+-- instead of the goal (a dock, an NPC, the mirror).
+function Router.update(here, goal)
     if busy then return true end
     if not Settings.get("SmartTravel") then
         route, note = nil, nil
@@ -386,22 +457,18 @@ function Router.update(here, goal, speed)
         return false
     end
 
-    if not route or (route.goal - goal).Magnitude > Router.REPLAN_MOVE then
-        route = Router.plan(here, goal, speed)
+    if not route or (route.goal - goal).Magnitude > Router.REPLAN_MOVE
+        or (route.kind == "direct" and os.clock() - route.at >= Router.REPLAN_EVERY) then
+        route = Router.plan(here, goal)
     end
 
     if route.kind == "direct" then
         note = route.reason and ("flying: " .. route.reason) or nil
         return false
     end
+    note = "via " .. route.name
 
-    if route.saving and route.saving > 0 and route.saving < math.huge then
-        note = string.format("via %s (saves %d s)", route.name, math.floor(route.saving))
-    else
-        note = "via " .. route.name
-    end
-
-    if route.dock and (here - route.dock).Magnitude > (route.dockRadius or Router.AT_DOCK) then
+    if route.dock and (here - route.dock).Magnitude > (route.dockRadius or Router.DOCK_RADIUS) then
         return false, route.dock
     end
 
@@ -409,9 +476,8 @@ function Router.update(here, goal, speed)
     return true
 end
 
--- Requests every portal of this sea in turn and records what happened, so
--- the player can see once which ones work. Returns false if a shortcut is
--- already running.
+-- Requests every unlocked point of this sea in turn and records what
+-- happened. Returns false if a shortcut is already running.
 function Router.testAll(onDone)
     if busy then return false end
     busy = true
@@ -427,13 +493,6 @@ function Router.testAll(onDone)
                 if not ok then recordResult(point.name, false, tostring(err)) end
             end
         end
-        -- Learned portals with a game call: does the call work from here?
-        for _, portal in ipairs(PortalRecorder.portals()) do
-            if portal.call and Player.distanceTo(portal.entrance) > Router.TOO_CLOSE then
-                local ok, works = pcall(tryPortal, portal, true)
-                if ok and works then break end   -- moved: the other distances changed
-            end
-        end
         route = nil
         busy = false
         justJumped = true
@@ -445,39 +504,38 @@ end
 function Router.busy() return busy end
 function Router.note() return note end
 
--- Portals of this sea and what is known about them, for the Settings tab.
+-- The portals of this sea and what is known about them, for the Settings tab.
 function Router.describe()
     local lines = {}
-    local known = Entrances.unlocks() ~= nil
+    local unlocks = Entrances.unlocks()
     for _, point in ipairs(Entrances.POINTS[Player.sea() or 0] or {}) do
         local state
-        if isLocked(point.name) then state = "locked"
-        elseif confirmed[point.name] then state = "works"
-        elseif not Entrances.confirmed(point) then state = "unlock not confirmed"
-        else state = "untested" end
+        if not Entrances.confirmed(point) then
+            state = unlocks and ("not unlocked (" .. tostring(point.unlock) .. ")") or "waiting for the unlocks"
+        elseif isLocked(point.name) then
+            state = string.format("paused, %d s left", math.ceil(Router.LOCK_TIME - (os.clock() - lockedAt[point.name])))
+        elseif confirmed[point.name] then
+            state = "works"
+        else
+            state = "untested"
+        end
         if attempts[point.name] then state = state .. " (" .. attempts[point.name] .. ")" end
         lines[#lines + 1] = point.name .. ": " .. state
     end
-    if #lines == 0 then return "No portal known in this sea." end
-    if not known then lines[#lines + 1] = "(unlocks not read yet)" end
+    if #lines == 0 then lines[1] = "No portal known in this sea." end
+    local fruit
+    if not Settings.get("PortalFruit") then
+        fruit = "off"
+    elseif Gateway.owned() then
+        fruit = Gateway.ready(false) and "ready" or "waiting for the C skill"
+    else
+        fruit = "needs the Portal fruit at level 200+"
+    end
+    lines[#lines + 1] = "Portal fruit: " .. fruit
+    lines[#lines + 1] = "Reset teleport: " .. (Settings.get("RespawnShortcut") and "on" or "off")
     lines[#lines + 1] = "Sea: " .. tostring(Player.sea() or "unknown")
     return table.concat(lines, "\n")
 end
-
-PortalRecorder.busyCheck = Router.busy
-
--- A portal taught again starts clean: earlier failures were before the lesson.
-PortalRecorder.onLearned = function(portal)
-    failures[portal.name], lockedAt[portal.name], attempts[portal.name] = nil, nil, nil
-    lastUsed[portal.name] = nil
-end
-PortalRecorder.stateOf = function(portal)
-    if isLocked(portal.name) then
-        return string.format("locked, %d s left", math.ceil(Router.LOCK_TIME - (os.clock() - lockedAt[portal.name])))
-    end
-    return nil
-end
-PortalRecorder.decisionText = function() return Router.lastDecision() end
 
 -- Test hook.
 function Router.reset()
@@ -485,7 +543,7 @@ function Router.reset()
     busy, justJumped = false, false
     confirmed, lastUsed = {}, {}
     failures, lockedAt, attempts = {}, {}, {}
-    decision = nil
+    respawns = { goal = nil, count = 0 }
 end
 
 return Router

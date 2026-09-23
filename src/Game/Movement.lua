@@ -20,6 +20,7 @@ local Player = require("Core.Player")
 local Router = require("Game.Router")
 local Services = require("Core.Services")
 local Settings = require("Core.Settings")
+local TeleportTag = require("Game.TeleportTag")
 
 local Movement = {}
 
@@ -27,6 +28,7 @@ local SNAP = 2.5          -- studs: close enough to land exactly on the goal
 local MAX_STEP = 18       -- studs per frame, whatever the speed
 local MIN_CAP = 120       -- studs/s floor after repeated pull-backs
 local PULL_BACK = 40      -- studs: a jump this large was the server, not us
+local SEAT_REACHED = 10   -- studs: seated on the seat the goal points at
 
 local goal
 local connection
@@ -91,6 +93,22 @@ function Movement.step(dt)
         lastPlaced = nil
     end
 
+    -- Seated (a boat, a cannon): stand up first, as the reference does;
+    -- moving a seated character would drag the seat along. Unless the goal
+    -- is that very seat: the character just got there.
+    local seat = humanoid.SeatPart
+    if humanoid.Sit or seat then
+        if seat and (seat.Position - goal.Position).Magnitude <= SEAT_REACHED then
+            lastPlaced = nil
+            return
+        end
+        humanoid.Sit = false
+        humanoid.Jump = true
+        hrp.CFrame = hrp.CFrame * CFrame.new(0, 10, 0)
+        lastPlaced = nil
+        return
+    end
+
     ensureFloat(hrp)
     noclip(character)
 
@@ -139,6 +157,8 @@ function Movement.step(dt)
         placed = CFrame.new(here + (target - here).Unit * stepLength)
     end
 
+    -- The reference keeps the player tagged "Teleporting" while it moves.
+    TeleportTag.mark()
     hrp.CFrame = placed
     hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
     hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
@@ -162,9 +182,6 @@ end
 function Movement.speed()
     return math.min(Settings.get("TweenSpeed"), cap)
 end
-
--- The portal recorder must not learn the hub's own flights.
-require("Game.PortalRecorder").movingCheck = Movement.moving
 
 -- Test hook.
 function Movement.reset()

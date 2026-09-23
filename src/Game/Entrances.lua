@@ -2,15 +2,16 @@
 -- ENTRANCES — the game's own teleport points
 --=============================================================================
 --  CommF_:InvokeServer("requestEntrance", position) moves the player
---  straight to one of these points, from anywhere in the sea. Which points
---  exist depends on the sea and on what the player has unlocked
---  (CommF_ GetUnlockables): Doflamingo's rooms need FlamingoAccess, the Rip
---  Indra portals need DefeatedIndraTrueForm. Points and rules come from the
---  reference script.
+--  straight to one of these points, from anywhere in the sea: that is how
+--  the reference (Banana Cat Hub) travels. Which points exist depends on the
+--  sea and on what the player has unlocked (CommF_ GetUnlockables):
+--  Doflamingo's rooms need FlamingoAccess, the Rip Indra portals need
+--  DefeatedIndraTrueForm. Points and rules are the reference's.
 --=============================================================================
 
 local Player = require("Core.Player")
 local Services = require("Core.Services")
+local TeleportTag = require("Game.TeleportTag")
 
 local Entrances = {}
 
@@ -43,9 +44,8 @@ Entrances.POINTS = {
     },
 }
 
-Entrances.TAG_TIME = 1.5
 Entrances.UNLOCK_RETRY = 5
-Entrances.UNLOCK_TRIES = 10
+Entrances.UNLOCK_TRIES = 30
 
 local unlocks   -- GetUnlockables result, nil until known
 
@@ -74,16 +74,25 @@ function Entrances.confirmed(point)
     return unlocks ~= nil and unlocks[point.unlock] == true
 end
 
--- Every point of the current sea. The unlock flag is only a hint: its name
--- may differ on a given server, and a player who owns the portal must not
--- lose it to a missing flag. A point the game refuses is soft-locked by the
--- Router after two misses.
+-- The points of the current sea the player has unlocked, as the reference
+-- builds its list: a point with a requirement only once GetUnlockables has
+-- answered and confirms it.
 function Entrances.available()
-    return Entrances.POINTS[Player.sea() or 0] or {}
+    local list = {}
+    for _, point in ipairs(Entrances.POINTS[Player.sea() or 0] or {}) do
+        if Entrances.confirmed(point) then list[#list + 1] = point end
+    end
+    return list
 end
 
 -- The Temple of Time map lives in ReplicatedStorage.MapStash until the
--- client loads it; the entrance only works once it is in workspace.Map.
+-- client loads it; the entrance only works once it is in workspace.Map. As
+-- in the reference, it goes back to the stash unless the player reaches it
+-- within BORROW_STEPS x 0.25 s.
+Entrances.TEMPLE = Vector3.new(28282.5703125, 14896.8505859375, 105.1042709350586)
+Entrances.BORROW_STEPS = 120
+Entrances.AT_TEMPLE = 1000
+
 local function borrowTemple()
     local stash = Services.replicated():FindFirstChild("MapStash")
     local temple = stash and stash:FindFirstChild("Temple of Time")
@@ -91,25 +100,24 @@ local function borrowTemple()
     if not temple or not map then return end
     temple:SetAttribute("ClientBorrowed", true)
     temple.Parent = map
-    task.delay(30, function()
+    task.spawn(function()
+        for _ = 1, Entrances.BORROW_STEPS do
+            task.wait(0.25)
+            if temple.Parent ~= map or Player.distanceTo(Entrances.TEMPLE) < Entrances.AT_TEMPLE then break end
+        end
         pcall(function()
             temple:SetAttribute("ClientBorrowed", nil)
-            if temple.Parent == map and Player.distanceTo(temple:GetPivot().Position) > 3000 then
+            if temple.Parent == map and Player.distanceTo(Entrances.TEMPLE) >= Entrances.AT_TEMPLE then
                 temple.Parent = stash
             end
         end)
     end)
 end
 
--- Sends the teleport request. The "Teleporting" tag is what the game's own
--- teleports carry; without it the jump looks like a speed hack.
+-- Sends the teleport request, the reference's way: the player tagged
+-- "Teleporting", the Temple of Time map borrowed first for its point.
 function Entrances.use(point)
-    local player = Services.player()
-    local tags = Services.get("CollectionService")
-    pcall(function() tags:AddTag(player, "Teleporting") end)
-    task.delay(Entrances.TAG_TIME, function()
-        pcall(function() tags:RemoveTag(player, "Teleporting") end)
-    end)
+    TeleportTag.mark()
     if point.temple then pcall(borrowTemple) end
     return Services.invoke("requestEntrance", point.position)
 end

@@ -436,7 +436,29 @@ function players:GetPlayers()
 end
 players.MaxPlayers = 12
 
+-- CollectionService: tags kept per instance (tests may replace GetTagged).
+local collection = newInstance("CollectionService", "CollectionService")
+local tagsOf = setmetatable({}, { __mode = "k" })
+collection.AddTag = function(_, instance, tag)
+    tagsOf[instance] = tagsOf[instance] or {}
+    tagsOf[instance][tag] = true
+end
+collection.RemoveTag = function(_, instance, tag)
+    if tagsOf[instance] then tagsOf[instance][tag] = nil end
+end
+collection.HasTag = function(_, instance, tag)
+    return tagsOf[instance] ~= nil and tagsOf[instance][tag] == true
+end
+collection.GetTagged = function(_, tag)
+    local list = {}
+    for instance, tags in pairs(tagsOf) do
+        if tags[tag] then list[#list + 1] = instance end
+    end
+    return list
+end
+
 local services = {
+    CollectionService = collection,
     Players = players,
     Workspace = workspace,
     ReplicatedStorage = newInstance("ReplicatedStorage", "ReplicatedStorage"),

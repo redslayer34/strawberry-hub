@@ -42,7 +42,7 @@ eq("autoload applied", FAKE.record.autoloadCalls, 1)
 check("farm loop running", Loop.isRunning("Farm"))
 check("attack loop running", Loop.isRunning("Attack"))
 check("status loop running", Loop.isRunning("StatusPanel"))
-eq("movement, boat and portal recorder on Heartbeat", heartbeat:Count(), 3)
+eq("movement and boat on Heartbeat", heartbeat:Count(), 2)
 eq("anti-AFK connected", player.Idled:Count(), 1)
 
 -- A few frames with the farm switched on must not throw.
