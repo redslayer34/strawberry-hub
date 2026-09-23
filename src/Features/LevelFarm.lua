@@ -63,7 +63,10 @@ local function takeQuest()
     if now - arrivedAt >= LevelFarm.QUEST_SETTLE
         and (not lastStart or now - lastStart >= LevelFarm.QUEST_RETRY) then
         lastStart = now
-        Quests.start(plan)
+        local result = Quests.start(plan)
+        if result == nil or result == false then
+            LevelFarm.status = LevelFarm.status .. " (server answered " .. tostring(result) .. ")"
+        end
     end
 end
 

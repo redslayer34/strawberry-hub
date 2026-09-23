@@ -34,17 +34,27 @@ local function toVector(position)
     return position
 end
 
-local function questPanel()
+-- Every "Quest" frame directly under a ScreenGui of PlayerGui. The panel is
+-- usually PlayerGui.Main.Quest, but some clients show it under
+-- "Main (minimal)" or a second "Main": checking one path only made a taken
+-- quest invisible to the farm.
+local function questPanels()
+    local panels = {}
     local player = Services.player()
     local gui = player and player:FindFirstChild("PlayerGui")
-    local main = gui and gui:FindFirstChild("Main")
-    return main and main:FindFirstChild("Quest")
+    if not gui then return panels end
+    for _, screen in ipairs(gui:GetChildren()) do
+        local panel = screen:FindFirstChild("Quest")
+        if panel then panels[#panels + 1] = panel end
+    end
+    return panels
 end
 
--- True while the game shows the quest panel.
-function Quests.active()
-    local panel = questPanel()
-    return panel ~= nil and panel.Visible == true
+function Quests.panelVisible()
+    for _, panel in ipairs(questPanels()) do
+        if panel.Visible == true then return true end
+    end
+    return false
 end
 
 -- The mob and count the active quest asks for: { mob = "Zombie", count = 8 },
@@ -61,15 +71,23 @@ end
 -- Progress shown on the quest panel ("3/8"), as two numbers. Display only:
 -- the farm never decides anything from it.
 function Quests.progress()
-    local panel = questPanel()
-    if not panel or not panel.Visible then return nil end
-    for _, node in ipairs(panel:GetDescendants()) do
-        if node:IsA("TextLabel") then
-            local current, required = tostring(node.Text):match("(%d+)%s*/%s*(%d+)")
-            if current then return tonumber(current), tonumber(required) end
+    for _, panel in ipairs(questPanels()) do
+        if panel.Visible then
+            for _, node in ipairs(panel:GetDescendants()) do
+                if node:IsA("TextLabel") then
+                    local current, required = tostring(node.Text):match("(%d+)%s*/%s*(%d+)")
+                    if current then return tonumber(current), tonumber(required) end
+                end
+            end
         end
     end
     return nil
+end
+
+-- True while a quest is held: a quest panel is showing, or the game's own
+-- GuideModule holds quest data (the signal the reference relies on).
+function Quests.active()
+    return Quests.panelVisible() or Quests.target() ~= nil
 end
 
 -- The best quest for `level`, among the quest givers of the current sea (the

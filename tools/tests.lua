@@ -334,8 +334,17 @@ do
     check("no active quest", not Quests.active())
     eq("no quest data", Quests.target(), nil)
 
-    world.questPanel.Visible = true
+    -- Some clients show the panel under "Main (minimal)" instead of "Main".
+    local minimal = newInstance("ScreenGui", "Main (minimal)", world.player.PlayerGui)
+    local otherPanel = newInstance("Frame", "Quest", minimal)
+    otherPanel.Visible = true
+    check("panel under Main (minimal) counts", Quests.active())
+    otherPanel.Visible = false
+    check("hidden panels and no data: no quest", not Quests.active())
+
     world.guide.Data.QuestData = { Task = { Zombie = 8 } }
+    check("GuideModule quest data alone counts", Quests.active())
+    world.questPanel.Visible = true
     check("quest panel visible", Quests.active())
     local target = Quests.target()
     eq("active quest mob", target and target.mob, "Zombie")
@@ -581,6 +590,23 @@ do
     world.humanoid.Health = 0
     LevelFarm.tick()
     eq("waits while dead", LevelFarm.status, "Waiting for respawn")
+end
+
+-- The in-game bug: quest taken, panel not where we looked, only the
+-- GuideModule knows. The farm must go fight, not re-take the quest.
+setup()
+do
+    LevelFarm.stop()
+    world.commF.OnInvoke = function() return true end
+    world.questPanel.Visible = false
+    world.guide.Data.QuestData = { Task = { Vampire = 8 } }
+    world.hrp.Position = Vector3.new(1000, 14, 1002)
+    local vampire = mob("Vampire", Vector3.new(1050, 5, 1000))
+    LevelFarm.QUEST_SETTLE = 0
+    LevelFarm.tick()
+    eq("no StartQuest while a quest is held", world.commF.Invoked, nil)
+    eq("goes to fight the quest mob", LevelFarm.target, vampire)
+    near("holds above the vampire", Movement.goal().Position, Vector3.new(1057, 25, 1000))
 end
 
 setup()
