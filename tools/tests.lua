@@ -58,6 +58,8 @@ local MODULES = {
     "Features.ChestHunt", "Features.Other.Mode", "Features.Other.Simple", "Features.Other.Observation",
     "Features.Other.Dragon", "Features.Other.Fishing", "Features.Esp", "Features.Pvp", "Features.Screen",
     "Features.Webhook", "Features.Fruits", "Features.Raids", "Features.Dungeon",
+    "Features.Items", "Features.Items.Swords", "Features.Items.Cdk", "Features.Items.Guitar",
+    "Features.Items.Saber", "Features.Items.Mastery",
 }
 for _, name in ipairs(MODULES) do
     local ok, err = pcall(require, name)
@@ -2383,6 +2385,167 @@ do
     eq("priority card picked", chosen and chosen.name, "Armor")
     eq("its button pressed", picked, armorButton.Activated)
     getconnections = nil
+end
+
+---------------------------------------------------------------------------
+-- Items
+---------------------------------------------------------------------------
+
+local Items = require("Features.Items")
+local Swords = require("Features.Items.Swords")
+local Cdk = require("Features.Items.Cdk")
+local Guitar = require("Features.Items.Guitar")
+local ItemMastery = require("Features.Items.Mastery")
+
+local function itemsSetup(place, level, inventory, answers)
+    batchBSetup(place, level)
+    Items.reset()
+    Swords.reset()
+    Cdk.reset()
+    Guitar.reset()
+    ItemMastery.reset()
+    world.commF.OnInvoke = function(action, ...)
+        if action == "getInventory" then return inventory or {} end
+        local answer = answers and answers[action]
+        if type(answer) == "function" then return answer(...) end
+        return answer
+    end
+end
+
+-- Rainbow Haki: ask the Horned Man, then kill the quest's boss.
+itemsSetup(7449423635, 2000, {}, { HornedMan = 0 })
+do
+    Settings.set("ItemRainbowHaki", true)
+    local npc = newInstance("Model", "Horned Man", folder("NPCs", workspace))
+    part("HumanoidRootPart", Vector3.new(2, 0, 0), npc)
+    check("rainbow on", Swords.rainbow.enabled())
+    Swords.rainbow.tick()
+    local bets = 0
+    for _, call in ipairs(world.commF.Invoked) do if call[1] == "HornedMan" and call[2] == "Bet" then bets = bets + 1 end end
+    eq("quest asked", bets, 1)
+    questTitle("Defeat Stone")
+    local stone = mob("Stone", Vector3.new(60, 0, 0))
+    Swords.rainbow.tick()
+    eq("quest boss fought", Swords.rainbow.target, stone)
+end
+
+-- Yama: elites under 30, then the sealed katana.
+do
+    local progress = 10
+    itemsSetup(7449423635, 2000, {}, { EliteHunter = function(what) if what == "Progress" then return progress end end })
+    Settings.set("ItemYama", true)
+    mob("Diablo", Vector3.new(50, 0, 0))
+    Swords.yama.tick()
+    check("under 30: elite quest asked", #calls(world.commF, "EliteHunter") >= 2)
+    progress = 30
+    StackCommon.forget()
+    local katana = newInstance("Model", "SealedKatana", folder("Waterfall", folder("Map", workspace)))
+    katana.WorldPivot = CFrame.new(10, 0, 0)
+    local hitbox = part("Hitbox", Vector3.new(10, 0, 0), katana)
+    newInstance("ClickDetector", "ClickDetector", hitbox)
+    local clicked
+    fireclickdetector = function(detector) clicked = detector end
+    Swords.yama.tick()
+    eq("katana clicked", clicked, hitbox.ClickDetector)
+    fireclickdetector = nil
+end
+
+-- Tushita: waits without rip_indra, lights the torches with the Holy Torch.
+itemsSetup(7449423635, 2000, {}, { TushitaProgress = function(what) if what == nil then return { OpenedDoor = false } end end })
+do
+    Settings.set("ItemTushita", true)
+    local island = folder("IslandModel", folder("Waterfall", folder("Map", workspace)))
+    part("Hitbox", Vector3.new(30, 0, 0), island)
+    check("no rip_indra: tushita waits", not Swords.tushita.enabled())
+    tool("Holy Torch")
+    check("holy torch: tushita on", Swords.tushita.enabled())
+    Swords.tushita.tick()
+    local torches = 0
+    for _, call in ipairs(world.commF.Invoked) do if call[1] == "TushitaProgress" and call[2] == "Torch" then torches = torches + 1 end end
+    eq("five torches lit", torches, 5)
+end
+
+-- CDK: the right pedestal, the right trial.
+do
+    local progress = { Good = 4, Evil = 3 }
+    itemsSetup(7449423635, 2200,
+        { { Name = "Tushita", Type = "Sword", Mastery = 400 }, { Name = "Yama", Type = "Sword", Mastery = 400 } },
+        { CDKQuest = function(what) if what == "Progress" then return progress end end })
+    Settings.set("ItemCDK", true)
+    tool("Tushita")
+    check("cdk requirements met", Cdk.requirements() == nil, Cdk.requirements())
+    local cursed = folder("Cursed", folder("Turtle", folder("Map", workspace)))
+    local pedestal = part("Pedestal2", Vector3.new(3, 0, 0), cursed)
+    local prompt = newInstance("ProximityPrompt", "ProximityPrompt", pedestal)
+    local fired
+    fireproximityprompt = function(target) fired = target end
+    Cdk.mode.tick()
+    eq("good 4 / evil 3: pedestal 2", fired, prompt)
+    fireproximityprompt = nil
+    progress = { Good = 1, Evil = 0 }
+    StackCommon.forget()
+    Cdk.mode.tick()
+    local started
+    for _, call in ipairs(world.commF.Invoked) do if call[1] == "CDKQuest" and call[2] == "StartTrial" then started = call[3] end end
+    eq("good trial started", started, "Good")
+end
+
+-- Soul Guitar: the missing material, in its sea.
+itemsSetup(7449423635, 2200, { { Name = "Dark Fragment", Type = "Material", Count = 1 },
+    { Name = "Ectoplasm", Type = "Material", Count = 10 } })
+do
+    Settings.set("ItemSoulGuitar", true)
+    newInstance("IntValue", "Fragments", world.player.Data).Value = 6000
+    eq("ectoplasm missing", Guitar.missing(), "Ectoplasm")
+    Guitar.mode.tick()
+    eq("travels to Sea 2 for it", #calls(world.commF, "TravelDressrosa"), 1)
+end
+
+-- TTK: the sword under 300 mastery is taken out.
+itemsSetup(7449423635, 2200, { { Name = "Oroshi", Type = "Sword", Mastery = 350 },
+    { Name = "Saishi", Type = "Sword", Mastery = 100 }, { Name = "Shizu", Type = "Sword", Mastery = 0 } })
+do
+    Settings.set("ItemTTK", true)
+    eq("next TTK sword", Swords.ttkNext(), "Saishi")
+    Swords.ttk.tick()
+    local loaded = calls(world.commF, "LoadItem")
+    eq("sword taken out", loaded[1] and loaded[1][2], "Saishi")
+end
+
+-- Melee mastery: buys the missing melee, moves on at 600.
+itemsSetup()
+do
+    Settings.set("ItemMeleeMastery", true)
+    ItemMastery.melee.tick()
+    eq("missing melee bought", #calls(world.commF, "BuySuperhuman"), 1)
+    local superhuman = tool("Superhuman")
+    newInstance("IntValue", "Level", superhuman).Value = 600
+    eq("600 reached: next melee", ItemMastery.nextMelee(), "Death Step")
+end
+
+-- Shark Anchor: the first craft possible.
+itemsSetup(nil, nil, { { Name = "Mutant Tooth", Type = "Material", Count = 1 }, { Name = "Shark Tooth", Type = "Material", Count = 5 } })
+do
+    eq("tooth necklace first", Items.nextSharkCraft(), "ToothNecklace")
+    Settings.set("ItemTradeBones", true)
+    Items.step()
+    eq("bones traded", #calls(world.commF, "Bones"), 1)
+end
+
+-- Upgrade: the Blacksmith's list, then the missing material farmed.
+itemsSetup(7449423635, 2200, { { Name = "Katana", Type = "Sword", Rarity = 1, Upgrades = 0 } }, {
+    UpgradeItem = function() return { Required = { { Name = "Scrap Metal", Required = 5 } }, Result = {} } end,
+})
+do
+    Settings.set("ItemUpgradeSword", true)
+    local katana = tool("Katana")
+    katana.ToolTip = "Sword"
+    local smith = newInstance("Model", "Blacksmith", folder("NPCs", workspace))
+    part("Head", Vector3.new(0, 2, -2), smith)
+    ItemMastery.upgradeSword.tick()
+    ItemMastery.upgradeSword.tick()
+    check("farms the missing material", ItemMastery.upgradeSword.status:find("Scrap Metal 0/5", 1, true) ~= nil,
+        ItemMastery.upgradeSword.status)
 end
 
 ---------------------------------------------------------------------------

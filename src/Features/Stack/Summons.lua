@@ -94,14 +94,16 @@ function Summons.want()
     return not padsDoneAt or os.clock() - padsDoneAt >= Summons.RECHECK
 end
 
-function Summons.tick(mode)
+-- One step: light the pads (when `usePads`), then bring God's Chalice to
+-- the summoner (when `useSummon`).
+function Summons.run(mode, usePads, useSummon)
     mode.target = nil
     if not loaded() then
         Common.goTo(Summons.CASTLE)
         return "Going to the Boat Castle summoner"
     end
 
-    local pending = Settings.get("StackHakiPads") and Summons.pendingPad()
+    local pending = usePads and Summons.pendingPad()
     if pending then
         local colour = Summons.colourFor(pending)
         if pending ~= pad then
@@ -118,7 +120,7 @@ function Summons.tick(mode)
     end
     padsDoneAt = os.clock()
 
-    if Settings.get("StackSummonRipIndra") and Common.has("God's Chalice") then
+    if useSummon and Common.has("God's Chalice") then
         local detection = summoner():FindFirstChild("Detection")
         if not detection then return "Summoner not loaded" end
         local chalice = Common.equip("God's Chalice")
@@ -127,6 +129,10 @@ function Summons.tick(mode)
         return "Summoning rip_indra"
     end
     return "Pads lit"
+end
+
+function Summons.tick(mode)
+    return Summons.run(mode, Settings.get("StackHakiPads") == true, Settings.get("StackSummonRipIndra") == true)
 end
 
 function Summons.reset()

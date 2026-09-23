@@ -17,13 +17,18 @@ local Settings = require("Core.Settings")
 
 local Farm = {}
 
+local Cdk = require("Features.Items.Cdk")
 local Dragon = require("Features.Other.Dragon")
 local Dungeon = require("Features.Dungeon")
 local Fishing = require("Features.Other.Fishing")
+local Guitar = require("Features.Items.Guitar")
+local ItemMastery = require("Features.Items.Mastery")
 local Observation = require("Features.Other.Observation")
 local Pvp = require("Features.Pvp")
 local Raids = require("Features.Raids")
+local Saber = require("Features.Items.Saber")
 local Simple = require("Features.Other.Simple")
+local Swords = require("Features.Items.Swords")
 
 -- Priority order: the first enabled mode is the one that runs. Stack events
 -- first, then the Farming Other modes, then the main farms.
@@ -34,6 +39,18 @@ Farm.MODES = {
     Dungeon.join,
     Raids.multi,
     Raids.solo,
+    Cdk.mode,
+    Swords.tushita,
+    Swords.yama,
+    Swords.yoru,
+    Swords.rainbow,
+    Guitar.mode,
+    Saber.mode,
+    Swords.ttk,
+    ItemMastery.upgradeSword,
+    ItemMastery.upgradeGun,
+    ItemMastery.melee,
+    ItemMastery.sword,
     Simple.law,
     Observation.v2,
     Observation.farm,

@@ -36,9 +36,9 @@ function LevelFarm.enabled()
     return Settings.get("AutoFarmLevel") == true
 end
 
-local function takeQuest()
+local function takeQuest(weapon)
     LevelFarm.target = nil
-    Player.equip(Settings.get("Weapon"))
+    Player.equip(weapon or Settings.get("Weapon"))
     local plan = Quests.best(Player.level())
     if not plan or not plan.position then
         LevelFarm.status = "No quest found for level " .. Player.level()
@@ -84,7 +84,8 @@ local function hunt(name)
     end
 end
 
-function LevelFarm.tick()
+-- `weapon` (optional) replaces the Weapon setting (mastery farms).
+function LevelFarm.tick(weapon)
     if not Player.alive() then
         LevelFarm.target = nil
         LevelFarm.status = "Waiting for respawn"
@@ -92,7 +93,7 @@ function LevelFarm.tick()
     end
 
     if not Quests.active() then
-        return takeQuest()
+        return takeQuest(weapon)
     end
     arrivedAt = nil
 
@@ -105,8 +106,8 @@ function LevelFarm.tick()
 
     local mob = Enemies.nearest(quest.mob)
     if mob then
-        local hasWeapon = Fight.engage(LevelFarm, mob)
-        LevelFarm.status = Fight.status(mob, hasWeapon, quest.count and (" x" .. quest.count) or "")
+        local hasWeapon = Fight.engage(LevelFarm, mob, weapon)
+        LevelFarm.status = Fight.status(mob, hasWeapon, quest.count and (" x" .. quest.count) or "", weapon)
         return
     end
     return hunt(quest.mob)

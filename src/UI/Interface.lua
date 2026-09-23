@@ -24,6 +24,7 @@ Interface.TABS = {
     { name = "Stack", build = require("UI.Tabs.Stack") },
     { name = "Farm Other", build = require("UI.Tabs.Other") },
     { name = "Fruit & Raid", build = require("UI.Tabs.Raid") },
+    { name = "Items", build = require("UI.Tabs.Items") },
     { name = "Teleport", build = require("UI.Tabs.Teleport") },
     { name = "Shop", build = require("UI.Tabs.Shop") },
     { name = "Player", build = require("UI.Tabs.Player") },

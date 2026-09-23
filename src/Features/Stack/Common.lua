@@ -101,7 +101,15 @@ function Common.inventory()
                     local kind = info.Display.Category
                     local storage = info.Index and info.Index.StorageKey
                     local name = kind == "Blox Fruit" and (storage or info.Display.Name) or (info.Display.Name or storage)
-                    items[#items + 1] = { name = name, type = kind, count = item.Value }
+                    local okMastery, mastery = pcall(function()
+                        return service:ReadItem(keys.MASTERY, item.ItemId, item.NetworkedUID)
+                    end)
+                    items[#items + 1] = {
+                        name = name, type = kind, count = item.Value,
+                        mastery = okMastery and tonumber(mastery) or 0,
+                        rarity = tonumber(info.Rarity or (info.Display and info.Display.Rarity)) or 0,
+                        upgrades = tonumber(info.Upgrades) or 0,
+                    }
                 end
             end
         end
@@ -113,11 +121,42 @@ function Common.inventory()
     if type(list) == "table" then
         for _, item in ipairs(list) do
             if type(item) == "table" and item.Name then
-                items[#items + 1] = { name = item.Name, type = item.Type, count = item.Count or 1 }
+                items[#items + 1] = {
+                    name = item.Name, type = item.Type, count = item.Count or 1,
+                    mastery = tonumber(item.Mastery) or 0, rarity = tonumber(item.Rarity) or 0,
+                    upgrades = tonumber(item.Upgrades) or 0,
+                }
             end
         end
     end
     return items
+end
+
+-- The inventory entry called `name`, or nil.
+function Common.item(name)
+    for _, item in ipairs(Common.inventory()) do
+        if item.name == name then return item end
+    end
+    return nil
+end
+
+-- Mastery of an owned weapon: the tool's Level when held, else the
+-- inventory's record.
+function Common.masteryOf(name)
+    local tool = Common.tool(name)
+    local level = tool and tool:FindFirstChild("Level")
+    if level then return tonumber(level.Value) or 0 end
+    local item = Common.item(name)
+    return item and item.mastery or 0
+end
+
+-- Travels to `sea` (paced). Returns true when already there.
+function Common.travel(sea)
+    if Player.sea() == sea then return true end
+    Movement.stop()
+    local action = require("Game.Data").TRAVEL[sea]
+    if action and Common.every("Travel" .. sea, 10) then Services.invoke(action) end
+    return false
 end
 
 function Common.itemCount(name)
