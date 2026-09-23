@@ -4,14 +4,15 @@
 Each suite is assembled into its own Lua chunk and run in its own process, so
 a global left behind by one suite cannot mask a bug in another:
 
-    tools/stubs.lua     minimal Roblox environment (both suites)
-    tools/uistubs.lua   UI types and services (UI suite only)
-    the bundle          every module, minus its ``return require(...)`` line
-    the suite file      the assertions
+    tools/stubs.lua       minimal Roblox environment (every suite)
+    tools/fakefluent.lua  stand-in for the Fluent library (ui, smoke)
+    the bundle            every module, minus its ``return require(...)`` line
+    the suite file        the assertions
 
-Dropping the entry line is what keeps the runtime monolith out of the run:
-modules are registered but only those a suite requires actually execute, so
-``Runtime.Legacy`` (which needs a real game) is never touched.
+Dropping the entry line is what keeps the entry point out of the core and ui
+runs: modules are registered but only those a suite requires execute. The
+smoke suite is the exception: it runs ``main`` for real, against the stubs
+and a fake Fluent served through a fake ``game:HttpGet``.
 
     python3 tools/test.py            # every suite
     python3 tools/test.py ui         # one suite
@@ -30,7 +31,14 @@ ENTRY_LINE = f'return require("{pack.ENTRY}")'
 
 SUITES = {
     "core": {"file": "tests.lua", "stubs": ["stubs.lua"]},
-    "ui": {"file": "uitests.lua", "stubs": ["stubs.lua", "uistubs.lua"]},
+    "ui": {"file": "uitests.lua", "stubs": ["stubs.lua", "fakefluent.lua"]},
+    "smoke": {
+        "file": "smoketests.lua",
+        "stubs": ["stubs.lua", "fakefluent.lua", "smokeprelude.lua"],
+        # The chunk must go on after main returns, so the entry's `return`
+        # becomes an assignment.
+        "entry": 'SMOKE_HUB = require("main")',
+    },
 }
 
 
@@ -46,7 +54,7 @@ def lua_binary() -> str:
 
 def run(name: str, spec: dict, bundle: str, binary: str) -> int:
     parts = [(TOOLS / stub).read_text(encoding="utf-8") for stub in spec["stubs"]]
-    parts.append(bundle)
+    parts.append(bundle.replace(ENTRY_LINE, spec.get("entry", "-- entry skipped for tests")))
     parts.append((TOOLS / spec["file"]).read_text(encoding="utf-8"))
 
     out = ROOT / "build" / f"test-{name}.lua"
@@ -66,7 +74,6 @@ def main() -> int:
     bundle = pack.bundle(pack.collect())
     if ENTRY_LINE not in bundle:
         raise SystemExit("bundle layout changed: entry line not found")
-    bundle = bundle.replace(ENTRY_LINE, "-- entry skipped for tests")
 
     binary = lua_binary()
     failed = 0
@@ -75,7 +82,7 @@ def main() -> int:
             failed += 1
 
     if failed:
-        print(f"\n{failed} suite(s) en echec")
+        print(f"\n{failed} suite(s) failed")
     return 1 if failed else 0
 
 
