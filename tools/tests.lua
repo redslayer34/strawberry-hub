@@ -1551,6 +1551,47 @@ do
     eq("far portal used from here", plan.dock, nil)
 end
 
+-- The user's trip: Port Town -> Mansion through the Castle portal, with
+-- the portal data recorded in game.
+setup()
+do
+    game.PlaceId = 7449423635
+    PortalRecorder.reset()
+    Settings.set("LearnPortals", true)
+    local mansionArrival = Vector3.new(-12463.6025, 378.3271, -7566.0830)
+    PortalRecorder.observe(world.commF, "InvokeServer", { n = 2, "requestEntrance", mansionArrival }, true)
+    local door = Vector3.new(-5063.4614, 316.5110, -3200.6587)
+    local portal = PortalRecorder.learn(door, Vector3.new(-12463.6025, 378.2045, -7566.0830), os.clock())
+    Settings.set("LearnPortals", false)
+    local portTown = Vector3.new(-287, 30, 5388)
+    local mansion = Vector3.new(-12548, 337, -7481)
+
+    local plan = Router.plan(portTown, mansion, 300)
+    eq("Port Town -> Mansion: Castle portal", plan.kind, "learned")
+    check("decision names the portal", (Router.lastDecision() or ""):find("chose: " .. portal.name, 1, true) == 1,
+        Router.lastDecision())
+    eq("fast flight still takes the portal", Router.plan(portTown, mansion, 2000).kind, "learned")
+
+    -- Locked by failures, unlocked by teaching it again.
+    Router.COOLDOWN = 0
+    Router.PORTAL_STEPS = 1
+    world.commF.OnInvoke = function() return nil end
+    for _ = 1, 2 do
+        world.hrp.Position = door
+        Router.update(door, mansion, 300)
+        for _ = 1, 10 do stepTasks() end
+        Router.update(door, mansion, 300)
+    end
+    eq("locked after two misses", Router.plan(portTown, mansion, 300).kind, "direct")
+    check("decision says locked", (Router.lastDecision() or ""):find("locked", 1, true) ~= nil, Router.lastDecision())
+    check("panel says locked", PortalRecorder.describe():find("locked", 1, true) ~= nil, PortalRecorder.describe())
+    PortalRecorder.learn(door, Vector3.new(-12463.6025, 378.2045, -7566.0830), os.clock())
+    eq("taught again: unlocked", Router.plan(portTown, mansion, 300).kind, "learned")
+    check("last route in the panel", PortalRecorder.describe():find("Last route: chose", 1, true) ~= nil)
+    Router.COOLDOWN = 4
+    Router.PORTAL_STEPS = 12
+end
+
 -- A big portal part (centre 40 studs away) is recorded, saved and touched.
 setup()
 do

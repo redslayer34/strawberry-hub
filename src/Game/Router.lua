@@ -32,7 +32,8 @@ local Router = {}
 
 Router.SNAP = 150            -- studs: closer goals are simply set
 Router.OVERHEAD = 1.5        -- seconds a teleport request costs
-Router.MIN_SAVING = 5        -- seconds a shortcut must save
+Router.MIN_SAVING = 5        -- seconds a shortcut must save...
+Router.MIN_SAVED_STUDS = 2000 -- ...or studs of flight (fast flights still get pulled back)
 Router.REPLAN_MOVE = 300     -- studs the goal may move before re-planning
 Router.COOLDOWN = 4          -- seconds before the same portal is used again
 Router.VERIFY_STEPS = 24     -- x 0.25 s to see a jump happen (6 s: the area streams in)
@@ -67,6 +68,7 @@ local route, note
 local busy, justJumped = false, false
 local confirmed, lastUsed = {}, {}
 local failures, lockedAt, attempts = {}, {}, {}
+local decision   -- lines explaining the last far plan
 
 local function isLocked(name)
     local since = lockedAt[name]
@@ -160,6 +162,7 @@ function Router.plan(here, goal, speed)
     -- are not routed: the server only accepts the call at the portal.
     local now = os.clock()
     local learned = PortalRecorder.portals()
+    local lines = { string.format("speed %d studs/s, direct %d s", math.floor(speed), math.floor(direct)) }
     local reason
     if #learned == 0 then
         reason = "no portal learned for sea " .. tostring(Player.sea() or "?")
@@ -172,7 +175,13 @@ function Router.plan(here, goal, speed)
             + (portal.exit - goal).Magnitude / speed
         if isLocked(portal.name) then
             lockedName = portal.name
-        elseif now - (lastUsed[portal.name] or -math.huge) >= Router.COOLDOWN then
+            lines[#lines + 1] = string.format("%s: locked, %d s left (%s)", portal.name,
+                math.ceil(Router.LOCK_TIME - (now - lockedAt[portal.name])), tostring(attempts[portal.name]))
+        elseif now - (lastUsed[portal.name] or -math.huge) < Router.COOLDOWN then
+            lines[#lines + 1] = portal.name .. ": just used, cooling down"
+        else
+            lines[#lines + 1] = string.format("%s: %d s%s", portal.name, math.floor(cost),
+                fromHere and " (from here)" or "")
             if not bestPortalCost or cost < bestPortalCost then
                 bestPortal, bestPortalCost = portal, cost
             end
@@ -194,7 +203,8 @@ function Router.plan(here, goal, speed)
     end
 
     best.saving = direct - best.cost
-    if best.kind ~= "direct" and best.kind ~= "submarine" and best.saving < Router.MIN_SAVING then
+    if best.kind ~= "direct" and best.kind ~= "submarine" and best.saving < Router.MIN_SAVING
+        and best.saving * speed < Router.MIN_SAVED_STUDS then
         best = { kind = "direct", cost = direct, goal = goal, saving = 0 }
     end
 
@@ -209,7 +219,17 @@ function Router.plan(here, goal, speed)
         end
     end
     best.reason = reason
+    if direct >= Router.MIN_SAVING then
+        table.insert(lines, 1, best.kind == "direct" and ("chose: fly (" .. tostring(reason) .. ")")
+            or ("chose: " .. tostring(best.name)))
+        decision = lines
+    end
     return best
+end
+
+-- The last far trip's plan, for the panel and the log.
+function Router.lastDecision()
+    return decision and table.concat(decision, "\n") or nil
 end
 
 ---------------------------------------------------------------------------
@@ -446,12 +466,26 @@ end
 
 PortalRecorder.busyCheck = Router.busy
 
+-- A portal taught again starts clean: earlier failures were before the lesson.
+PortalRecorder.onLearned = function(portal)
+    failures[portal.name], lockedAt[portal.name], attempts[portal.name] = nil, nil, nil
+    lastUsed[portal.name] = nil
+end
+PortalRecorder.stateOf = function(portal)
+    if isLocked(portal.name) then
+        return string.format("locked, %d s left", math.ceil(Router.LOCK_TIME - (os.clock() - lockedAt[portal.name])))
+    end
+    return nil
+end
+PortalRecorder.decisionText = function() return Router.lastDecision() end
+
 -- Test hook.
 function Router.reset()
     route, note = nil, nil
     busy, justJumped = false, false
     confirmed, lastUsed = {}, {}
     failures, lockedAt, attempts = {}, {}, {}
+    decision = nil
 end
 
 return Router

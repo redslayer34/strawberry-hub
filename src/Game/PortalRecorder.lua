@@ -36,6 +36,9 @@ PortalRecorder.AT_ENTRANCE = 60     -- studs: standing in the portal
 -- learns the hub's own flights or jumps.
 PortalRecorder.busyCheck = function() return false end
 PortalRecorder.movingCheck = function() return false end
+PortalRecorder.onLearned = function() end
+PortalRecorder.stateOf = function() return nil end
+PortalRecorder.decisionText = function() return nil end
 
 local calls = {}        -- recent game calls { at, path, method, args }
 local portals = {}      -- [sea] = { portal, ... }
@@ -278,11 +281,13 @@ function PortalRecorder.learn(entrance, exit, now)
             and (known.exit - exit).Magnitude <= PortalRecorder.SAME_EXIT then
             list[index] = portal
             save()
+            pcall(PortalRecorder.onLearned, portal)
             return portal
         end
     end
     list[#list + 1] = portal
     save()
+    pcall(PortalRecorder.onLearned, portal)
     return portal
 end
 
@@ -429,6 +434,8 @@ function PortalRecorder.describe()
         local at = portal.entrance
         lines[#lines + 1] = string.format("%s, %s, entrance (%.0f, %.0f, %.0f)",
             portal.name, how, at.X, at.Y, at.Z)
+        local okState, state = pcall(PortalRecorder.stateOf, portal)
+        if okState and state then lines[#lines + 1] = "  " .. state end
         local try = portal.lastTry
         if try then
             local result = try.worked == true and "teleported"
@@ -437,7 +444,11 @@ function PortalRecorder.describe()
                 try.distance, try.answer, try.touched, result)
         end
     end
-    if #lines == 0 then return "No portal learned in this sea yet." end
+    if #lines == 0 then lines[1] = "No portal learned in this sea yet." end
+    local okDecision, text = pcall(PortalRecorder.decisionText)
+    if okDecision and text then
+        lines[#lines + 1] = "Last route: " .. (text:match("^[^\n]*") or text)
+    end
     return table.concat(lines, "\n")
 end
 
@@ -448,6 +459,10 @@ function PortalRecorder.log()
         for index, entry in ipairs(call.args) do args[index] = describe(entry) end
         lines[#lines + 1] = string.format("%.1f  %s:%s(%s)", call.at, call.path, call.method, table.concat(args, ", "))
     end
+    local okDecision, text = pcall(PortalRecorder.decisionText)
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "Last route decision:"
+    lines[#lines + 1] = okDecision and text or "none yet"
     lines[#lines + 1] = ""
     lines[#lines + 1] = "Exact portals:"
     for _, portal in ipairs(PortalRecorder.portals()) do
