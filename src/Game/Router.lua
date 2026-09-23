@@ -32,9 +32,8 @@ Router.MIN_SAVING = 5        -- seconds a shortcut must save
 Router.REPLAN_MOVE = 300     -- studs the goal may move before re-planning
 Router.COOLDOWN = 4          -- seconds before the same portal is used again
 Router.VERIFY_STEPS = 24     -- x 0.25 s to see a jump happen (6 s: the area streams in)
-Router.ARRIVED = 150         -- studs: already standing on a portal
-Router.MOVED = 500           -- studs moved from the start that prove a jump
-Router.LANDED = 1000         -- studs from the point that also prove it
+Router.TOO_CLOSE = 1000      -- studs: a portal this close is not worth a request
+Router.MOVED = 300           -- studs the character must move for a jump to count
 Router.FAILS_TO_LOCK = 2     -- failures in a row before a portal is locked
 Router.LOCK_TIME = 120       -- seconds a locked portal stays locked
 Router.UNCONFIRMED_COST = 2  -- seconds added to a portal its unlock flag does not confirm
@@ -48,6 +47,11 @@ Router.ISLAND_RADIUS = 3000
 Router.WORKER = Vector3.new(-16269.4, 24.0, 1371.7)
 Router.DOCK = Vector3.new(11427.9, -2156.4, 9726.2)
 Router.TIKI = Vector3.new(-16456.5, 530.3, 436.2)
+
+-- Sea 3 Temple of Time (reference): leaving it means standing on its exit
+-- point and asking the game to send you back.
+Router.TEMPLE = Vector3.new(28609.392578125, 14896.533203125, 106.4216537475586)
+Router.TEMPLE_RADIUS = 3000
 Router.AT_DOCK = 30
 
 local route, note
@@ -78,6 +82,10 @@ local function recordResult(name, ok, detail)
     if failures[name] >= Router.FAILS_TO_LOCK then
         lockedAt[name] = os.clock()
     end
+end
+
+local function inTemple(position)
+    return Player.sea() == 3 and (position - Router.TEMPLE).Magnitude <= Router.TEMPLE_RADIUS
 end
 
 local function onIsland(position)
@@ -112,6 +120,14 @@ function Router.plan(here, goal, speed)
     end
 
     -- The Submerged Island is only reachable by submarine, both ways.
+    -- Out of the Temple of Time: its own way back, before anything else.
+    if inTemple(here) and not inTemple(goal) then
+        return {
+            kind = "temple", name = "Temple of Time exit", goal = goal, dock = Router.TEMPLE,
+            cost = (here - Router.TEMPLE).Magnitude / speed + Router.OVERHEAD, saving = 0,
+        }
+    end
+
     local fromIsland, toIsland = onIsland(here), onIsland(goal)
     if toIsland and not fromIsland then
         return {
@@ -144,7 +160,7 @@ function Router.plan(here, goal, speed)
         if isLocked(point.name) then
             if not lockedName or cost < (bestPortalCost or math.huge) then lockedName = point.name end
         elseif now - (lastUsed[point.name] or -math.huge) >= Router.COOLDOWN
-            and (here - point.position).Magnitude > Router.ARRIVED then
+            and (here - point.position).Magnitude > Router.TOO_CLOSE then
             if not bestPortalCost or cost < bestPortalCost then
                 bestPortal, bestPortalCost = point, cost
             end
@@ -216,14 +232,21 @@ function actions.entrance(plan)
         if not here or not start then return 0 end
         return (here - start).Magnitude
     end
+    -- Only a real move counts: being near the point already proves nothing.
     local ok = waitUntil(Router.VERIFY_STEPS, function()
-        return moved() > Router.MOVED or near(plan.point.position, Router.LANDED)
+        return moved() > Router.MOVED
     end)
     if ok then
         recordResult(plan.name, true, string.format("moved %d studs", math.floor(moved())))
     else
         recordResult(plan.name, false, "no move, server answered " .. tostring(answer))
     end
+end
+
+function actions.temple(plan)
+    Services.invoke("RaceV4Progress", "Check")
+    Services.invoke("RaceV4Progress", "TeleportBack")
+    waitUntil(Router.VERIFY_STEPS, function() return not near(Router.TEMPLE, Router.TEMPLE_RADIUS) end)
 end
 
 function actions.submarine(plan)
@@ -315,10 +338,15 @@ function Router.testAll(onDone)
     busy = true
     task.spawn(function()
         for _, point in ipairs(Entrances.available()) do
-            local plan = { kind = "entrance", name = point.name, point = point }
-            lastUsed[point.name] = os.clock()
-            local ok, err = pcall(actions.entrance, plan)
-            if not ok then recordResult(point.name, false, tostring(err)) end
+            if Player.distanceTo(point.position) <= Router.TOO_CLOSE then
+                -- A jump here would not move the character: no verdict possible.
+                attempts[point.name] = "too close to test, move away first"
+            else
+                local plan = { kind = "entrance", name = point.name, point = point }
+                lastUsed[point.name] = os.clock()
+                local ok, err = pcall(actions.entrance, plan)
+                if not ok then recordResult(point.name, false, tostring(err)) end
+            end
         end
         route = nil
         busy = false

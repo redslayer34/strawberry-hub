@@ -1069,7 +1069,7 @@ end
 -- Smart travel
 ---------------------------------------------------------------------------
 
-local CASTLE = Vector3.new(-4967.7, 314.9, -3157.1)
+local CASTLE = Vector3.new(-4967.6826171875, 314.88238525390625, -3157.098388671875)
 
 setup()
 do
@@ -1099,7 +1099,7 @@ do
     check("shortcut running", Router.update(Vector3.new(0, 0, 0), goal, 300))
     local call = world.commF.Invoked[#world.commF.Invoked]
     eq("requestEntrance sent", call[1], "requestEntrance")
-    near("to the portal position", call[2], CASTLE)
+    check("exact portal position sent", call[2] == CASTLE, tostring(call[2]))
     check("busy while the jump happens", Router.busy())
     check("movement holds still while busy", Router.update(Vector3.new(0, 0, 0), goal, 300))
     stepTasks()
@@ -1220,10 +1220,72 @@ do
     Movement.step(1 / 60)
     local sent = calls(world.commF, "requestEntrance")
     eq("teleport to the Mansion uses a portal", #sent, 1)
-    near("the Mansion portal", sent[1] and sent[1][2] or Vector3.new(), Vector3.new(-12463.9, 374.9, -7523.8))
+    check("the exact Mansion portal position", sent[1] and sent[1][2]
+        == Vector3.new(-12463.8740234375, 374.9144592285156, -7523.77392578125), sent[1] and tostring(sent[1][2]))
     check("status names the portal", Farm.status():find("Turtle Mansion", 1, true) ~= nil, Farm.status())
     Travel.cancel()
     Farm.stop()
+end
+
+-- The server only answers the exact positions: every point must match the
+-- reference literal digit for digit.
+do
+    local expected = {
+        [1] = { { -7894.6201171875, 5545.49169921875, -380.2467346191406 },
+                { -4607.82275390625, 872.5422973632812, -1667.556884765625 },
+                { 61163.8515625, 11.759522438049316, 1819.7841796875 },
+                { 3876.280517578125, 35.10614013671875, -1939.3201904296875 } },
+        [2] = { { 923.21252441406, 126.9760055542, 32852.83203125 },
+                { -6508.5581054688, 89.034996032715, -132.83953857422 },
+                { -288.46246337890625, 306.130615234375, 597.9988403320312 },
+                { 2284.912109375, 15.152046203613281, 905.48291015625 } },
+        [3] = { { 28282.5703125, 14896.8505859375, 105.1042709350586 },
+                { -4967.6826171875, 314.88238525390625, -3157.098388671875 },
+                { 5661.5302734375, 1013.4113159179688, -334.9619140625 },
+                { -12463.8740234375, 374.9144592285156, -7523.77392578125 } },
+    }
+    for sea, list in pairs(expected) do
+        for index, xyz in ipairs(list) do
+            local point = Entrances.POINTS[sea][index]
+            check("exact coordinates: " .. point.name,
+                point.position == Vector3.new(xyz[1], xyz[2], xyz[3]), tostring(point.position))
+        end
+    end
+end
+
+-- Standing at a portal: nothing to learn, nothing requested.
+setup()
+do
+    game.PlaceId = 7449423635
+    Entrances.reset({ DefeatedIndraTrueForm = true })
+    world.hrp.Position = CASTLE + Vector3.new(100, 0, 0)
+    world.commF.OnInvoke = function() return nil end
+    Router.VERIFY_STEPS = 2
+    Router.testAll()
+    for _ = 1, 20 do stepTasks() end
+    local text = Router.describe()
+    check("portal next to the player reported too close", text:find("Castle on the Sea: untested (too close", 1, true) ~= nil, text)
+    local requested = calls(world.commF, "requestEntrance")
+    for _, call in ipairs(requested) do
+        check("too-close portal not requested", call[2] ~= CASTLE)
+    end
+    check("no false 'works' without moving", text:find("works", 1, true) == nil, text)
+    Router.VERIFY_STEPS = 24
+end
+
+-- Leaving the Temple of Time uses the game's way back.
+setup()
+do
+    game.PlaceId = 7449423635
+    Entrances.reset({})
+    world.commF.OnInvoke = function() return true end
+    local handled, aim = Router.update(Router.TEMPLE + Vector3.new(500, 0, 0), Vector3.new(0, 0, 0), 300)
+    check("temple exit: fly to the exit point first", not handled and aim ~= nil and (aim - Router.TEMPLE).Magnitude < 1)
+    Router.reset()
+    check("at the exit point: teleport back", Router.update(Router.TEMPLE, Vector3.new(0, 0, 0), 300))
+    local check1 = calls(world.commF, "RaceV4Progress")
+    eq("RaceV4Progress Check then TeleportBack", check1[1] and check1[2] and (check1[1][2] .. "," .. check1[2][2]), "Check,TeleportBack")
+    stepTasks()
 end
 
 -- Sea read from the game when the PlaceId is unknown.

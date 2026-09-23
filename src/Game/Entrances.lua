@@ -17,24 +17,29 @@ local Entrances = {}
 local function v(x, y, z) return Vector3.new(x, y, z) end
 
 -- unlock: the GetUnlockables flag the point needs (nil = always open).
+--
+-- NEVER round these. They are the exact positions of the game's own
+-- entrance parts, copied digit for digit from the reference: the server
+-- only answers requestEntrance with a position that matches one of them,
+-- and a rounded point matches nothing (no answer, no teleport).
 Entrances.POINTS = {
     [1] = {
-        { name = "Upper Sky", position = v(-7894.6, 5545.5, -380.2) },
-        { name = "Sky Island", position = v(-4607.8, 872.5, -1667.6) },
-        { name = "Underwater City", position = v(61163.9, 11.8, 1819.8) },
-        { name = "Whirlpool", position = v(3876.3, 35.1, -1939.3) },
+        { name = "Upper Sky", position = v(-7894.6201171875, 5545.49169921875, -380.2467346191406) },
+        { name = "Sky Island", position = v(-4607.82275390625, 872.5422973632812, -1667.556884765625) },
+        { name = "Underwater City", position = v(61163.8515625, 11.759522438049316, 1819.7841796875) },
+        { name = "Whirlpool", position = v(3876.280517578125, 35.10614013671875, -1939.3201904296875) },
     },
     [2] = {
-        { name = "Cursed Ship", position = v(923.2, 127.0, 32852.8) },
-        { name = "Graveyard", position = v(-6508.6, 89.0, -132.8) },
-        { name = "Doflamingo Mansion", position = v(-288.5, 306.1, 598.0), unlock = "FlamingoAccess" },
-        { name = "Flamingo Room", position = v(2284.9, 15.2, 905.5), unlock = "FlamingoAccess" },
+        { name = "Cursed Ship", position = v(923.21252441406, 126.9760055542, 32852.83203125) },
+        { name = "Graveyard", position = v(-6508.5581054688, 89.034996032715, -132.83953857422) },
+        { name = "Doflamingo Mansion", position = v(-288.46246337890625, 306.130615234375, 597.9988403320312), unlock = "FlamingoAccess" },
+        { name = "Flamingo Room", position = v(2284.912109375, 15.152046203613281, 905.48291015625), unlock = "FlamingoAccess" },
     },
     [3] = {
-        { name = "Temple of Time", position = v(28282.6, 14896.9, 105.1), temple = true },
-        { name = "Castle on the Sea", position = v(-4967.7, 314.9, -3157.1), unlock = "DefeatedIndraTrueForm" },
-        { name = "Hydra", position = v(5661.5, 1013.4, -334.9), unlock = "DefeatedIndraTrueForm" },
-        { name = "Turtle Mansion", position = v(-12463.9, 374.9, -7523.8), unlock = "DefeatedIndraTrueForm" },
+        { name = "Temple of Time", position = v(28282.5703125, 14896.8505859375, 105.1042709350586), temple = true },
+        { name = "Castle on the Sea", position = v(-4967.6826171875, 314.88238525390625, -3157.098388671875), unlock = "DefeatedIndraTrueForm" },
+        { name = "Hydra", position = v(5661.5302734375, 1013.4113159179688, -334.9619140625), unlock = "DefeatedIndraTrueForm" },
+        { name = "Turtle Mansion", position = v(-12463.8740234375, 374.9144592285156, -7523.77392578125), unlock = "DefeatedIndraTrueForm" },
     },
 }
 
