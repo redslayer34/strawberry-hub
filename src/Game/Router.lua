@@ -5,7 +5,10 @@
 --  seconds and the cheapest wins:
 --
 --    direct      fly all the way (distance / current speed)
---    entrance    requestEntrance to a portal point, then fly the rest
+--    learned     a portal learned in game: fly to its entrance (or use it
+--                from here when it is known to reach), trigger it, fly on
+--    entrance    requestEntrance to a hard-coded point: rejected by the
+--                server now, kept for "Test portals" only
 --    submarine   Sea 3: the only way in and out of the Submerged Island
 --    respawn     opt-in: move the spawn point near the goal, then reset
 --
@@ -41,6 +44,8 @@ Router.UNCONFIRMED_COST = 2  -- seconds added to a portal its unlock flag does n
 Router.GUESSED_COST = 3      -- seconds added to hard-coded points: learned portals win
 Router.RESPAWN_COST = 6      -- seconds a respawn costs
 Router.RESPAWN_STEPS = 60    -- x 0.25 s to wait for the new character
+Router.PORTAL_STEPS = 12     -- x 0.25 s to see a learned portal work (3 s)
+Router.EXIT_RADIUS = 500     -- studs from a portal's exit that count as arrived
 
 -- Sea 3 Submerged Island (reference): the island, the worker who sends you
 -- there, the dock to leave from, and where leaving lands.
@@ -148,40 +153,31 @@ function Router.plan(here, goal, speed)
     end
 
     -- Portals learned by watching the player take them: fly to the
-    -- entrance, trigger it, continue from the exit.
+    -- entrance, trigger it, continue from the exit. A portal known to reach
+    -- this far is triggered from here. The hard-coded requestEntrance points
+    -- are not routed: the server only accepts the call at the portal.
     local now = os.clock()
-    for _, portal in ipairs(PortalRecorder.portals()) do
-        if not isLocked(portal.name) and now - (lastUsed[portal.name] or -math.huge) >= Router.COOLDOWN then
-            -- A portal proven to work from far away is used from here.
-            local far = portal.far == true and portal.call ~= nil
-            consider({
-                kind = "learned", name = portal.name, portal = portal,
-                dock = not far and portal.entrance or nil,
-                cost = (far and 0 or (here - portal.entrance).Magnitude / speed) + Router.OVERHEAD
-                    + (portal.exit - goal).Magnitude / speed,
-            })
-        end
-    end
-
-    -- Why the plan ends up flying, for the status line.
-    local points = Entrances.available()
+    local learned = PortalRecorder.portals()
     local reason
-    if #points == 0 and #PortalRecorder.portals() == 0 then
-        reason = "no portal known for sea " .. tostring(Player.sea() or "?")
+    if #learned == 0 then
+        reason = "no portal learned for sea " .. tostring(Player.sea() or "?")
     end
     local bestPortal, bestPortalCost, lockedName
-
-    for _, point in ipairs(points) do
-        local cost = Router.OVERHEAD + Router.GUESSED_COST + (point.position - goal).Magnitude / speed
-        if not Entrances.confirmed(point) then cost = cost + Router.UNCONFIRMED_COST end
-        if isLocked(point.name) then
-            if not lockedName or cost < (bestPortalCost or math.huge) then lockedName = point.name end
-        elseif now - (lastUsed[point.name] or -math.huge) >= Router.COOLDOWN
-            and (here - point.position).Magnitude > Router.TOO_CLOSE then
+    for _, portal in ipairs(learned) do
+        local distance = (here - portal.entrance).Magnitude
+        local fromHere = PortalRecorder.canUseFrom(portal, distance)
+        local cost = (fromHere and 0 or distance / speed) + Router.OVERHEAD
+            + (portal.exit - goal).Magnitude / speed
+        if isLocked(portal.name) then
+            lockedName = portal.name
+        elseif now - (lastUsed[portal.name] or -math.huge) >= Router.COOLDOWN then
             if not bestPortalCost or cost < bestPortalCost then
-                bestPortal, bestPortalCost = point, cost
+                bestPortal, bestPortalCost = portal, cost
             end
-            consider({ kind = "entrance", name = point.name, point = point, cost = cost })
+            consider({
+                kind = "learned", name = portal.name, portal = portal,
+                dock = not fromHere and portal.entrance or nil, cost = cost,
+            })
         end
     end
 
@@ -260,19 +256,27 @@ function actions.entrance(plan)
     end
 end
 
+-- Replays a learned portal and waits to land near its exit. Returns
+-- whether it worked, the distance it was triggered from, the answer.
+local function tryPortal(portal, callOnly)
+    local here = Player.position()
+    local distance = here and (here - portal.entrance).Magnitude or math.huge
+    local answer = PortalRecorder.trigger(portal, callOnly)
+    local ok = waitUntil(Router.PORTAL_STEPS, function() return near(portal.exit, Router.EXIT_RADIUS) end)
+    PortalRecorder.recordUse(portal, distance, ok)
+    return ok, distance, answer
+end
+
 function actions.learned(plan)
-    local start = Player.position()
-    local answer = PortalRecorder.trigger(plan.portal)
-    local function moved()
-        local here = Player.position()
-        if not here or not start then return 0 end
-        return (here - start).Magnitude
-    end
-    local ok = waitUntil(Router.VERIFY_STEPS, function() return moved() > Router.MOVED end)
+    local ok, distance, answer = tryPortal(plan.portal)
     if ok then
-        recordResult(plan.name, true, string.format("moved %d studs", math.floor(moved())))
+        recordResult(plan.name, true, string.format("worked from %d studs", math.floor(distance)))
+    elseif distance > PortalRecorder.AT_ENTRANCE then
+        -- Too far for the server: no lock, the next plan flies to the entrance.
+        attempts[plan.name] = string.format("too far from %d studs", math.floor(distance))
+        lastUsed[plan.name] = nil
     else
-        recordResult(plan.name, false, "no move, answer " .. tostring(answer))
+        recordResult(plan.name, false, "no teleport at the entrance, answer " .. tostring(answer))
     end
 end
 
@@ -384,14 +388,8 @@ function Router.testAll(onDone)
         -- Learned portals with a game call: does the call work from here?
         for _, portal in ipairs(PortalRecorder.portals()) do
             if portal.call and Player.distanceTo(portal.entrance) > Router.TOO_CLOSE then
-                local start = Player.position()
-                pcall(PortalRecorder.trigger, portal, true)
-                local works = waitUntil(Router.VERIFY_STEPS, function()
-                    local here = Player.position()
-                    return here ~= nil and start ~= nil and (here - start).Magnitude > Router.MOVED
-                end)
-                PortalRecorder.setFar(portal, works)
-                if works then break end   -- moved: the other results would be wrong
+                local ok, works = pcall(tryPortal, portal, true)
+                if ok and works then break end   -- moved: the other distances changed
             end
         end
         route = nil

@@ -29,6 +29,7 @@ PortalRecorder.TOUCH_RADIUS = 25    -- studs around the entrance for its part
 PortalRecorder.KEEP_CALLS = 20
 PortalRecorder.SAME_ENTRANCE = 50
 PortalRecorder.SAME_EXIT = 200
+PortalRecorder.AT_ENTRANCE = 60     -- studs: standing in the portal
 
 -- Filled by the modules that own the character, so the recorder never
 -- learns the hub's own flights or jumps.
@@ -94,9 +95,10 @@ local function deserialise(entry)
     return entry.v
 end
 
-local function describe(entry)
+local function describe(entry, precise)
     if entry.t == "Vector3" or entry.t == "CFrame" then
-        return string.format("%s(%.1f, %.1f, %.1f)", entry.t, entry.v[1], entry.v[2], entry.v[3])
+        local format = precise and "%s(%.4f, %.4f, %.4f)" or "%s(%.1f, %.1f, %.1f)"
+        return string.format(format, entry.t, entry.v[1], entry.v[2], entry.v[3])
     end
     if entry.t == "string" then return string.format("%q", entry.v) end
     return tostring(entry.v)
@@ -151,7 +153,8 @@ local function load()
                         -- Portals learned before the filter may carry a
                         -- telemetry call: those are touch portals.
                         call = type(saved.call) == "table" and teleportLike(saved.call) and saved.call or nil,
-                        far = saved.far,
+                        reach = tonumber(saved.reach),
+                        tooFar = tonumber(saved.tooFar),
                     }
                 end
             end
@@ -170,7 +173,8 @@ local function save()
                 entrance = fromVector(portal.entrance),
                 exit = fromVector(portal.exit),
                 call = portal.call,
-                far = portal.far,
+                reach = portal.reach,
+                tooFar = portal.tooFar,
             }
         end
         data[tostring(sea)] = out
@@ -327,9 +331,24 @@ function PortalRecorder.trigger(portal, callOnly)
     return answer
 end
 
--- Result of "Test portals" for a learned portal replayed from far away.
-function PortalRecorder.setFar(portal, works)
-    portal.far = works
+-- The server accepts a portal's call only within some distance of its
+-- entrance. Each replay from `distance` studs narrows that distance down:
+-- reach is the farthest it worked from, tooFar the nearest it failed from.
+function PortalRecorder.canUseFrom(portal, distance)
+    if distance <= PortalRecorder.AT_ENTRANCE then return true end
+    if not portal.call or not portal.reach then return false end
+    return distance <= portal.reach and distance < (portal.tooFar or math.huge)
+end
+
+function PortalRecorder.recordUse(portal, distance, worked)
+    if distance <= PortalRecorder.AT_ENTRANCE then return end
+    if worked then
+        portal.reach = math.max(portal.reach or 0, distance)
+        if portal.tooFar and portal.tooFar <= distance then portal.tooFar = nil end
+    else
+        portal.tooFar = math.min(portal.tooFar or math.huge, distance)
+        if portal.reach and portal.reach >= distance then portal.reach = nil end
+    end
     save()
 end
 
@@ -367,9 +386,11 @@ function PortalRecorder.describe()
             how = "by " .. tostring(portal.call.path):match("[^%.]+$") .. " " .. portal.call.method
                 .. "(" .. table.concat(args, ", ") .. ")"
         end
-        if portal.far == true then how = how .. " (works from anywhere)"
-        elseif portal.far == false then how = how .. " (only at the entrance)" end
-        lines[#lines + 1] = portal.name .. ", " .. how
+        if portal.reach then how = how .. string.format(" (works up to %d studs away)", portal.reach)
+        elseif portal.tooFar then how = how .. " (only at the entrance)" end
+        local at = portal.entrance
+        lines[#lines + 1] = string.format("%s, %s, entrance (%.0f, %.0f, %.0f)",
+            portal.name, how, at.X, at.Y, at.Z)
     end
     if #lines == 0 then return "No portal learned in this sea yet." end
     return table.concat(lines, "\n")
@@ -381,6 +402,20 @@ function PortalRecorder.log()
         local args = {}
         for index, entry in ipairs(call.args) do args[index] = describe(entry) end
         lines[#lines + 1] = string.format("%.1f  %s:%s(%s)", call.at, call.path, call.method, table.concat(args, ", "))
+    end
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "Exact portals:"
+    for _, portal in ipairs(PortalRecorder.portals()) do
+        local e, x = portal.entrance, portal.exit
+        local line = string.format("%s | in (%.4f, %.4f, %.4f) | out (%.4f, %.4f, %.4f)",
+            portal.name, e.X, e.Y, e.Z, x.X, x.Y, x.Z)
+        if portal.call then
+            local args = {}
+            for index, entry in ipairs(portal.call.args or {}) do args[index] = describe(entry, true) end
+            line = line .. " | " .. tostring(portal.call.path) .. ":" .. portal.call.method
+                .. "(" .. table.concat(args, ", ") .. ")"
+        end
+        lines[#lines + 1] = line
     end
     lines[#lines + 1] = ""
     lines[#lines + 1] = "Teleporter parts:"

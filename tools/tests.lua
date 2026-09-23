@@ -1073,6 +1073,17 @@ end
 ---------------------------------------------------------------------------
 
 local CASTLE = Vector3.new(-4967.6826171875, 314.88238525390625, -3157.098388671875)
+local CASTLE_DOOR = Vector3.new(500, 0, 0)   -- a learned portal to the Castle, near the start
+
+-- A portal learned with the game's requestEntrance call, like the ones in game.
+local function learnCastlePortal()
+    PortalRecorder.reset()
+    Settings.set("LearnPortals", true)
+    PortalRecorder.observe(world.commF, "InvokeServer", { n = 2, "requestEntrance", CASTLE }, true)
+    local portal = PortalRecorder.learn(CASTLE_DOOR, CASTLE, os.clock())
+    Settings.set("LearnPortals", false)
+    return portal
+end
 
 setup()
 do
@@ -1080,83 +1091,107 @@ do
     Entrances.reset({ DefeatedIndraTrueForm = true })
     local goal = CASTLE + Vector3.new(60, 0, 60)
 
+    local none = Router.plan(Vector3.new(0, 0, 0), goal, 300)
+    eq("hard-coded points no longer routed", none.kind, "direct")
+    check("reason: nothing learned", none.reason and none.reason:find("no portal learned", 1, true) ~= nil, none.reason)
+
+    local portal = learnCastlePortal()
     local plan = Router.plan(Vector3.new(0, 0, 0), goal, 300)
-    eq("far goal: portal route", plan.kind, "entrance")
-    eq("portal nearest the goal", plan.name, "Castle on the Sea")
+    eq("far goal: learned portal", plan.kind, "learned")
+    near("flies to its entrance first", plan.dock, CASTLE_DOOR)
     check("saving computed", plan.saving > 10, plan.saving)
 
     local short = Router.plan(Vector3.new(0, 0, 0), Vector3.new(1400, 0, 0), 300)
     eq("small saving: fly directly", short.kind, "direct")
 
-    Entrances.reset({})
-    local unflagged = Router.plan(Vector3.new(0, 0, 0), goal, 300)
-    eq("missing unlock flag: portal still tried", unflagged.name, "Castle on the Sea")
-    check("shown as unconfirmed", Router.describe():find("unlock not confirmed", 1, true) ~= nil, Router.describe())
-    Entrances.reset({ DefeatedIndraTrueForm = true })
-
-    -- A jump that works: requestEntrance sent, portal confirmed.
+    -- At the entrance: the recorded call is replayed and the exit reached.
     world.commF.OnInvoke = function(action)
         if action == "requestEntrance" then world.hrp.Position = CASTLE end
         return true
     end
-    check("shortcut running", Router.update(Vector3.new(0, 0, 0), goal, 300))
+    local handled, aim = Router.update(Vector3.new(0, 0, 0), goal, 300)
+    check("away from the entrance: fly there", not handled and aim ~= nil and (aim - CASTLE_DOOR).Magnitude < 1)
+    world.hrp.Position = CASTLE_DOOR
+    check("shortcut running", Router.update(CASTLE_DOOR, goal, 300))
     local call = world.commF.Invoked[#world.commF.Invoked]
-    eq("requestEntrance sent", call[1], "requestEntrance")
-    check("exact portal position sent", call[2] == CASTLE, tostring(call[2]))
-    check("busy while the jump happens", Router.busy())
-    check("movement holds still while busy", Router.update(Vector3.new(0, 0, 0), goal, 300))
+    eq("requestEntrance replayed", call[1], "requestEntrance")
+    check("with the destination recorded", call[2] == CASTLE, tostring(call[2]))
+    check("movement holds still while busy", Router.update(CASTLE_DOOR, goal, 300))
     stepTasks()
     check("jump done", not Router.busy())
-    check("portal confirmed", Router.describe():find("Castle on the Sea: works", 1, true) ~= nil, Router.describe())
-    local handled = Router.update(CASTLE, goal, 300)
-    check("close goal after the jump: normal flight", not handled)
+    check("close goal after the jump: normal flight", not Router.update(CASTLE, goal, 300))
     local cooling = Router.plan(Vector3.new(0, 0, 0), goal, 300)
-    check("same portal not reused during its cooldown", cooling.name ~= "Castle on the Sea", cooling.name)
+    check("same portal not reused during its cooldown", cooling.kind ~= "learned", cooling.kind)
+    eq("used at the entrance: reach unchanged", portal.reach, nil)
 end
 
+-- Failing at the entrance twice locks the portal for a while.
 setup()
 do
     game.PlaceId = 7449423635
-    Entrances.reset({ DefeatedIndraTrueForm = true })
-    Router.VERIFY_STEPS = 3
+    learnCastlePortal()
+    Router.PORTAL_STEPS = 3
     Router.COOLDOWN = 0
     world.commF.OnInvoke = function() return nil end   -- the jump never happens
     local goal = CASTLE + Vector3.new(60, 0, 60)
     local function attempt()
-        Router.update(Vector3.new(0, 0, 0), goal, 300)
+        world.hrp.Position = CASTLE_DOOR
+        Router.update(CASTLE_DOOR, goal, 300)
         for _ = 1, 4 do stepTasks() end
-        Router.update(Vector3.new(0, 0, 0), goal, 300)   -- the flying frame after a try
+        Router.update(CASTLE_DOOR, goal, 300)   -- the flying frame after a try
     end
     attempt()
-    local text = Router.describe()
-    check("one failure does not lock", text:find("Castle on the Sea: untested", 1, true) ~= nil, text)
-    check("last attempt shown", text:find("no move", 1, true) ~= nil, text)
+    eq("one failure does not lock", Router.plan(CASTLE_DOOR, goal, 300).kind, "learned")
     attempt()
-    check("two failures in a row lock", Router.describe():find("Castle on the Sea: locked", 1, true) ~= nil, Router.describe())
-    local again = Router.plan(Vector3.new(0, 0, 0), goal, 300)
-    check("locked portal no longer planned", again.name ~= "Castle on the Sea", again.name)
+    check("two failures in a row lock", Router.plan(CASTLE_DOOR, goal, 300).kind ~= "learned")
     Router.LOCK_TIME = 0
-    check("lock expires", Router.plan(Vector3.new(0, 0, 0), goal, 300).name == "Castle on the Sea")
+    eq("lock expires", Router.plan(CASTLE_DOOR, goal, 300).kind, "learned")
     Router.LOCK_TIME = 120
-    Router.VERIFY_STEPS = 24
+    Router.PORTAL_STEPS = 12
     Router.COOLDOWN = 4
 end
 
--- The game lands the player on the destination's spawn, not on the point.
+-- From far away: used only within its known reach; a miss costs no lock.
 setup()
 do
     game.PlaceId = 7449423635
-    Entrances.reset({ DefeatedIndraTrueForm = true })
-    local landing = CASTLE + Vector3.new(800, 0, 0)
-    world.commF.OnInvoke = function(action)
-        if action == "requestEntrance" then world.hrp.Position = landing end
-        return true
+    local portal = learnCastlePortal()
+    PortalRecorder.recordUse(portal, 1500, true)
+    check("reach: used from nearer", PortalRecorder.canUseFrom(portal, 1200))
+    check("reach: not from farther", not PortalRecorder.canUseFrom(portal, 3000))
+    check("at the entrance: always", PortalRecorder.canUseFrom(portal, 10))
+
+    local start = CASTLE_DOOR + Vector3.new(0, 0, 1400)
+    world.hrp.Position = start
+    local goal = CASTLE + Vector3.new(60, 0, 60)
+    local plan = Router.plan(start, goal, 300)
+    eq("within reach: used from here", plan.dock, nil)
+
+    Router.PORTAL_STEPS = 2
+    world.commF.OnInvoke = function() return nil end   -- the server refuses from here
+    check("tried from here", Router.update(start, goal, 300))
+    for _ = 1, 4 do stepTasks() end
+    eq("miss narrows the reach", portal.tooFar, 1400)
+    check("reach dropped", portal.reach == nil)
+    Router.update(start, goal, 300)   -- flying frame
+    local again = Router.plan(start, goal, 300)
+    eq("still the portal, not locked", again.kind, "learned")
+    near("now flies to the entrance", again.dock, CASTLE_DOOR)
+
+    -- Landing somewhere else is not the portal working.
+    world.hrp.Position = CASTLE_DOOR
+    world.commF.OnInvoke = function() world.hrp.Position = Vector3.new(0, 0, 9000) return true end
+    Router.reset()
+    Router.COOLDOWN = 0
+    for _ = 1, 2 do
+        world.hrp.Position = CASTLE_DOOR
+        Router.update(CASTLE_DOOR, goal, 300)
+        for _ = 1, 4 do stepTasks() end
+        Router.update(CASTLE_DOOR, goal, 300)
     end
-    Router.update(Vector3.new(0, 0, 0), landing + Vector3.new(50, 0, 0), 300)
-    stepTasks()
-    local text = Router.describe()
-    check("off-point landing counts as a jump", text:find("Castle on the Sea: works", 1, true) ~= nil, text)
-    check("distance moved shown", text:find("moved", 1, true) ~= nil, text)
+    check("move away from the exit counts as a failure", Router.plan(CASTLE_DOOR, goal, 300).kind ~= "learned")
+    Router.COOLDOWN = 4
+    Router.PORTAL_STEPS = 12
 end
 
 setup()
@@ -1197,37 +1232,19 @@ end
 setup()
 do
     game.PlaceId = 7449423635
-    Entrances.reset({ DefeatedIndraTrueForm = true })
-    world.commF.OnInvoke = function() return true end
+    learnCastlePortal()
     Movement.to(CFrame.new(CASTLE + Vector3.new(60, 0, 60)))
     Movement.step(1 / 60)
-    near("movement waits for the portal instead of flying", world.hrp.Position, Vector3.new(0, 0, 0))
-    check("status mentions the portal", (Router.note() or ""):find("Castle on the Sea", 1, true) ~= nil)
+    check("movement heads for the portal entrance",
+        (world.hrp.Position - CASTLE_DOOR).Magnitude < (Vector3.new(0, 0, 0) - CASTLE_DOOR).Magnitude)
+    check("status mentions the portal", (Router.note() or ""):find("Castle on the sea", 1, true) ~= nil, Router.note())
 
     Router.reset()
     Movement.reset()
+    world.hrp.Position = Vector3.new(0, 0, 0)
     Movement.to(CFrame.new(100, 0, 0))
     Movement.step(1 / 60)
     near("short trip set in one go", world.hrp.Position, Vector3.new(100, 0, 0))
-end
-
--- The user's case: Teleport tab to the Sea 3 Mansion, far away.
-setup()
-do
-    game.PlaceId = 7449423635
-    Entrances.reset(nil)   -- unlocks not read (or flag missing)
-    world.commF.OnInvoke = function() return true end
-    Travel.cancel()
-    Travel.go("Mansion", Vector3.new(-12548.0, 337.0, -7481.0))
-    Farm.tick()
-    Movement.step(1 / 60)
-    local sent = calls(world.commF, "requestEntrance")
-    eq("teleport to the Mansion uses a portal", #sent, 1)
-    check("the exact Mansion portal position", sent[1] and sent[1][2]
-        == Vector3.new(-12463.8740234375, 374.9144592285156, -7523.77392578125), sent[1] and tostring(sent[1][2]))
-    check("status names the portal", Farm.status():find("Turtle Mansion", 1, true) ~= nil, Farm.status())
-    Travel.cancel()
-    Farm.stop()
 end
 
 -- The server only answers the exact positions: every point must match the
@@ -1313,10 +1330,10 @@ do
     game.PlaceId = 123456789
     Player.resetSea()
     local plan = Router.plan(Vector3.new(0, 0, 0), Vector3.new(9000, 0, 0), 300)
-    check("reason: no portal for this sea", plan.reason and plan.reason:find("no portal known", 1, true) ~= nil, plan.reason)
+    check("reason: no portal for this sea", plan.reason and plan.reason:find("no portal learned", 1, true) ~= nil, plan.reason)
 
     game.PlaceId = 7449423635
-    Entrances.reset({ DefeatedIndraTrueForm = true })
+    learnCastlePortal()
     local near1 = Router.plan(Vector3.new(0, 0, 0), Vector3.new(1600, 0, 0), 300)
     eq("medium trip flies", near1.kind, "direct")
     check("reason: saving too small", near1.reason and near1.reason:find("saves only", 1, true) ~= nil, near1.reason)
@@ -1526,8 +1543,8 @@ do
     check("teleporter listed in the log", PortalRecorder.log():find("MapTeleportC", 1, true) ~= nil)
 
     -- Proven to work from far away: used without flying to the entrance.
-    PortalRecorder.setFar(portal, true)
-    world.hrp.Position = Vector3.new(0, 50, 0)
+    PortalRecorder.recordUse(portal, 6000, true)
+    world.hrp.Position = MANSION_DOOR + Vector3.new(5000, 0, 0)
     local plan = Router.plan(world.hrp.Position, MANSION_EXIT + Vector3.new(100, 0, 0), 300)
     eq("far portal chosen", plan.kind, "learned")
     eq("far portal used from here", plan.dock, nil)
