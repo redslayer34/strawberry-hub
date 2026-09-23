@@ -9,9 +9,12 @@
 --    submarine   Sea 3: the only way in and out of the Submerged Island
 --    respawn     opt-in: move the spawn point near the goal, then reset
 --
---  A shortcut is only taken when it saves MIN_SAVING seconds. A portal that
---  does not move the player is locked for the rest of the session; one that
---  works is confirmed. The chosen route is kept while the goal stays put, so
+--  A shortcut is only taken when it saves MIN_SAVING seconds. The game does
+--  not drop the player exactly on the requested point (the Rip Indra and
+--  Doflamingo portals land on the destination's own spawn), so a jump counts
+--  as done once the player has moved far away or landed near the point. A
+--  portal that fails twice in a row is locked for a while; one that works is
+--  confirmed. The chosen route is kept while the goal stays put, so
 --  a moving mob does not cause a re-plan every frame, and two shortcuts are
 --  never chained without flying in between.
 --=============================================================================
@@ -28,8 +31,12 @@ Router.OVERHEAD = 1.5        -- seconds a teleport request costs
 Router.MIN_SAVING = 5        -- seconds a shortcut must save
 Router.REPLAN_MOVE = 300     -- studs the goal may move before re-planning
 Router.COOLDOWN = 4          -- seconds before the same portal is used again
-Router.VERIFY_STEPS = 10     -- x 0.25 s to see a jump happen
-Router.ARRIVED = 150         -- studs from the portal that count as a jump
+Router.VERIFY_STEPS = 24     -- x 0.25 s to see a jump happen (6 s: the area streams in)
+Router.ARRIVED = 150         -- studs: already standing on a portal
+Router.MOVED = 500           -- studs moved from the start that prove a jump
+Router.LANDED = 1000         -- studs from the point that also prove it
+Router.FAILS_TO_LOCK = 2     -- failures in a row before a portal is locked
+Router.LOCK_TIME = 120       -- seconds a locked portal stays locked
 Router.RESPAWN_COST = 6      -- seconds a respawn costs
 Router.RESPAWN_STEPS = 60    -- x 0.25 s to wait for the new character
 
@@ -44,7 +51,33 @@ Router.AT_DOCK = 30
 
 local route, note
 local busy, justJumped = false, false
-local blocked, confirmed, lastUsed = {}, {}, {}
+local confirmed, lastUsed = {}, {}
+local failures, lockedAt, attempts = {}, {}, {}
+
+local function isLocked(name)
+    local since = lockedAt[name]
+    if not since then return false end
+    if os.clock() - since >= Router.LOCK_TIME then
+        lockedAt[name] = nil
+        failures[name] = 0
+        return false
+    end
+    return true
+end
+
+local function recordResult(name, ok, detail)
+    attempts[name] = detail
+    if ok then
+        confirmed[name] = true
+        failures[name] = 0
+        lockedAt[name] = nil
+        return
+    end
+    failures[name] = (failures[name] or 0) + 1
+    if failures[name] >= Router.FAILS_TO_LOCK then
+        lockedAt[name] = os.clock()
+    end
+end
 
 local function onIsland(position)
     return Player.sea() == 3 and (position - Router.ISLAND).Magnitude <= Router.ISLAND_RADIUS
@@ -95,7 +128,7 @@ function Router.plan(here, goal, speed)
 
     local now = os.clock()
     for _, point in ipairs(Entrances.available()) do
-        if not blocked[point.name] and now - (lastUsed[point.name] or -math.huge) >= Router.COOLDOWN
+        if not isLocked(point.name) and now - (lastUsed[point.name] or -math.huge) >= Router.COOLDOWN
             and (here - point.position).Magnitude > Router.ARRIVED then
             consider({
                 kind = "entrance", name = point.name, point = point,
@@ -149,9 +182,21 @@ end
 local actions = {}
 
 function actions.entrance(plan)
-    Entrances.use(plan.point)
-    local ok = waitUntil(Router.VERIFY_STEPS, function() return near(plan.point.position, Router.ARRIVED) end)
-    if ok then confirmed[plan.name] = true else blocked[plan.name] = true end
+    local start = Player.position()
+    local answer = Entrances.use(plan.point)
+    local function moved()
+        local here = Player.position()
+        if not here or not start then return 0 end
+        return (here - start).Magnitude
+    end
+    local ok = waitUntil(Router.VERIFY_STEPS, function()
+        return moved() > Router.MOVED or near(plan.point.position, Router.LANDED)
+    end)
+    if ok then
+        recordResult(plan.name, true, string.format("moved %d studs", math.floor(moved())))
+    else
+        recordResult(plan.name, false, "no move, server answered " .. tostring(answer))
+    end
 end
 
 function actions.submarine(plan)
@@ -169,7 +214,7 @@ end
 function actions.respawn(plan)
     Services.invoke("SetLastSpawnPoint", plan.spawn.name)
     if Player.data("LastSpawnPoint") ~= plan.spawn.name then
-        blocked[plan.name] = true
+        recordResult(plan.name, false, "spawn point refused")
         return
     end
     local old = Player.character()
@@ -244,10 +289,11 @@ function Router.describe()
     local known = Entrances.unlocks() ~= nil
     for _, point in ipairs(Entrances.POINTS[Player.sea() or 0] or {}) do
         local state
-        if blocked[point.name] then state = "locked"
+        if isLocked(point.name) then state = "locked"
         elseif confirmed[point.name] then state = "works"
         elseif point.unlock and known and not Entrances.unlocks()[point.unlock] then state = "not unlocked"
         else state = "untested" end
+        if attempts[point.name] then state = state .. " (" .. attempts[point.name] .. ")" end
         lines[#lines + 1] = point.name .. ": " .. state
     end
     if #lines == 0 then return "No portal known in this sea." end
@@ -259,7 +305,8 @@ end
 function Router.reset()
     route, note = nil, nil
     busy, justJumped = false, false
-    blocked, confirmed, lastUsed = {}, {}, {}
+    confirmed, lastUsed = {}, {}
+    failures, lockedAt, attempts = {}, {}, {}
 end
 
 return Router

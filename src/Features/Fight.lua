@@ -11,6 +11,7 @@ local Enemies = require("Game.Enemies")
 local Mastery = require("Game.Mastery")
 local Movement = require("Game.Movement")
 local Player = require("Core.Player")
+local PlayerTweaks = require("Features.PlayerTweaks")
 local Settings = require("Core.Settings")
 
 local Fight = {}
@@ -27,6 +28,7 @@ function Fight.engage(mode, mob)
         Bring.run(mob, Settings.get("BringCount"))
     end
     mode.target = mob
+    PlayerTweaks.ensureBuso()
     if Mastery.step(mob) then return true end
     return Player.equip(Settings.get("Weapon")) ~= nil
 end

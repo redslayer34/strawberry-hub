@@ -31,6 +31,15 @@ local function near(name, a, b, tolerance)
         string.format("%s vs %s (off by %.2f)", tostring(a), tostring(b), distance))
 end
 
+-- CommF_ calls made with a given action (other calls, like Buso, ignored).
+local function calls(remote, action)
+    local out = {}
+    for _, call in ipairs(remote.Invoked or {}) do
+        if call[1] == action then out[#out + 1] = call end
+    end
+    return out
+end
+
 ---------------------------------------------------------------------------
 -- Modules load
 ---------------------------------------------------------------------------
@@ -134,6 +143,7 @@ local function setup(options)
     Quests.SCAN_EVERY = 0
     Router.reset()
     Entrances.reset(nil)
+    require("Features.PlayerTweaks").reset()
     Loop.stopAll()
     WARNINGS = {}
     game.PlaceId = 4442272183
@@ -434,7 +444,7 @@ do
     world.hrp.Position = Vector3.new(1000, 14, 1002)
     local vampire = mob("Vampire", Vector3.new(1050, 5, 1000))
     LevelFarm.tick()
-    eq("screen objective: no StartQuest", world.commF.Invoked, nil)
+    eq("screen objective: no StartQuest", #calls(world.commF, "StartQuest"), 0)
     eq("screen objective: fights the vampire", LevelFarm.target, vampire)
 end
 
@@ -679,7 +689,7 @@ do
     local vampire = mob("Vampire", Vector3.new(1050, 5, 1000))
     LevelFarm.QUEST_SETTLE = 0
     LevelFarm.tick()
-    eq("no StartQuest while a quest is held", world.commF.Invoked, nil)
+    eq("no StartQuest while a quest is held", #calls(world.commF, "StartQuest"), 0)
     eq("goes to fight the quest mob", LevelFarm.target, vampire)
     near("holds above the vampire", Movement.goal().Position, Vector3.new(1057, 25, 1000))
 end
@@ -1105,14 +1115,44 @@ do
     game.PlaceId = 7449423635
     Entrances.reset({ DefeatedIndraTrueForm = true })
     Router.VERIFY_STEPS = 3
+    Router.COOLDOWN = 0
     world.commF.OnInvoke = function() return nil end   -- the jump never happens
     local goal = CASTLE + Vector3.new(60, 0, 60)
-    Router.update(Vector3.new(0, 0, 0), goal, 300)
-    for _ = 1, 4 do stepTasks() end
-    check("failed portal locked", Router.describe():find("Castle on the Sea: locked", 1, true) ~= nil, Router.describe())
+    local function attempt()
+        Router.update(Vector3.new(0, 0, 0), goal, 300)
+        for _ = 1, 4 do stepTasks() end
+        Router.update(Vector3.new(0, 0, 0), goal, 300)   -- the flying frame after a try
+    end
+    attempt()
+    local text = Router.describe()
+    check("one failure does not lock", text:find("Castle on the Sea: untested", 1, true) ~= nil, text)
+    check("last attempt shown", text:find("no move", 1, true) ~= nil, text)
+    attempt()
+    check("two failures in a row lock", Router.describe():find("Castle on the Sea: locked", 1, true) ~= nil, Router.describe())
     local again = Router.plan(Vector3.new(0, 0, 0), goal, 300)
     check("locked portal no longer planned", again.name ~= "Castle on the Sea", again.name)
-    Router.VERIFY_STEPS = 10
+    Router.LOCK_TIME = 0
+    check("lock expires", Router.plan(Vector3.new(0, 0, 0), goal, 300).name == "Castle on the Sea")
+    Router.LOCK_TIME = 120
+    Router.VERIFY_STEPS = 24
+    Router.COOLDOWN = 4
+end
+
+-- The game lands the player on the destination's spawn, not on the point.
+setup()
+do
+    game.PlaceId = 7449423635
+    Entrances.reset({ DefeatedIndraTrueForm = true })
+    local landing = CASTLE + Vector3.new(800, 0, 0)
+    world.commF.OnInvoke = function(action)
+        if action == "requestEntrance" then world.hrp.Position = landing end
+        return true
+    end
+    Router.update(Vector3.new(0, 0, 0), landing + Vector3.new(50, 0, 0), 300)
+    stepTasks()
+    local text = Router.describe()
+    check("off-point landing counts as a jump", text:find("Castle on the Sea: works", 1, true) ~= nil, text)
+    check("distance moved shown", text:find("moved", 1, true) ~= nil, text)
 end
 
 setup()
@@ -1165,6 +1205,35 @@ do
     Movement.to(CFrame.new(100, 0, 0))
     Movement.step(1 / 60)
     near("short trip set in one go", world.hrp.Position, Vector3.new(100, 0, 0))
+end
+
+---------------------------------------------------------------------------
+-- Auto Buso
+---------------------------------------------------------------------------
+
+setup()
+do
+    local PlayerTweaks = require("Features.PlayerTweaks")
+    world.commF.OnInvoke = function() return true end
+    check("buso requested when off", PlayerTweaks.ensureBuso())
+    eq("Buso action sent", #calls(world.commF, "Buso"), 1)
+    check("no second request during the cooldown", not PlayerTweaks.ensureBuso())
+
+    PlayerTweaks.reset()
+    newInstance("Part", "_BusoLayer1Arm", world.character)
+    check("aura present: nothing to do", not PlayerTweaks.ensureBuso())
+
+    PlayerTweaks.reset()
+    world.character._BusoLayer1Arm.Parent = nil
+    newInstance("BoolValue", "HasBuso", world.character)
+    check("HasBuso present: nothing to do", not PlayerTweaks.ensureBuso())
+    eq("still one request in total", #calls(world.commF, "Buso"), 1)
+
+    PlayerTweaks.reset()
+    world.character.HasBuso.Parent = nil
+    local target = mob("Zombie", Vector3.new(0, 0, 0))
+    require("Features.Fight").engage({}, target)
+    eq("fight turns buso on", #calls(world.commF, "Buso"), 2)
 end
 
 ---------------------------------------------------------------------------
