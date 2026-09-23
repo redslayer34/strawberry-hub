@@ -77,6 +77,38 @@ Settings.DEFAULTS = {
     OtherAnglerRarities = {},
     OtherSlapBattle = false,
 
+    -- Devil fruit
+    FruitRandom = false,
+    FruitStore = false,
+    FruitSniper = false,
+    FruitSniperList = {},
+    FruitAwaken = false,
+
+    -- Raids
+    RaidAuto = false,
+    RaidName = "Flame",
+    RaidCheapFruit = false,
+    RaidHopFruit = false,
+    RaidInstantKill = false,
+    RaidKillDelay = 5,
+    MultiRaid = false,
+    MultiRaidAccounts = {},
+    MultiRaidBuyer = false,
+    MultiRaidSlot = false,
+
+    -- Dungeon
+    DungeonJoin = false,
+    DungeonLeader = false,
+    DungeonLeaderName = "",
+    DungeonMinPlayers = 2,
+    DungeonDifficulty = "Normal",
+    DungeonAttack = false,
+    DungeonWeapon = "Melee",
+    DungeonCards = false,
+    DungeonCard1 = "",
+    DungeonCard2 = "",
+    DungeonCard3 = "",
+
     -- ESP
     EspFruit = false,
     EspBerry = false,
@@ -103,6 +135,8 @@ Settings.DEFAULTS = {
     WebhookPingId = "",
     WebhookPing = false,
     WebhookProfile = false,
+    WebhookStoreFruit = false,
+    WebhookFruitRarities = { Mythical = true, Legendary = true },
 
     -- Mastery
     MasteryFarm = false,

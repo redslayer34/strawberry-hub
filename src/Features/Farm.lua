@@ -18,9 +18,11 @@ local Settings = require("Core.Settings")
 local Farm = {}
 
 local Dragon = require("Features.Other.Dragon")
+local Dungeon = require("Features.Dungeon")
 local Fishing = require("Features.Other.Fishing")
 local Observation = require("Features.Other.Observation")
 local Pvp = require("Features.Pvp")
+local Raids = require("Features.Raids")
 local Simple = require("Features.Other.Simple")
 
 -- Priority order: the first enabled mode is the one that runs. Stack events
@@ -28,6 +30,10 @@ local Simple = require("Features.Other.Simple")
 Farm.MODES = {
     require("Features.Travel"),
     require("Features.StackFarm"),
+    Dungeon.attack,
+    Dungeon.join,
+    Raids.multi,
+    Raids.solo,
     Simple.law,
     Observation.v2,
     Observation.farm,

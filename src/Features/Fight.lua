@@ -21,7 +21,8 @@ Fight.SPAWN_REACHED = 100    -- studs: close enough, mobs stream in
 
 -- Engages `mob` for `mode` (sets mode.target, which the attack loop hits).
 -- Returns hasWeapon: false when the chosen weapon is not in the inventory.
-function Fight.engage(mode, mob)
+-- `weapon` (a ToolTip) replaces the Weapon setting when given.
+function Fight.engage(mode, mob, weapon)
     local root = mob.HumanoidRootPart
     Movement.to(root.CFrame * CFrame.new(7, Settings.get("FarmHeight"), 0))
     if Settings.get("BringMob") then
@@ -30,14 +31,14 @@ function Fight.engage(mode, mob)
     mode.target = mob
     PlayerTweaks.ensureBuso()
     if Mastery.step(mob) then return true end
-    return Player.equip(Settings.get("Weapon")) ~= nil
+    return Player.equip(weapon or Settings.get("Weapon")) ~= nil
 end
 
 -- "Fighting X" plus a warning when the weapon is missing.
-function Fight.status(mob, hasWeapon, suffix)
+function Fight.status(mob, hasWeapon, suffix, weapon)
     local text = "Fighting " .. mob.Name .. (suffix or "")
     if not hasWeapon then
-        text = text .. " -- no " .. Settings.get("Weapon") .. " in your inventory"
+        text = text .. " -- no " .. (weapon or Settings.get("Weapon")) .. " in your inventory"
     end
     return text
 end

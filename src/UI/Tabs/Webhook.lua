@@ -27,9 +27,12 @@ return function(Window, ui)
     local reports = tab:AddSection("Reports")
     Bind.toggle(reports, "WebhookProfile", "Send Profile Every 5 Minutes",
         "Level, race, fruit, melees, valuable fruits and rare items.")
+    Bind.toggle(reports, "WebhookStoreFruit", "Report Stored Fruits", "Needs Auto Store Fruit (Fruit & Raid tab).")
+    Bind.multiDropdown(reports, "WebhookFruitRarities", "Fruit Rarities To Report",
+        { "Mythical", "Legendary", "Rare", "Uncommon", "Common" })
     reports:AddParagraph({
         Title = "More reports",
-        Content = "Stored fruits, Prehistoric Island, Leviathan and Mirage reports come with their features.",
+        Content = "Prehistoric Island, Leviathan and Mirage reports come with their features.",
     })
     return tab
 end

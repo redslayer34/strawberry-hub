@@ -150,13 +150,13 @@ end
 
 -- Fights a boss or mob found by Enemies.findBoss: a boss parked out of
 -- streaming range is flown to first, which loads it.
-function Common.fight(mode, mob, inWorld)
+function Common.fight(mode, mob, inWorld, weapon)
     if inWorld == false then
         mode.target = nil
         Movement.to(mob.HumanoidRootPart.CFrame * CFrame.new(0, Fight.SPAWN_HEIGHT, 0))
         return "Going to " .. mob.Name
     end
-    return Fight.status(mob, Fight.engage(mode, mob))
+    return Fight.status(mob, Fight.engage(mode, mob, weapon), nil, weapon)
 end
 
 -- Fights the nearest mob of `names`, or tours their spawn points.

@@ -57,7 +57,7 @@ local MODULES = {
     "Features.Stack.Bosses", "Features.Stack.Summons", "Features.Stack.EliteHunter", "Features.Stack.Events",
     "Features.ChestHunt", "Features.Other.Mode", "Features.Other.Simple", "Features.Other.Observation",
     "Features.Other.Dragon", "Features.Other.Fishing", "Features.Esp", "Features.Pvp", "Features.Screen",
-    "Features.Webhook",
+    "Features.Webhook", "Features.Fruits", "Features.Raids", "Features.Dungeon",
 }
 for _, name in ipairs(MODULES) do
     local ok, err = pcall(require, name)
@@ -2170,6 +2170,219 @@ do
     eq("user pinged", body and body.content, "<@123>")
     eq("event in the embed", body and body.embeds[1].fields[1].value, "`Test`")
     request = nil
+end
+
+---------------------------------------------------------------------------
+-- Devil fruits, raids, dungeon
+---------------------------------------------------------------------------
+
+local Fruits = require("Features.Fruits")
+local Raids = require("Features.Raids")
+local DungeonModes = require("Features.Dungeon")
+
+local function batchBSetup(place, level)
+    otherSetup(place, level)
+    Fruits.reset()
+    Raids.reset()
+end
+
+-- Random fruit: rolled only when the Cousin allows it.
+batchBSetup()
+do
+    local level = 40
+    world.commF.OnInvoke = function(action, what)
+        if action == "Cousin" and what == "Check" then return 5000000, level, 1000000 end
+        if action == "Cousin" and what == "CheckTime" then return true end
+        if action == "Cousin" then return 1 end
+    end
+    check("below level 50: no roll", not Fruits.roll())
+    level = 60
+    check("allowed: rolled", Fruits.roll())
+    local rolls = 0
+    for _, call in ipairs(world.commF.Invoked) do
+        if call[1] == "Cousin" and call[2] == "DLCBoxData" then rolls = rolls + 1 end
+    end
+    eq("one roll with the default box", rolls, 1)
+end
+
+-- Store fruit: once per tool, reported when the rarity is wanted.
+batchBSetup()
+do
+    local fruit = tool("Kilo Fruit")
+    fruit:SetAttribute("OriginalName", "Kilo-Kilo")
+    moduleScript("FruitInfo", rs, { List = { ["Kilo-Kilo"] = { Rarity = { Name = "Mythical" } } } })
+    local posted
+    request = function(options) posted = options end
+    Settings.set("WebhookUrl", "https://discord.test/hook")
+    Settings.set("WebhookStoreFruit", true)
+    Settings.set("WebhookFruitRarities", { Mythical = true })
+    eq("fruit stored", Fruits.storeNext(), fruit)
+    local store = calls(world.commF, "StoreFruit")
+    eq("stored under its storage name", store[1] and store[1][2], "Kilo-Kilo")
+    check("mythical store reported", posted ~= nil)
+    eq("not stored twice", Fruits.storeNext(), nil)
+    request = nil
+end
+
+-- Sniper: a wanted fruit on sale, unless one is already eaten.
+batchBSetup()
+do
+    local fruitValue = newInstance("StringValue", "DevilFruit", world.player.Data)
+    fruitValue.Value = "Kilo-Kilo"
+    world.commF.OnInvoke = function(action)
+        if action == "GetFruits" then
+            return { { Name = "Dough-Dough", OnSale = true }, { Name = "Leopard-Leopard", OnSale = false } }
+        end
+    end
+    Settings.set("FruitSniperList", { ["Dough-Dough"] = true, ["Leopard-Leopard"] = true })
+    eq("wanted fruit on sale", Fruits.snipeTarget(), "Dough-Dough")
+    fruitValue.Value = "Dough-Dough"
+    eq("already eating a wanted fruit: no buy", Fruits.snipeTarget(), nil)
+end
+
+-- Raid: buy the chip, press the button with it, fight inside.
+batchBSetup(7449423635, 1200)
+do
+    Settings.set("RaidAuto", true)
+    check("level 1200: raid mode on", Raids.solo.enabled())
+    Raids.solo.tick()
+    local select = calls(world.commF, "RaidsNpc")
+    eq("chip bought for the chosen raid", select[2] and select[2][3], "Flame")
+
+    tool("Special Microchip")
+    local main = folder("Main", folder("Button", folder("RaidSummon2", folder("Boat Castle", folder("Map", workspace)))))
+    newInstance("ClickDetector", "ClickDetector", main)
+    local pressed
+    fireclickdetector = function(detector) pressed = detector end
+    Raids.solo.tick()
+    eq("summon pressed with the chip", pressed, main.ClickDetector)
+    fireclickdetector = nil
+
+    local hud = folder("TopHUDList", world.questPanel.Parent)
+    newInstance("Frame", "RaidTimer", hud).Visible = true
+    part("Island 1", Vector3.new(100, 0, 0), folder("Locations", folder("_WorldOrigin", workspace)))
+    local raider = mob("Raid Mob", Vector3.new(50, 0, 0))
+    check("in the raid", Raids.inRaid())
+    Raids.solo.tick()
+    eq("fights the raid mob", Raids.solo.target, raider)
+end
+
+-- Multi raid: the buyer starts only when every account is on a slot.
+batchBSetup(7449423635, 1200)
+do
+    Settings.set("MultiRaid", true)
+    Settings.set("MultiRaidBuyer", true)
+    Settings.set("MultiRaidAccounts", { Friend = true })
+    tool("Special Microchip")
+    local summoner = folder("RaidSummon2", folder("Boat Castle", folder("Map", workspace)))
+    local main = folder("Main", folder("Button", summoner))
+    newInstance("ClickDetector", "ClickDetector", main)
+    local slot = newInstance("Model", "Slot1", summoner)
+    local hitbox = part("Hitbox", Vector3.new(200, 0, 0), slot)
+    part("Color", Vector3.new(200, 0, 0), slot).BrickColor = { Name = "Really red" }
+    local friend = newInstance("Player", "Friend", players)
+    local friendCharacter = newInstance("Model", "Friend", world.characters)
+    local friendRoot = part("HumanoidRootPart", Vector3.new(900, 0, 0), friendCharacter)
+    friend.Character = friendCharacter
+
+    local pressed
+    fireclickdetector = function(detector) pressed = detector end
+    Raids.multi.tick()
+    eq("account off its slot: not started", pressed, nil)
+    friendRoot.Position = hitbox.Position
+    Raids.multi.tick()
+    eq("everyone on a slot: started", pressed, main.ClickDetector)
+    fireclickdetector = nil
+
+    -- A slot taker goes to the free slot.
+    Settings.set("MultiRaidBuyer", false)
+    Settings.set("MultiRaidSlot", true)
+    Raids.multi.tick()
+    check("slot taker heads for the slot", Raids.multi.status:find("Taking a raid slot", 1, true) ~= nil, Raids.multi.status)
+end
+
+-- Dungeon join: the leader sets the difficulty and starts at the count.
+batchBSetup()
+do
+    Settings.set("DungeonJoin", true)
+    Settings.set("DungeonLeader", true)
+    Settings.set("DungeonDifficulty", "Hard")
+    world.player.UserId = 42
+    local padsFolder = folder("Pads", folder("Simulation Hub", folder("Map", workspace)))
+    local pad = newInstance("Model", "Pad1", padsFolder)
+    pad.PrimaryPart = part("Base", Vector3.new(30, 0, 0), pad)
+    pad:SetAttribute("NumPlayersOnPad", 0)
+    local remote = newInstance("RemoteEvent", "DungeonSettingsChanged", pad)
+    DungeonModes.join.tick()
+    check("leader goes to a free pad", DungeonModes.join.status:find("Going to a dungeon pad", 1, true) ~= nil)
+
+    local menu = newInstance("ScreenGui", "DungeonQueueSettingsMenu", world.player.PlayerGui)
+    menu.Enabled = true
+    pad:SetAttribute("Initiator", 42)
+    pad:SetAttribute("NumPlayersOnPad", 2)
+    pad:SetAttribute("Difficulty", "Normal")
+    DungeonModes.join.tick()
+    local fired = {}
+    for _, call in ipairs(remote.Fired or {}) do fired[#fired + 1] = call[1] .. (call[2] and ("=" .. call[2]) or "") end
+    eq("difficulty set then started", table.concat(fired, ","), "Difficulty=Hard,Start")
+end
+
+-- Dungeon attack: exit teleporter when behind, placeholder first.
+batchBSetup()
+do
+    Settings.set("DungeonAttack", true)
+    local objects = folder("DungeonReplicationObjects", rs)
+    local run = newInstance("Folder", "Run", objects)
+    run:SetAttribute("CurrentExploredLevel", 2)
+    local explorers = newInstance("Folder", "Explorers", run)
+    local info = newInstance("Configuration", "guid-1", explorers)
+    info:SetAttribute("FloorId", 1)
+    world.player:SetAttribute("ExplorerGUID", "guid-1")
+    local floors = folder("Dungeon", folder("Map", workspace))
+    local floor1 = newInstance("Model", "1", floors)
+    local exit = newInstance("Model", "ExitTeleporter", floor1)
+    part("Root", Vector3.new(0, 0, 40), exit)
+    check("in a dungeon: attack on", DungeonModes.attack.enabled())
+    DungeonModes.attack.tick()
+    check("behind: heading for the exit", DungeonModes.attack.status:find("Going to floor 2", 1, true) ~= nil,
+        DungeonModes.attack.status)
+
+    info:SetAttribute("FloorId", 2)
+    local floor2 = newInstance("Model", "2", floors)
+    floor2.WorldPivot = CFrame.new(0, 0, 0)
+    mob("Floor Mob", Vector3.new(10, 0, 0))
+    local prop = mob("PropHitboxPlaceholder", Vector3.new(80, 0, 0))
+    DungeonModes.attack.tick()
+    eq("placeholder fought first", DungeonModes.attack.target, prop)
+end
+
+-- Dungeon cards: the priority wins over the other offers.
+batchBSetup()
+do
+    moduleScript("ExplorerBuffs", folder("DungeonShared", rs), { ExplorerBuffs = {
+        Lifesteal = { DisplayName = "<font color='red'>Lifesteal</font>" },
+        Armor = { DisplayName = "Armor" },
+    } })
+    local picked
+    local function offer(name)
+        local screen = newInstance("ScreenGui", "Card" .. name, world.player.PlayerGui)
+        local label = newInstance("TextLabel", "DisplayName", screen)
+        label.Text = name == "Lifesteal" and "<font color='red'>Lifesteal</font>" or name
+        newInstance("TextLabel", "BuffDescription", screen)
+        local button = newInstance("TextButton", "Pick", screen)
+        button.Name = "Pick"
+        return button
+    end
+    offer("Lifesteal")
+    local armorButton = offer("Armor")
+    getconnections = function(signal)
+        return { { Function = function() picked = signal end } }
+    end
+    Settings.set("DungeonCard1", "Armor")
+    local chosen = DungeonModes.pickCard()
+    eq("priority card picked", chosen and chosen.name, "Armor")
+    eq("its button pressed", picked, armorButton.Activated)
+    getconnections = nil
 end
 
 ---------------------------------------------------------------------------
