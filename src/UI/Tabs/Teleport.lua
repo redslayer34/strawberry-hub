@@ -4,6 +4,7 @@
 
 local Bind = require("UI.Bind")
 local Data = require("Game.Data")
+local Router = require("Game.Router")
 local Services = require("Core.Services")
 local Settings = require("Core.Settings")
 local Travel = require("Features.Travel")
@@ -44,13 +45,35 @@ return function(Window, ui)
         Callback = function() npcList:SetValues(World.npcNames()) end,
     })
 
+    islands:AddButton({
+        Title = "Banana portal test",
+        Description = "Banana Cat Hub's exact portal code, from where you stand, to the portal nearest the "
+            .. "chosen island: requestEntrance every 0.1 s for up to 15 s.",
+        Callback = function()
+            local name = Settings.get("Island")
+            local position = World.islands()[name]
+            if not position then
+                ui.Library:Notify({ Title = "Banana portal test", Content = "Choose an island first", Duration = 5 })
+                return
+            end
+            local started, info = Router.bananaTest(position, function(text)
+                ui.Library:Notify({ Title = "Banana portal test", Content = text, Duration = 15 })
+            end)
+            ui.Library:Notify({
+                Title = "Banana portal test",
+                Content = started and ("Calling " .. info .. "... stay still") or ("Cannot test: " .. info),
+                Duration = 6,
+            })
+        end,
+    })
+
     local control = tab:AddSection("Control")
     control:AddButton({ Title = "Stop travelling", Callback = Travel.cancel })
     control:AddButton({
         Title = "Test portals",
         Description = "Tries every unlocked portal of this sea once, from where you are. Results in Settings > Movement.",
         Callback = function()
-            local started = require("Game.Router").testAll(function()
+            local started = Router.testAll(function()
                 ui.Library:Notify({ Title = "Portals", Content = "Test finished",
                     SubContent = "See Settings > Movement > Portals", Duration = 6 })
             end)

@@ -119,7 +119,12 @@ end
 function Entrances.use(point)
     TeleportTag.mark()
     if point.temple then pcall(borrowTemple) end
-    return Services.invoke("requestEntrance", point.position)
+    local remote = Services.commF()
+    if not remote then return nil end
+    -- A method call, written as the reference writes it.
+    local ok, answer = pcall(function() return remote:InvokeServer("requestEntrance", point.position) end)
+    if ok then return answer end
+    return nil
 end
 
 -- Test hook.

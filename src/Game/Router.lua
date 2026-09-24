@@ -17,10 +17,12 @@
 --                goal's island, then reset the character
 --    direct      fly
 --
---  One thing is added to the reference: a shortcut that does not move the
---  player is not tried forever. An entrance gets ENTRANCE_TRIES calls; when
---  the player did not move, it cools down, and FAILS_TO_LOCK misses in a row
---  pause it for LOCK_TIME while the Router flies.
+--  The entrance is the reference's code as it is: from where the player
+--  stands, requestEntrance every EXACT_EVERY seconds while the goal is far.
+--  One thing is added: the reference calls forever, here the calls stop
+--  after EXACT_TIME seconds without a move; the point then cools down, and
+--  FAILS_TO_LOCK misses in a row pause it for LOCK_TIME while the Router
+--  flies.
 --=============================================================================
 
 local Entrances = require("Game.Entrances")
@@ -34,11 +36,10 @@ local Router = {}
 
 Router.SNAP = 150              -- studs: closer goals are simply set
 Router.FAR = 3000              -- the reference's distance for every shortcut
-Router.TOO_CLOSE = 1000        -- studs: a point this close is not requested
+Router.TOO_CLOSE = 1000        -- studs: Test portals skips a point this close
 Router.MOVED = 300             -- studs the character must move for a jump to count
-Router.ENTRANCE_TRIES = 10     -- requestEntrance calls before giving up
-Router.ENTRANCE_EVERY = 0.3    -- seconds between two calls
-Router.LAST_LOOK = 4           -- x 0.25 s: a jump may land just after the last call
+Router.EXACT_EVERY = 0.1       -- seconds between two calls, as the reference
+Router.EXACT_TIME = 15         -- seconds of calls without a move before giving up
 Router.COOLDOWN = 4            -- seconds before the same shortcut is tried again
 Router.FAILS_TO_LOCK = 2       -- misses in a row before a shortcut is paused
 Router.LOCK_TIME = 120         -- seconds a paused shortcut stays paused
@@ -136,8 +137,6 @@ function Router.entranceFor(here, goal)
                 why = point.name .. " paused (" .. tostring(attempts[point.name]) .. ")"
             elseif coolingDown(point.name) then
                 why = point.name .. " just tried"
-            elseif within(here, point.position, Router.TOO_CLOSE) then
-                why = point.name .. " is right here"
             elseif not bestDistance or toGoal < bestDistance then
                 best, bestDistance = point, toGoal
             end
@@ -317,29 +316,35 @@ end
 
 local actions = {}
 
--- The reference calls requestEntrance again and again while the goal is
--- far; here the calls stop at the first move or after ENTRANCE_TRIES.
-function actions.entrance(plan)
+-- The reference's loop: requestEntrance, wait EXACT_EVERY, again, until
+-- the player has moved (here: or EXACT_TIME has passed). Returns whether the
+-- player moved, how far, how many calls were made and the last answer.
+function Router.bananaLoop(point)
     local start = Player.position()
     local function moved()
         local here = Player.position()
         if not here or not start then return 0 end
         return (here - start).Magnitude
     end
-    local answer
-    for try = 1, Router.ENTRANCE_TRIES do
-        answer = Entrances.use(plan.point)
-        if waitUntil(1, function() return moved() > Router.MOVED end, Router.ENTRANCE_EVERY) then
-            recordResult(plan.name, true, string.format("moved %d studs, call %d", math.floor(moved()), try))
-            return
-        end
+    local total = math.max(1, math.floor(Router.EXACT_TIME / Router.EXACT_EVERY + 0.5))
+    local calls, answer = 0, nil
+    for _ = 1, total do
+        answer = Entrances.use(point)
+        calls = calls + 1
+        task.wait(Router.EXACT_EVERY)
+        if moved() > Router.MOVED then return true, moved(), calls, answer end
     end
-    if waitUntil(Router.LAST_LOOK, function() return moved() > Router.MOVED end) then
-        recordResult(plan.name, true, string.format("moved %d studs", math.floor(moved())))
-        return
-    end
-    recordResult(plan.name, false, string.format("no move after %d calls, answer %s",
-        Router.ENTRANCE_TRIES, tostring(answer)))
+    return false, moved(), calls, answer
+end
+
+local function loopResult(ok, distance, calls, answer)
+    if ok then return string.format("moved %d studs after %d calls", math.floor(distance), calls) end
+    return string.format("no move after %g s (%d calls), answer %s", Router.EXACT_TIME, calls, tostring(answer))
+end
+
+function actions.entrance(plan)
+    local ok, distance, calls, answer = Router.bananaLoop(plan.point)
+    recordResult(plan.name, ok, loopResult(ok, distance, calls, answer))
 end
 
 function actions.gateway(plan)
@@ -499,6 +504,33 @@ function Router.testAll(onDone)
         if onDone then pcall(onDone) end
     end)
     return true
+end
+
+-- The "Banana portal test": the reference's loop, from where the player
+-- stands, to the unlocked point nearest `goal`. Returns false and why when
+-- it cannot start; `onDone(text)` gets the result.
+function Router.bananaTest(goal, onDone)
+    if busy then return false, "a teleport is already running" end
+    local best, bestDistance
+    for _, point in ipairs(Entrances.available()) do
+        local distance = (goal - point.position).Magnitude
+        if distance <= Router.FAR and (not bestDistance or distance < bestDistance) then
+            best, bestDistance = point, distance
+        end
+    end
+    if not best then return false, "no unlocked portal within 3000 studs of it" end
+    busy = true
+    lastUsed[best.name] = os.clock()
+    task.spawn(function()
+        local ok, distance, calls, answer = Router.bananaLoop(best)
+        local text = loopResult(ok, distance, calls, answer)
+        recordResult(best.name, ok, text)
+        route = nil
+        busy = false
+        justJumped = true
+        if onDone then pcall(onDone, best.name .. ": " .. text) end
+    end)
+    return true, best.name
 end
 
 function Router.busy() return busy end

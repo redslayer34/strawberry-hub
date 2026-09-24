@@ -1112,8 +1112,7 @@ do
     eq("goal under 3000 studs: fly", Router.plan(goal + Vector3.new(0, 0, 2000), goal).kind, "direct")
     local here = CASTLE + Vector3.new(0, 0, 500)
     local beside = Router.plan(here, CASTLE + Vector3.new(0, 0, -2600))
-    eq("standing at the portal: fly", beside.kind, "direct")
-    check("reason: right here", beside.reason and beside.reason:find("right here", 1, true) ~= nil, beside.reason)
+    eq("standing at the portal: still called, as in the reference", beside.kind, "entrance")
 
     Movement.reset()
     world.hrp.Position = Vector3.new(0, 0, 0)
@@ -1154,6 +1153,7 @@ do
     game.PlaceId = SEA3
     Entrances.reset({ DefeatedIndraTrueForm = true })
     Router.COOLDOWN = 0
+    Router.EXACT_TIME = 1
     world.commF.OnInvoke = function() return nil end
     local goal = CASTLE + Vector3.new(500, 0, 500)
     local function attempt()
@@ -1162,8 +1162,8 @@ do
         Router.update(Vector3.new(0, 0, 0), goal)   -- the flying frame after a try
     end
     attempt()
-    eq("every call made", #calls(world.commF, "requestEntrance"), Router.ENTRANCE_TRIES)
-    check("miss explained", Router.describe():find("no move after 10 calls", 1, true) ~= nil, Router.describe())
+    eq("a call every 0.1 s for the whole time", #calls(world.commF, "requestEntrance"), 10)
+    check("miss explained", Router.describe():find("no move after 1 s (10 calls)", 1, true) ~= nil, Router.describe())
     eq("one miss: tried again", Router.plan(Vector3.new(0, 0, 0), goal).kind, "entrance")
     attempt()
     local paused = Router.plan(Vector3.new(0, 0, 0), goal)
@@ -1173,6 +1173,26 @@ do
     eq("pause ends", Router.plan(Vector3.new(0, 0, 0), goal).kind, "entrance")
     Router.LOCK_TIME = 120
     Router.COOLDOWN = 4
+    Router.EXACT_TIME = 15
+end
+
+-- The Banana portal test: the reference's loop to the portal nearest an island.
+setup()
+do
+    game.PlaceId = SEA3
+    Entrances.reset({ DefeatedIndraTrueForm = true })
+    world.commF.OnInvoke = function(action, point)
+        if action == "requestEntrance" and point == CASTLE then world.hrp.Position = CASTLE end
+    end
+    local result
+    local started, name = Router.bananaTest(CASTLE + Vector3.new(200, 0, 0), function(text) result = text end)
+    check("test started", started)
+    eq("portal nearest the island", name, "Castle on the Sea")
+    check("nothing else while it runs", not Router.bananaTest(CASTLE))
+    for _ = 1, 5 do stepTasks() end
+    check("result reported", result and result:find("Castle on the Sea: moved", 1, true) ~= nil, result)
+    local refused, why = Router.bananaTest(Vector3.new(90000, 0, 90000))
+    check("no portal near: refused", not refused and why:find("no unlocked portal", 1, true) ~= nil, why)
 end
 
 -- The Temple of Time point borrows the temple map first.
@@ -1412,8 +1432,10 @@ do
     Entrances.reset({ DefeatedIndraTrueForm = true })
     world.hrp.Position = CASTLE + Vector3.new(100, 0, 0)
     world.commF.OnInvoke = function() return nil end
+    Router.EXACT_TIME = 0.5
     Router.testAll()
     for _ = 1, 60 do stepTasks() end
+    Router.EXACT_TIME = 15
     local text = Router.describe()
     check("portal next to the player reported too close",
         text:find("Castle on the Sea: untested (too close", 1, true) ~= nil, text)
@@ -1434,6 +1456,7 @@ do
         return nil
     end
     local done = false
+    Router.EXACT_TIME = 0.5
     check("test started", Router.testAll(function() done = true end))
     check("second test refused while running", not Router.testAll())
     for _ = 1, 40 do stepTasks() end
@@ -1442,6 +1465,7 @@ do
     check("working portal reported", text:find("Cursed Ship: works", 1, true) ~= nil, text)
     check("failed portal reported", text:find("no move after", 1, true) ~= nil, text)
     check("locked portal shown", text:find("Doflamingo Mansion: not unlocked", 1, true) ~= nil, text)
+    Router.EXACT_TIME = 15
 end
 
 -- Leaving the Temple of Time uses the game's way back.
