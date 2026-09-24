@@ -10,4 +10,5 @@ return MobFarm({
     key = "AutoBone",
     sea = 3,
     mobs = function() return Data.BONE_MOBS end,
+    quest = { name = "HauntedQuest2", id = 2, level = 2050 },
 })

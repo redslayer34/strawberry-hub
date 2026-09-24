@@ -40,6 +40,7 @@ local Swords = require("Features.Items.Swords")
 -- the main farms last.
 Farm.MODES = {
     require("Features.Travel"),
+    require("Features.SafeSpot").mode,
     require("Features.StackFarm"),
     Dungeon.attack,
     Dungeon.join,
@@ -97,6 +98,7 @@ Farm.MODES = {
     Pvp.follow,
     require("Features.BossFarm"),
     require("Features.KatakuriFarm"),
+    require("Features.TyrantFarm"),
     require("Features.BoneFarm"),
     require("Features.MaterialFarm"),
     require("Features.KillMobFarm"),

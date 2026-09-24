@@ -87,6 +87,24 @@ function Server.join(id)
     return (pcall(remote.InvokeServer, remote, "teleport", id))
 end
 
+Server.SPAM_EVERY = 0.5
+
+-- The reference's "Spam Join": the join is asked again every SPAM_EVERY
+-- seconds while the JoinSpam setting stays on (a full server lets you in
+-- once a slot frees). Returns true when the repeat started.
+function Server.spamJoin(id)
+    local Settings = require("Core.Settings")
+    if not Settings.get("JoinSpam") then return false end
+    task.spawn(function()
+        while Settings.get("JoinSpam") do
+            task.wait(Server.SPAM_EVERY)
+            if not Settings.get("JoinSpam") then break end
+            Server.join(id)
+        end
+    end)
+    return true
+end
+
 -- One page of Roblox's public server list for this place, or nil.
 local function servers(cursor)
     local url = "https://games.roblox.com/v1/games/" .. game.PlaceId

@@ -163,12 +163,12 @@ eq("rounded slider value", Settings.get("AttackDelay"), 0.25)
 Options.TweenSpeed:SetValue(9999)
 eq("slider clamped to its max", Settings.get("TweenSpeed"), 350)
 
-Options.MasterySkills:SetValue({ Z = true, C = true, X = false })
-local skills = Settings.get("MasterySkills")
+Options.SkillsFruit:SetValue({ Z = true, C = true, X = false })
+local skills = Settings.get("SkillsFruit")
 check("multi-dropdown writes a set", skills.Z and skills.C and not skills.X and not skills.V)
 eq("multi-dropdown keeps only the chosen skills", (function()
     local n = 0
-    for _ in pairs(library.Options.MasterySkills.Value) do n = n + 1 end
+    for _ in pairs(library.Options.SkillsFruit.Value) do n = n + 1 end
     return n
 end)(), 2)
 

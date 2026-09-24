@@ -519,6 +519,11 @@ V4.trial = Mode({
     name = "Race Trial",
     key = "RaceTrial",
     sea = 3,
+    -- The reference's "Stack Train With Trial Race": training comes first.
+    want = function()
+        return not (Settings.get("RaceTrainFirst") and Settings.get("RaceTrain") and V4.needsTraining())
+    end,
+    idleStatus = "Training first",
     tick = function(mode)
         if hopForMoon() then return "Hopping for a full moon" end
         local temple = V4.temple()
@@ -582,7 +587,9 @@ V4.killPlayers = Mode({
     tick = function(mode)
         local player = V4.playerInBorder()
         if not player then return "No player left" end
-        return Duel.fight(mode, player, Settings.get("Weapon")) or "Next player"
+        local skills = Settings.get("RaceTrialSkills")
+            and (not Settings.get("RaceTrialKenOnly") or player:GetAttribute("KenActive") == true)
+        return Duel.fight(mode, player, Settings.get("RaceTrialWeapon"), skills) or "Next player"
     end,
     stop = function() Duel.reset() end,
 })

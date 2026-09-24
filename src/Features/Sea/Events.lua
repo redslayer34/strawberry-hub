@@ -36,6 +36,7 @@ Events.SEA_BEAST_HP = 90000
 Events.RADIUS = 2000
 Events.SKILL_RANGE = 400
 Events.AT_ZONE = 200
+Events.ROUGH_SHIFT = 7000
 
 Events.TIKI_ROUTE = {
     Vector3.new(7415.83251953125, 24.0008487701416, -6664.6826171875),
@@ -169,6 +170,7 @@ function Events.fight(mode, target)
     if not root then return "Waiting for " .. target.Name end
     if not target:FindFirstChildOfClass("Humanoid") then
         -- A sea beast: above it, or at 140 when it dives deep.
+        Events.beast = target
         if math.abs(root.Position.Y + 60) <= 175 then
             Common.goTo(root.CFrame * CFrame.new(0, 200, 50))
         else
@@ -191,10 +193,48 @@ end
 -- Sailing
 ---------------------------------------------------------------------------
 
+local roughOffset, roughSeen = 0, {}
+
+local function raining()
+    local rain = Services.find(workspace, "_WorldOrigin.RainEmitterPart")
+    local size = rain and rain.Size
+    return size ~= nil and size.X > 0.01
+end
+
+-- The reference's "Teleport Boat Other CFrame if Rough Sea": each rough sea
+-- met near the boat while it rains moves the zone 7000 studs away (and back
+-- at the next one).
+function Events.avoidRoughSea()
+    if not Settings.get("SeaRoughSea") or not raining() then return end
+    local locations = Services.find(workspace, "_WorldOrigin.Locations")
+    for _, marker in ipairs(locations and locations:GetChildren() or {}) do
+        if marker.Name == "Rough Sea" and not roughSeen[marker] and Player.distanceTo(marker.Position) <= 3000 then
+            roughSeen[marker] = true
+            roughOffset = roughOffset == 0 and Events.ROUGH_SHIFT or 0
+        end
+    end
+end
+
 -- Where to wait for sea events in this sea.
 function Events.spot()
     if Player.sea() == 2 then return Boat.SEA2_SPOT end
-    return Boat.ZONES[Settings.get("SeaZone")] or Boat.ZONES["Zone 1"]
+    Events.avoidRoughSea()
+    local zone = Boat.ZONES[Settings.get("SeaZone")] or Boat.ZONES["Zone 1"]
+    return zone + Vector3.new(0, 0, roughOffset)
+end
+
+-- "Sea event with a friend": stay with the friend, who drives.
+function Events.withFriend()
+    local name = tostring(Settings.get("SeaFriendName") or "")
+    local friend = name ~= "" and Services.get("Players"):FindFirstChild(name)
+    local root = friend and friend.Character and friend.Character:FindFirstChild("HumanoidRootPart")
+    Boat.stop()
+    if not root then
+        Movement.stop()
+        return "Friend " .. (name ~= "" and name or "?") .. " not in this server"
+    end
+    Common.goTo(root.CFrame)
+    return "With " .. friend.Name
 end
 
 -- Boards the boat and sails to `spot` (default Events.spot()). Returns the
@@ -236,6 +276,13 @@ Events.auto = Mode({
         end
         local target = Events.find(kinds, Events.RADIUS, Settings.get("SeaBrigadeOnly"))
         if target then return Events.fight(mode, target) end
+        if Settings.get("SeaFriend") then return Events.withFriend() end
+        if Settings.get("SeaSailOut") then
+            local boat, status = Boat.get()
+            if not boat then return status end
+            Boat.sail(boat, Boat.FAR)
+            return "Sailing out until a sea event shows up"
+        end
         return Events.patrol()
     end,
     stop = Boat.stop,
@@ -313,6 +360,8 @@ end
 
 function Events.reset()
     idkSeen = false
+    roughOffset, roughSeen = 0, {}
+    Events.beast = nil
     for _, state in pairs(routes) do state.index = 1 end
 end
 

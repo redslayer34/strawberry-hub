@@ -258,6 +258,19 @@ function Quests.best(level)
     return best
 end
 
+-- Where the giver of `questName` stands (this sea's NPCList), and its name.
+function Quests.giver(questName)
+    local data = guideData()
+    local npcs = data and data.NPCList
+    if type(npcs) ~= "table" then return nil end
+    for _, npc in pairs(npcs) do
+        if npc.InternalQuestName == questName and npc.Position then
+            return toVector(npc.Position), npc.NPCName
+        end
+    end
+    return nil
+end
+
 function Quests.start(plan)
     return Services.invoke("StartQuest", tostring(plan.questName), plan.id)
 end

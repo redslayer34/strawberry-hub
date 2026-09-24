@@ -51,7 +51,8 @@ function Duel.pick(accept)
 end
 
 -- One step against `player`. Returns the status, or nil when the duel is over.
-function Duel.fight(mode, player, weapon)
+-- `useSkills` (default true) also fires the weapons' skills at the target.
+function Duel.fight(mode, player, weapon, useSkills)
     local character = player.Character
     if not alive(character) or Duel.safe(character) then
         done[player.Name] = true
@@ -68,7 +69,7 @@ function Duel.fight(mode, player, weapon)
     local root = character.HumanoidRootPart
     Common.goTo(root.CFrame * CFrame.new(0, 0, 3))
     if weapon then Player.equip(weapon) end
-    if Player.distanceTo(root.Position) < 50 then Mastery.fireAt(root.CFrame) end
+    if useSkills ~= false and Player.distanceTo(root.Position) < 50 then Mastery.fireAt(root.CFrame) end
     mode.target = character
     return "Fighting " .. player.Name
 end

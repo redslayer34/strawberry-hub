@@ -47,6 +47,10 @@ Data.BONE_MOBS = { "Reborn Skeleton", "Living Zombie", "Demonic Soul", "Posessed
 -- Sea 3, Cake Land: killing these makes Cake Prince (then Dough King) spawn.
 Data.CAKE_MOBS = { "Cookie Crafter", "Cake Guard", "Baking Staff", "Head Baker" }
 Data.CAKE_BOSSES = { "Cake Prince", "Dough King" }
+
+-- Sea 3, Tiki Outpost: the Tyrant of the Skies' island.
+Data.TYRANT_MOBS = { "Isle Champion", "Serpent Hunter", "Skull Slayer", "Sun-kissed Warrior" }
+Data.TYRANT = "Tyrant of the Skies"
 -- They drop the Conjured Cocoa the Sweet Chalice needs (Dough King's summon).
 Data.COCOA_MOBS = { "Cocoa Warrior", "Chocolate Bar Battler" }
 

@@ -20,10 +20,21 @@ return function(Window)
     Bind.multiDropdown(setup, "SeaSkillWeapons", "Weapons For Skills", { "Blox Fruit", "Melee", "Sword", "Gun" },
         "Sea beasts, ships, the Leviathan and the volcano rocks are hit with skills.")
     Bind.toggle(setup, "SeaRepair", "Auto Repair Your Boat", "Shipwright hammer, when the boat is damaged.")
+    Bind.toggle(setup, "SeaBoatMaxSpeed", "Change Boat Speed", "Raises your boat's own max speed.")
+    Bind.slider(setup, "SeaBoatMaxValue", "Boat Max Speed", 50, 500, 0)
+    Bind.toggle(setup, "SeaResetForBoat", "Reset To Buy The Boat",
+        "Far from Tiki Outpost with your spawn there: resets instead of flying back.")
 
     local events = tab:AddSection("Sea Events")
     Bind.multiDropdown(events, "SeaEventKinds", "Sea Events To Farm", SeaEvents.KINDS)
     Bind.toggle(events, "SeaBrigadeOnly", "Ships: Only Brigades")
+    Bind.toggle(events, "SeaSailOut", "Keep Sailing Until An Event", "Sails out to sea instead of waiting at the zone.")
+    Bind.toggle(events, "SeaRoughSea", "Avoid Rough Seas", "Moves the zone 7000 studs when a rough sea is met in the rain.")
+    Bind.toggle(events, "SeaDodgeTerrorshark", "Dodge The Terrorshark", "Flies up during its charge.")
+    Bind.toggle(events, "SeaDodgeSeaBeast", "Dodge Sea Beast Beams", "Flies high while a sea beast fires its beam.")
+    local friends = Bind.dropdown(events, "SeaFriendName", "Friend", Pvp.playerNames())
+    events:AddButton({ Title = "Refresh players", Callback = function() friends:SetValues(Pvp.playerNames()) end })
+    Bind.toggle(events, "SeaFriend", "Sea Event With A Friend", "Stays with your friend, who drives the boat.")
     Bind.toggle(events, "SeaAuto", "Auto Sea Event", "Sails to the zone and fights every selected event.")
     Bind.toggle(events, "SeaDestroyIdk", "Auto Destroy IDK", "Clears the sea events while the spy says 'I don't know'.")
 

@@ -6,6 +6,9 @@
 --  is ready is used on the mob (AimHook points it there). A skill's readiness
 --  is read from the game's skill bar, PlayerGui.Main.Skills[tool][key]: the
 --  same test the reference uses.
+--
+--  Which keys a weapon uses and how long each is held are the reference's
+--  "Hold and Select Skill" settings, one set per weapon type.
 --=============================================================================
 
 local AimHook = require("Game.AimHook")
@@ -15,10 +18,22 @@ local Settings = require("Core.Settings")
 
 local Mastery = {}
 
-Mastery.HOLD = 0.3          -- seconds a skill key is held
-Mastery.PRESS_EVERY = 0.4   -- seconds between two skill presses
+Mastery.HOLD = 0.5          -- seconds a skill key is held when nothing is set
+Mastery.FAST_HOLD = 0.05    -- "Use skills fast": tap instead of hold
+Mastery.PRESS_EVERY = 0.4   -- seconds between two skill presses (plus the hold)
 
-local lastPress = -math.huge
+-- Setting keys per weapon type (ToolTip).
+Mastery.KEY_SETTINGS = { Melee = "SkillsMelee", Sword = "SkillsSword", Gun = "SkillsGun", ["Blox Fruit"] = "SkillsFruit" }
+Mastery.HOLD_SETTINGS = { Melee = "SkillHoldMelee", Sword = "SkillHoldSword", Gun = "SkillHoldGun",
+    ["Blox Fruit"] = "SkillHoldFruit" }
+Mastery.WEAPON_KEYS = {
+    Melee = { "Z", "X", "C" },
+    Sword = { "Z", "X" },
+    Gun = { "Z", "X" },
+    ["Blox Fruit"] = { "Z", "X", "C", "V", "F" },
+}
+
+local nextPress = -math.huge
 
 function Mastery.active(mob)
     if not Settings.get("MasteryFarm") then return false end
@@ -50,12 +65,25 @@ local function ready(frame)
     return (title.TextColor3 == WHITE and cooldown.Size == IDLE) or cooldown.Size == FULL
 end
 
+-- The keys chosen for this tool's weapon type (a set).
+function Mastery.keysFor(tool)
+    local key = tool and Mastery.KEY_SETTINGS[tool.ToolTip]
+    return key and Settings.get(key) or Mastery.ALL_KEYS
+end
+
+-- How long this tool's skills are held.
+function Mastery.holdFor(tool)
+    if Settings.get("SkillFast") then return Mastery.FAST_HOLD end
+    local key = tool and Mastery.HOLD_SETTINGS[tool.ToolTip]
+    return tonumber(key and Settings.get(key)) or Mastery.HOLD
+end
+
 -- The first selected skill key that is ready on `tool`, or nil. `keys` (a
--- set) replaces the Mastery Skills selection when given.
+-- set) replaces the weapon's selection when given.
 function Mastery.readySkill(tool, keys)
     local bar = skillBar(tool)
     if not bar then return nil end
-    local selected = keys or Settings.get("MasterySkills") or {}
+    local selected = keys or Mastery.keysFor(tool) or {}
     for _, frame in ipairs(bar:GetChildren()) do
         if frame:IsA("Frame") and frame.Name ~= "Template" and selected[frame.Name] and ready(frame) then
             return frame.Name
@@ -64,10 +92,11 @@ function Mastery.readySkill(tool, keys)
     return nil
 end
 
-local function press(key)
+local function press(key, hold, now)
+    nextPress = now + math.max(Mastery.PRESS_EVERY, hold + 0.1)
     local input = Services.get("VirtualInputManager")
     input:SendKeyEvent(true, key, false, game)
-    task.delay(Mastery.HOLD, function()
+    task.delay(hold, function()
         pcall(function() input:SendKeyEvent(false, key, false, game) end)
     end)
 end
@@ -90,12 +119,9 @@ function Mastery.step(mob)
     AimHook.target = mob.HumanoidRootPart.CFrame
 
     local now = os.clock()
-    if now - lastPress >= Mastery.PRESS_EVERY and tool.Parent == Player.character() then
+    if now >= nextPress and tool.Parent == Player.character() then
         local key = Mastery.readySkill(tool)
-        if key then
-            lastPress = now
-            press(key)
-        end
+        if key then press(key, Mastery.holdFor(tool), now) end
     end
     return true
 end
@@ -117,16 +143,15 @@ function Mastery.fireAt(target, weapons)
     AimHook.install()
     AimHook.target = target
     local now = os.clock()
-    if now - lastPress < Mastery.PRESS_EVERY then return end
+    if now < nextPress then return end
     local list = (type(weapons) == "table" and #weapons > 0) and weapons or Mastery.WEAPONS
     if weaponIndex > #list then weaponIndex = 1 end
     for _ = 1, #list do
         local tool = Player.equip(list[weaponIndex])
         if tool and tool.Parent == Player.character() then
-            local key = Mastery.readySkill(tool, Mastery.ALL_KEYS)
+            local key = Mastery.readySkill(tool)
             if key then
-                lastPress = now
-                press(key)
+                press(key, Mastery.holdFor(tool), now)
                 return
             end
         end
@@ -136,7 +161,7 @@ end
 
 function Mastery.reset()
     AimHook.target = nil
-    lastPress = -math.huge
+    nextPress = -math.huge
 end
 
 return Mastery

@@ -13,6 +13,29 @@ return function(Window, ui)
     Bind.slider(combat, "AttackDelay", "Attack Delay", 0, 0.5, 2,
         "Seconds between two attacks. 0 = every frame.")
 
+    local helpers = tab:AddSection("Farm helpers")
+    Bind.toggle(helpers, "AutoClick", "Auto Click", "Hits whatever is within 80 studs when no farm is fighting.")
+    Bind.toggle(helpers, "AutoKen", "Auto Observation", "Turns Ken (E) back on whenever it is off.")
+    Bind.toggle(helpers, "AutoV3", "Auto Race V3", "Uses your race's V3 ability every 3 seconds.")
+    Bind.toggle(helpers, "DodgeSkills", "Dodge Mob Skills", "Flies 200 studs up while the fought mob casts a skill.")
+    Bind.toggle(helpers, "LowHpEscape", "Fly Up When Low HP", "Stays high above the fight until your health is over 80 %.")
+    Bind.slider(helpers, "LowHpPercent", "Low HP %", 5, 90, 0)
+    Bind.slider(helpers, "LowHpHeight", "Escape Height", 100, 5000, 0)
+    Bind.toggle(helpers, "SafeWithItems", "Safe Spot With Fist / Chalice",
+        "Waits at the Café (Sea 2) or the Mansion (Sea 3) while holding one, unless a feature on needs it.")
+
+    local skills = tab:AddSection("Skills")
+    skills:AddParagraph({ Title = "Which skills", Content = "Used by the mastery farm, the sea events, the trees and the trials." })
+    Bind.multiDropdown(skills, "SkillsMelee", "Melee Skills", { "Z", "X", "C" })
+    Bind.multiDropdown(skills, "SkillsSword", "Sword Skills", { "Z", "X" })
+    Bind.multiDropdown(skills, "SkillsGun", "Gun Skills", { "Z", "X" })
+    Bind.multiDropdown(skills, "SkillsFruit", "Blox Fruit Skills", { "Z", "X", "C", "V", "F" })
+    Bind.slider(skills, "SkillHoldMelee", "Melee Hold Time", 0, 5, 1)
+    Bind.slider(skills, "SkillHoldSword", "Sword Hold Time", 0, 5, 1)
+    Bind.slider(skills, "SkillHoldGun", "Gun Hold Time", 0, 5, 1)
+    Bind.slider(skills, "SkillHoldFruit", "Blox Fruit Hold Time", 0, 5, 1)
+    Bind.toggle(skills, "SkillFast", "Use Skills Fast", "Taps the keys instead of holding them.")
+
     local movement = tab:AddSection("Movement")
     Bind.slider(movement, "TweenSpeed", "Fly Speed", 100, 350, 0,
         "Studs per second. Lower it if the server keeps pulling you back.")

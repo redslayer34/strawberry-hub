@@ -48,7 +48,7 @@ return function(Window)
     local bosses = tab:AddSection("Bosses")
     bosses:AddParagraph({
         Title = "One farm at a time",
-        Content = "If several are on, the first one wins: Stack events > Boss > Katakuri > Bones > Material > Kill Mob > Aura > Level.",
+        Content = "If several are on, the first one wins: Stack events > Boss > Katakuri > Tyrant > Bones > Material > Kill Mob > Aura > Level.",
     })
     Bind.toggle(bosses, "AutoBoss", "Auto Boss", "Kills the chosen boss once it has spawned.")
     Bind.dropdown(bosses, "Boss", "Boss", Data.BOSSES)
@@ -60,7 +60,13 @@ return function(Window)
     Bind.toggle(sea3, "AutoKatakuri", "Auto Katakuri",
         "Farms Cake Land mobs, then Cake Prince / Dough King when they spawn.")
     Bind.toggle(sea3, "IgnoreKatakuri", "Ignore Cake Prince", "Keep farming the mobs only.")
+    Bind.toggle(sea3, "HopKatakuri", "Hop to find Cake Prince",
+        "Changes server when Cake Prince has not been seen for 15 seconds.")
+    Bind.toggle(sea3, "AutoTyrant", "Auto Tyrant of the Skies",
+        "Tiki Outpost mobs; once the 4 eyes are lit, breaks the arena trees; then the Tyrant.")
     Bind.toggle(sea3, "AutoBone", "Auto Bones", "Farms the Haunted Castle mobs.")
+    Bind.toggle(sea3, "FarmSpecialQuest", "Take the farm's quest",
+        "Katakuri (2275+), Bones (2050+), Tyrant (2575+): takes their quest first, as Banana does.")
 
     local materials = tab:AddSection("Materials")
     Bind.dropdown(materials, "Material", "Material", Data.materialNames(),
@@ -85,7 +91,7 @@ return function(Window)
         "Works with any farm: finishes low mobs with your fruit or gun skills.")
     Bind.dropdown(mastery, "MasteryWeapon", "Mastery Weapon", Settings.MASTERY_WEAPONS)
     Bind.slider(mastery, "MasteryHealth", "Switch Below Health %", 5, 100, 0)
-    Bind.multiDropdown(mastery, "MasterySkills", "Skills", Data.SKILL_KEYS)
+    mastery:AddParagraph({ Title = "Skills", Content = "The keys used for each weapon are chosen in Settings > Skills." })
 
     local status = tab:AddSection("Status")
     local panel = status:AddParagraph({ Title = "Status", Content = statusText() })

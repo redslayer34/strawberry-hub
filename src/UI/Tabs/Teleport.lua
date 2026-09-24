@@ -67,6 +67,21 @@ return function(Window, ui)
         end,
     })
 
+    local events = tab:AddSection("Event Islands")
+    local function goToNpc(place, npc)
+        return function()
+            if not World.npcPosition(npc) then
+                ui.Library:Notify({ Title = "Teleport", Content = "No " .. place .. " in this server", Duration = 5 })
+                return
+            end
+            Travel.go(place, function() return World.npcPosition(npc) end)
+        end
+    end
+    events:AddButton({ Title = "Go to Mirage Island", Description = "Its Advanced Fruit Dealer.",
+        Callback = goToNpc("Mirage Island", "Advanced Fruit Dealer") })
+    events:AddButton({ Title = "Go to Prehistoric Island", Description = "Its Fossil Expert.",
+        Callback = goToNpc("Prehistoric Island", "Fossil Expert") })
+
     local control = tab:AddSection("Control")
     control:AddButton({ Title = "Stop travelling", Callback = Travel.cancel })
     control:AddButton({

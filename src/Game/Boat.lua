@@ -81,6 +81,25 @@ function Boat.buyName(name)
     return name
 end
 
+Boat.TIKI_SPAWNS = { Tiki = true, Tiki2 = true }
+Boat.RESET_FAR = 1000
+local lastReset = -math.huge
+
+-- The reference's "Reset Character Buy Boat": far from the Sea 3 dealer
+-- with the spawn point at Tiki Outpost, a reset is the fastest way there.
+function Boat.resetForDealer(dealer)
+    if not Settings.get("SeaResetForBoat") or Player.sea() ~= 3 then return false end
+    if Player.distanceTo(dealer) <= Boat.RESET_FAR then return false end
+    local player = Services.player()
+    if not player or player:GetAttribute("CurrentLocation") == "Tiki Outpost" then return false end
+    if not Boat.TIKI_SPAWNS[Player.data("LastSpawnPoint") or ""] then return false end
+    if os.clock() - lastReset < 10 then return true end
+    lastReset = os.clock()
+    local humanoid = Player.humanoid()
+    if humanoid then humanoid.Health = 0 end
+    return true
+end
+
 -- Your boat once you sit in it; otherwise nil and what is being done
 -- (flying to the dealer, buying, boarding). `name` is the boat to buy.
 function Boat.get(name)
@@ -95,6 +114,7 @@ function Boat.get(name)
             Movement.stop()
             return nil, "No boat dealer in this sea"
         end
+        if Boat.resetForDealer(dealer) then return nil, "Respawning at Tiki Outpost for the boat" end
         Common.goTo(dealer)
         if not Common.near(dealer, 8) then return nil, "Going to the boat dealer" end
         if Common.every("BuyBoat", 4) then
@@ -262,6 +282,7 @@ end
 
 -- Test hook.
 function Boat.reset()
+    lastReset = -math.huge
     goal, lastPlaced = nil, nil
     cap, ceiling, nextRaise = math.huge, math.huge, 0
     lastNoclip = -math.huge

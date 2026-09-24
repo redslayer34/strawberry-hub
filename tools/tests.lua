@@ -62,6 +62,7 @@ local MODULES = {
     "Features.Items", "Features.Items.Swords", "Features.Items.Cdk", "Features.Items.Guitar",
     "Features.Items.Saber", "Features.Items.Mastery", "Features.Races.Duel", "Features.Races.Upgrade",
     "Features.Races.V4", "Game.Boat", "Features.Sea.Events", "Features.Sea.Islands", "Features.Sea.Volcano",
+    "Features.TyrantFarm", "Features.Helpers", "Features.SafeSpot",
 }
 for _, name in ipairs(MODULES) do
     local ok, err = pcall(require, name)
@@ -892,7 +893,7 @@ do
     eq("first ready selected skill pressed", pressed[1], "X")
     check("skills aimed at the mob", AimHook.target ~= nil)
 
-    Settings.set("MasterySkills", { Z = true })
+    Settings.set("SkillsFruit", { Z = true })
     eq("unselected skill ignored", Mastery.readySkill(fruit), nil)
 
     Settings.set("MasteryFarm", false)
@@ -2786,6 +2787,225 @@ do
     Boat.reset()
     RaceUpgrade.v2v3.tick()
     eq("Fishman V3 goes for a boat", RaceUpgrade.v2v3.status, "Fishman V3: Going to the boat dealer")
+end
+
+---------------------------------------------------------------------------
+-- Batch F: the remaining Banana features
+---------------------------------------------------------------------------
+
+local TyrantFarm = require("Features.TyrantFarm")
+local BoneFarmModule = require("Features.BoneFarm")
+local KatakuriFarmModule = require("Features.KatakuriFarm")
+local Helpers = require("Features.Helpers")
+local SafeSpot = require("Features.SafeSpot")
+
+local function batchFSetup(place, level)
+    itemsSetup(place or 7449423635, level or 2500, {}, {})
+    Helpers.reset()
+    Boat.reset()
+    SeaEvents.reset()
+end
+
+-- Tyrant of the Skies: the arena trees once the eyes are lit, then the boss.
+batchFSetup()
+do
+    Settings.set("AutoTyrant", true)
+    local island = folder("IslandModel", folder("TikiOutpost", folder("Map", workspace)))
+    for index = 1, 4 do part("Eye" .. index, Vector3.new(index, 0, 0), island).Transparency = 0 end
+    local tree = newInstance("Model", "Tree", folder("EagleBossArena", island))
+    tree.WorldPivot = CFrame.new(300, 20, 0)
+    TyrantFarm.tick()
+    eq("eyes lit: breaking the trees", TyrantFarm.status, "Breaking the arena trees")
+    near("to the tree", Movement.goal().Position, Vector3.new(300, 20, 0))
+    island.Eye2.Transparency = 1
+    TyrantFarm.tick()
+    check("an eye out: back to the mobs", TyrantFarm.status ~= "Breaking the arena trees", TyrantFarm.status)
+    local boss = mob("Tyrant of the Skies", Vector3.new(50, 0, 0))
+    TyrantFarm.tick()
+    eq("the Tyrant first", TyrantFarm.target, boss)
+end
+
+-- The special farms take their quest first.
+batchFSetup(nil, 2100)
+do
+    Settings.set("AutoBone", true)
+    Settings.set("FarmSpecialQuest", true)
+    world.guide.Data.NPCList.haunted = {
+        NPCName = "Haunted Giver", InternalQuestName = "HauntedQuest2",
+        Levels = { 2000, 2050 }, Position = CFrame.new(3000, 10, 0),
+    }
+    BoneFarmModule.tick()
+    check("goes for the quest", BoneFarmModule.status:find("Taking the quest", 1, true) ~= nil, BoneFarmModule.status)
+    near("to its giver", Movement.goal().Position, Vector3.new(3000, 14, 2))
+    world.hrp.Position = Vector3.new(3000, 14, 2)
+    BoneFarmModule.tick()
+    local started = calls(world.commF, "StartQuest")[1]
+    eq("quest asked", started and (started[2] .. "#" .. started[3]), "HauntedQuest2#2")
+    world.questPanel.Visible = true
+    BoneFarmModule.tick()
+    check("quest shown: farming", BoneFarmModule.status:find("Taking the quest", 1, true) == nil, BoneFarmModule.status)
+end
+
+-- Hop to find Cake Prince.
+batchFSetup()
+do
+    Settings.set("AutoKatakuri", true)
+    Settings.set("HopKatakuri", true)
+    StackCommon.HOP_AFTER = 0
+    local hops = 0
+    local realHop = ServerModule.hop
+    ServerModule.hop = function() hops = hops + 1 return true end
+    KatakuriFarmModule.tick()
+    eq("no Cake Prince: hop", hops, 1)
+    ServerModule.hop = realHop
+    StackCommon.HOP_AFTER = 15
+end
+
+-- Movement lifts the goal: low HP escape, mob skill dodge.
+batchFSetup()
+do
+    Movement.liftProvider = Helpers.lift
+    Settings.set("LowHpEscape", true)
+    Settings.set("LowHpHeight", 100)
+    world.humanoid.MaxHealth = 100
+    world.humanoid.Health = 30
+    Helpers.updateHealth()
+    eq("low HP: lifted", Helpers.lift(), 100)
+    Movement.to(CFrame.new(0, 0, 20))
+    Movement.step(1 / 60)
+    near("goal lifted", world.hrp.Position, Vector3.new(0, 100, 20))
+    world.humanoid.Health = 60
+    Helpers.updateHealth()
+    eq("between the two limits: still lifted", Helpers.lift(), 100)
+    world.humanoid.Health = 90
+    Helpers.updateHealth()
+    eq("recovered: back down", Helpers.lift(), 0)
+
+    local target = mob("Magma Admiral", Vector3.new(0, 0, 30))
+    local realTarget = Farm.target
+    Farm.target = function() return target end
+    local cast = newInstance("BodyGyro", "BodyGyro", target.HumanoidRootPart)
+    Helpers.onEnemyDescendant(cast)
+    eq("dodge off: no lift", Helpers.lift(), 0)
+    Settings.set("DodgeSkills", true)
+    Helpers.onEnemyDescendant(cast)
+    eq("mob casting: 200 studs up", Helpers.lift(), 200)
+    Farm.target = realTarget
+    Movement.liftProvider = nil
+    Movement.stop()
+end
+
+-- Skills per weapon type.
+batchFSetup()
+do
+    local melee = newInstance("Tool", "Godhuman", world.player.Backpack)
+    melee.ToolTip = "Melee"
+    local bar = newInstance("Frame", "Godhuman", newInstance("Frame", "Skills", world.player.PlayerGui.Main))
+    for _, key in ipairs({ "Z", "X", "C", "V" }) do
+        local frame = newInstance("Frame", key, bar)
+        newInstance("TextLabel", "Title", frame).TextColor3 = Color3.new(1, 1, 1)
+        newInstance("Frame", "Cooldown", frame).Size = UDim2.new(0, 0, 1, -1)
+    end
+    Settings.set("SkillsMelee", { X = true })
+    eq("only the chosen melee key", Mastery.readySkill(melee), "X")
+    Settings.set("SkillsMelee", { V = true })
+    eq("V is not a melee key by default, but can be chosen", Mastery.readySkill(melee), "V")
+    Settings.set("SkillHoldMelee", 1.5)
+    eq("melee hold time", Mastery.holdFor(melee), 1.5)
+    Settings.set("SkillFast", true)
+    eq("fast: a tap", Mastery.holdFor(melee), Mastery.FAST_HOLD)
+end
+
+-- Safe spot while holding a Chalice, unless a feature needs it.
+batchFSetup()
+do
+    Settings.set("SafeWithItems", true)
+    check("nothing held: idle", not SafeSpot.mode.enabled())
+    newInstance("Tool", "God's Chalice", world.player.Backpack)
+    check("chalice held: on", SafeSpot.mode.enabled())
+    SafeSpot.mode.tick()
+    near("to the Mansion", Movement.goal().Position, SafeSpot.SPOTS[3])
+    Settings.set("StackSummonRipIndra", true)
+    check("rip_indra summon on: the chalice is left to it", not SafeSpot.mode.enabled())
+end
+
+-- Sea: with a friend, boat speed, rough seas, reset for the boat.
+batchFSetup()
+do
+    Settings.set("SeaAuto", true)
+    Settings.set("SeaFriend", true)
+    Settings.set("SeaFriendName", "Buddy")
+    SeaEvents.auto.tick()
+    check("friend missing", SeaEvents.auto.status:find("not in this server", 1, true) ~= nil, SeaEvents.auto.status)
+    local buddy = newInstance("Player", "Buddy", players)
+    local body = newInstance("Model", "Buddy", workspace)
+    part("HumanoidRootPart", Vector3.new(500, 0, 500), body)
+    buddy.Character = body
+    SeaEvents.auto.tick()
+    eq("with the friend", SeaEvents.auto.status, "With Buddy")
+    near("flies to the friend", Movement.goal().Position, Vector3.new(500, 0, 500))
+
+    Settings.set("SeaBoatMaxSpeed", true)
+    local _, seat = makeBoat(Vector3.new(0, 0, 0))
+    seat.MaxSpeed = 150
+    Helpers.step()
+    eq("boat max speed raised", seat.MaxSpeed, 200)
+
+    Settings.set("SeaRoughSea", true)
+    local origin = folder("_WorldOrigin", workspace)
+    part("RainEmitterPart", Vector3.new(0, 0, 0), origin).Size = Vector3.new(50, 50, 50)
+    part("Rough Sea", Vector3.new(100, 0, 0), folder("Locations", origin))
+    local zone = Boat.ZONES["Zone 1"]
+    near("rough sea near in the rain: zone moved", SeaEvents.spot(), zone + Vector3.new(0, 0, 7000))
+    near("the same rough sea counts once", SeaEvents.spot(), zone + Vector3.new(0, 0, 7000))
+end
+batchFSetup()
+do
+    Settings.set("SeaResetForBoat", true)
+    newInstance("StringValue", "LastSpawnPoint", world.player.Data).Value = "Tiki"
+    local status = select(2, Boat.get())
+    eq("spawn at Tiki: reset instead of flying", status, "Respawning at Tiki Outpost for the boat")
+    eq("character reset", world.humanoid.Health, 0)
+end
+
+-- Races: training before the trial, skills on players.
+raceSetup(7449423635, "Mink", { UpgradeRace = function(what) if what == "Check" then return 1, 0, 0 end end })
+do
+    newInstance("BoolValue", "RaceTransformed", world.character)
+    Settings.set("RaceTrial", true)
+    check("trial on", RaceV4.trial.enabled())
+    Settings.set("RaceTrain", true)
+    Settings.set("RaceTrainFirst", true)
+    check("training asked: the trial waits", not RaceV4.trial.enabled())
+    eq("status says why", RaceV4.trial.status, "Training first")
+
+    local enemy = newInstance("Player", "Enemy", players)
+    local body = newInstance("Model", "Enemy", workspace)
+    newInstance("Humanoid", "Humanoid", body).Health = 100
+    part("HumanoidRootPart", Vector3.new(10, 0, 0), body)
+    enemy.Character = body
+    AimHook.target = nil
+    Duel.fight({}, enemy, "Melee", false)
+    eq("no skills when off", AimHook.target, nil)
+    Duel.fight({}, enemy, "Melee", true)
+    check("skills when on", AimHook.target ~= nil)
+    AimHook.target = nil
+end
+
+-- Spam join: the join again every half second while it is on.
+batchFSetup()
+do
+    local browser = newInstance("RemoteFunction", "__ServerBrowser", rs)
+    browser.OnInvoke = function() return true end
+    check("off: no repeat", not ServerModule.spamJoin("job-1"))
+    Settings.set("JoinSpam", true)
+    check("on: repeating", ServerModule.spamJoin("job-1"))
+    for _ = 1, 3 do stepTasks() end
+    eq("asked again and again", #(browser.Invoked or {}), 3)
+    Settings.set("JoinSpam", false)
+    stepTasks()
+    stepTasks()
+    eq("stops when turned off", #(browser.Invoked or {}), 3)
 end
 
 ---------------------------------------------------------------------------

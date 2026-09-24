@@ -59,8 +59,14 @@ return function(Window, ui)
         end
     end })
     local input = job:AddInput("JoinJobId", { Title = "JobId to join", Default = "", Placeholder = "Paste a JobId" })
+    Bind.toggle(job, "JoinSpam", "Spam Join",
+        "Join JobId keeps asking every 0.5 s (for a full server) until you turn this off.")
     job:AddButton({ Title = "Join JobId", Callback = function()
-        if not Server.join(input.Value) then notify("Enter a JobId first") end
+        if not Server.join(input.Value) then
+            notify("Enter a JobId first")
+            return
+        end
+        if Server.spamJoin(input.Value) then notify("Spam join started") end
     end })
 
     return tab

@@ -31,6 +31,30 @@ Settings.DEFAULTS = {
     Mob = "",
     AutoAura = false,
     AuraRadius = 300,
+    AutoTyrant = false,
+    FarmSpecialQuest = false,
+    HopKatakuri = false,
+
+    -- Farm helpers (the reference's "Setting Farm")
+    AutoClick = false,
+    AutoKen = false,
+    AutoV3 = false,
+    DodgeSkills = false,
+    LowHpEscape = false,
+    LowHpPercent = 40,
+    LowHpHeight = 800,
+    SafeWithItems = false,
+
+    -- Skills (the reference's "Hold and Select Skill")
+    SkillsMelee = { Z = true, X = true, C = true },
+    SkillsSword = { Z = true, X = true },
+    SkillsGun = { Z = true, X = true },
+    SkillsFruit = { Z = true, X = true, C = true, V = true, F = true },
+    SkillHoldMelee = 0.5,
+    SkillHoldSword = 0.5,
+    SkillHoldGun = 0.5,
+    SkillHoldFruit = 0.5,
+    SkillFast = false,
 
     -- Stack farming: tasks that interrupt the main farm
     StackNewWorld = false,
@@ -157,6 +181,10 @@ Settings.DEFAULTS = {
     RaceMultiAccounts = {},
     RaceV3AtDoor = false,
     RaceFindMirage = false,
+    RaceTrainFirst = false,
+    RaceTrialWeapon = "Melee",
+    RaceTrialSkills = true,
+    RaceTrialKenOnly = false,
 
     -- Sea events
     SeaAuto = false,
@@ -188,6 +216,15 @@ Settings.DEFAULTS = {
     SeaLeviathanAttack = false,
     SeaLeviathanHeart = false,
     SeaHeartOwner = "",
+    SeaBoatMaxSpeed = false,
+    SeaBoatMaxValue = 200,
+    SeaFriend = false,
+    SeaFriendName = "",
+    SeaSailOut = false,
+    SeaRoughSea = false,
+    SeaResetForBoat = false,
+    SeaDodgeTerrorshark = false,
+    SeaDodgeSeaBeast = false,
 
     -- Volcano
     VolcanoMagnet = false,
@@ -237,7 +274,6 @@ Settings.DEFAULTS = {
     MasteryFarm = false,
     MasteryWeapon = "Blox Fruit",
     MasteryHealth = 40,
-    MasterySkills = { Z = true, X = true, C = true, V = true, F = true },
 
     -- Teleport / shop selections
     Island = "",
@@ -257,6 +293,7 @@ Settings.DEFAULTS = {
     -- Server
     AutoExecute = true,
     HopForBoss = false,
+    JoinSpam = false,
 
     -- Combat
     AttackDelay = 0,

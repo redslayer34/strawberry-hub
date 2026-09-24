@@ -41,6 +41,16 @@ function Movement.to(cframe)
     goal = cframe
 end
 
+-- Studs added above the goal (Features/Helpers sets the provider).
+Movement.liftProvider = nil
+
+function Movement.lift()
+    local provider = Movement.liftProvider
+    if not provider then return 0 end
+    local ok, value = pcall(provider)
+    return ok and tonumber(value) or 0
+end
+
 function Movement.goal()
     return goal
 end
@@ -137,6 +147,14 @@ function Movement.step(dt)
     if aim then
         target = aim
         destination = CFrame.new(aim)
+    else
+        -- The reference's offset on the goal: higher up while dodging a skill
+        -- or while the health is low.
+        local lift = Movement.lift()
+        if lift > 0 then
+            destination = goal * CFrame.new(0, lift, 0)
+            target = destination.Position
+        end
     end
 
     local stepLength = math.min(speed * dt, MAX_STEP)
