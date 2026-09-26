@@ -120,6 +120,16 @@ return function(Window, ui)
         end,
     })
 
+    travel:AddButton({
+        Title = "Clear portal pauses",
+        Description = "Forgets the portals' misses, pauses and rollbacks, so they are tried again at once.",
+        Callback = function()
+            Router.clearPauses()
+            portals:SetDesc(Router.describe())
+            ui.Library:Notify({ Title = "Portals", Content = "Pauses cleared", Duration = 4 })
+        end,
+    })
+
     local seas = tab:AddSection("Seas")
     local labels = { "First Sea", "Second Sea", "Third Sea" }
     for sea, label in ipairs(labels) do

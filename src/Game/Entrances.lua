@@ -62,19 +62,22 @@ function Entrances.named(name)
     return nil
 end
 
-Entrances.UNLOCK_RETRY = 5
-Entrances.UNLOCK_TRIES = 30
+Entrances.UNLOCK_RETRY = 10    -- seconds between two GetUnlockables asks
+Entrances.UNLOCK_GRACE = 60    -- seconds without an answer before trying locked points
 
-local unlocks   -- GetUnlockables result, nil until known
+local unlocks          -- GetUnlockables result, nil until known
+local askingSince      -- os.clock() of the first ask
 
 function Entrances.unlocks()
     return unlocks
 end
 
--- Fetches the unlockables once, in the background, retrying a few times.
+-- Asks for the unlockables in the background until they come, as the
+-- reference does (repeat ... until response).
 function Entrances.refresh()
+    askingSince = askingSince or os.clock()
     task.spawn(function()
-        for _ = 1, Entrances.UNLOCK_TRIES do
+        while unlocks == nil do
             local result = Services.invoke("GetUnlockables")
             if type(result) == "table" then
                 unlocks = result
@@ -85,10 +88,18 @@ function Entrances.refresh()
     end)
 end
 
+-- True once the unlockables have been asked for UNLOCK_GRACE seconds with
+-- no answer: the locked points are then tried anyway (the server refuses
+-- a point that really is locked, and the Router pauses it).
+function Entrances.unlocksMissing()
+    return unlocks == nil and askingSince ~= nil and os.clock() - askingSince >= Entrances.UNLOCK_GRACE
+end
+
 -- Whether the unlockables confirm this point (points without a
 -- requirement are always confirmed).
 function Entrances.confirmed(point)
     if not point.unlock then return true end
+    if Entrances.unlocksMissing() then return true end
     return unlocks ~= nil and unlocks[point.unlock] == true
 end
 
@@ -141,6 +152,15 @@ function Entrances.use(point, position, placed)
     position = position or point.position
     TeleportTag.mark()
     if point.temple then pcall(borrowTemple) end
+    local remote = Services.commF()
+    local answer
+    if remote then
+        -- A method call, written as the reference writes it.
+        local ok, result = pcall(function() return remote:InvokeServer("requestEntrance", position) end)
+        if ok then answer = result end
+    end
+    -- Teddy's order: the call from where the player is, then the character
+    -- set on the point.
     if placed then
         local hrp = Player.hrp()
         if hrp then
@@ -150,17 +170,12 @@ function Entrances.use(point, position, placed)
             end)
         end
     end
-    local remote = Services.commF()
-    if not remote then return nil end
-    -- A method call, written as the reference writes it.
-    local ok, answer = pcall(function() return remote:InvokeServer("requestEntrance", position) end)
-    if ok then return answer end
-    return nil
+    return answer
 end
 
 -- Test hook.
 function Entrances.reset(value)
-    unlocks = value
+    unlocks, askingSince = value, nil
 end
 
 return Entrances

@@ -1163,8 +1163,9 @@ do
     check("player tagged Teleporting", game:GetService("CollectionService"):HasTag(world.player, "Teleporting"))
 end
 
--- No way works: every way tried in order, then a miss; two misses pause
--- the portal and the Router flies.
+-- Teddy's way: the call from where you are, then placed on the point, and
+-- the flight goes on at once; a rollback during the watch is a miss and the
+-- next way comes first.
 setup()
 do
     game.PlaceId = SEA3
@@ -1173,60 +1174,110 @@ do
     Router.BANANA_TIME = 1
     local positions = {}
     world.commF.OnInvoke = function(action)
-        if action == "requestEntrance" then
-            positions[#positions + 1] = world.hrp.Position
-            world.hrp.Position = Vector3.new(0, 0, 0)   -- the server pulls the character back
-        end
+        if action == "requestEntrance" then positions[#positions + 1] = world.hrp.Position end
         return nil
     end
+    local origin = Vector3.new(0, 0, 0)
     local goal = CASTLE + Vector3.new(500, 0, 500)
-    local function attempt()
-        Router.update(Vector3.new(0, 0, 0), goal)
-        for _ = 1, 40 do stepTasks() end
-        Router.update(Vector3.new(0, 0, 0), goal)   -- the flying frame after a try
-    end
-    attempt()
+    check("shortcut started", Router.update(origin, goal))
+    for _ = 1, 20 do stepTasks() end
+    check("action over: nothing held still", not Router.busy())
     local sent = calls(world.commF, "requestEntrance")
-    eq("Banana way (10 calls), then placed (3), then Teddy's position (3)", #sent, 16)
-    near("Banana way called from where you stand", positions[1], Vector3.new(0, 0, 0))
-    near("Teddy way: placed on the point", positions[11], CASTLE + Vector3.new(0, 1.5, 0))
+    eq("Banana way (10 calls), then one Teddy call", #sent, 11)
     check("Teddy way: the point itself", sent[11][2] == CASTLE)
+    near("called from where you stand, before the placement", positions[11], origin)
+    near("then placed on the point", world.hrp.Position, CASTLE + Vector3.new(0, 1.5, 0))
+    local handled = Router.update(world.hrp.Position, goal)
+    check("keeps flying while the jump is watched", not handled)
+    check("status: checking the jump", (Router.note() or ""):find("checking the jump", 1, true) ~= nil, Router.note())
+
+    world.hrp.Position = origin   -- the server rolls the character back
+    Router.update(origin, goal)
+    check("rollback recorded", Router.describe():find("rolled back after the jump", 1, true) ~= nil, Router.describe())
+    local ways = Router.waysFor(Entrances.named("Castle on the Sea"))
+    eq("rolled-back way tried last", ways[#ways], "placed")
+    eq("Teddy's position before it", ways[2], "alt")
+
+    -- Next try: Teddy's position; no rollback during the watch: a success.
+    Router.ROLLBACK_WATCH = 0
+    Router.update(origin, goal)   -- the flying frame after the try
+    check("tried again", Router.update(origin, goal))
+    for _ = 1, 20 do stepTasks() end
     local alt = Entrances.named("Castle on the Sea").alt
-    check("then Teddy's position", sent[14][2] == alt, tostring(sent[14][2]))
-    near("placed on Teddy's position", positions[14], alt + Vector3.new(0, 1.5, 0))
-    check("miss explained", Router.describe():find("no way worked", 1, true) ~= nil, Router.describe())
-    eq("one miss: tried again", Router.plan(Vector3.new(0, 0, 0), goal).kind, "entrance")
-    attempt()
-    local paused = Router.plan(Vector3.new(0, 0, 0), goal)
-    eq("two misses: fly", paused.kind, "direct")
-    check("reason: paused", paused.reason and paused.reason:find("paused", 1, true) ~= nil, paused.reason)
-    Router.LOCK_TIME = 0
-    eq("pause ends", Router.plan(Vector3.new(0, 0, 0), goal).kind, "entrance")
-    Router.LOCK_TIME = 120
+    near("placed on Teddy's position", world.hrp.Position, alt + Vector3.new(0, 1.5, 0))
+    Router.update(world.hrp.Position, goal)
+    check("works with Teddy's position", Router.describe():find("Castle on the Sea: works (Teddy position)", 1, true) ~= nil,
+        Router.describe())
+    check("last trip: no rollback", (Router.lastTrip() or ""):find("no rollback", 1, true) ~= nil, Router.lastTrip())
+    eq("Teddy position first next time", Router.waysFor(Entrances.named("Castle on the Sea"))[1], "alt")
+    Router.ROLLBACK_WATCH = 4
     Router.COOLDOWN = 4
     Router.BANANA_TIME = 1.5
 end
 
--- Teddy's way works: remembered, and tried first on the next trip.
+-- No way moves the character: a miss; two misses pause the portal, and
+-- "Clear portal pauses" forgets them.
 setup()
 do
     game.PlaceId = SEA3
     Entrances.reset({ DefeatedIndraTrueForm = true })
     Router.COOLDOWN = 0
     Router.BANANA_TIME = 0.5
-    world.commF.OnInvoke = function() return nil end   -- placing is enough: nothing pulls back
+    Router.PLACED_ARRIVED = -1   -- the placement never counts
+    world.commF.OnInvoke = function() return nil end
+    local origin = Vector3.new(0, 0, 0)
     local goal = CASTLE + Vector3.new(500, 0, 500)
-    Router.update(Vector3.new(0, 0, 0), goal)
-    for _ = 1, 30 do stepTasks() end
-    check("done", not Router.busy())
-    check("works with the Teddy way", Router.describe():find("Castle on the Sea: works (Teddy way", 1, true) ~= nil,
-        Router.describe())
-    check("last trip reported", (Router.lastTrip() or ""):find("via Castle on the Sea (Teddy way", 1, true) ~= nil,
-        Router.lastTrip())
-    eq("Teddy way first next time", Router.waysFor(Entrances.named("Castle on the Sea"))[1], "placed")
-    eq("fixed order for the test", Router.waysFor(Entrances.named("Castle on the Sea"), true)[1], "banana")
+    local function attempt()
+        world.hrp.Position = origin
+        Router.update(origin, goal)
+        for _ = 1, 40 do stepTasks() end
+        Router.update(origin, goal)
+    end
+    attempt()
+    check("miss explained", Router.describe():find("no way worked", 1, true) ~= nil, Router.describe())
+    eq("one miss: tried again", Router.plan(origin, goal).kind, "entrance")
+    attempt()
+    local paused = Router.plan(origin, goal)
+    eq("two misses: fly", paused.kind, "direct")
+    check("reason: paused", paused.reason and paused.reason:find("paused", 1, true) ~= nil, paused.reason)
+    Router.clearPauses()
+    eq("pauses cleared: portal again", Router.plan(origin, goal).kind, "entrance")
+    check("panel shows Now", Router.describe():find("Now:", 1, true) ~= nil)
+    Router.PLACED_ARRIVED = 2000
     Router.COOLDOWN = 4
     Router.BANANA_TIME = 1.5
+end
+
+-- A portal far from the goal still counts when it saves time.
+setup()
+do
+    game.PlaceId = SEA3
+    Entrances.reset({ DefeatedIndraTrueForm = true })
+    local goal = Entrances.named("Hydra").position + Vector3.new(4000, 0, 0)
+    local plan = Router.plan(Vector3.new(-16000, 0, 400), goal, 300)
+    eq("Hydra 4000 studs from the goal, 20000 away: portal", plan.kind, "entrance")
+    eq("Hydra", plan.name, "Hydra")
+end
+
+-- Unlocks that never come: asked again, then the locked points are tried.
+setup()
+do
+    game.PlaceId = SEA3
+    Entrances.reset(nil)
+    local asks = 0
+    world.commF.OnInvoke = function(action) if action == "GetUnlockables" then asks = asks + 1 end end
+    Entrances.refresh()
+    for _ = 1, 3 do stepTasks() end
+    check("asked again while no answer", asks >= 3, asks)
+    eq("before the grace time: open points only", #Entrances.available(), 1)
+    Entrances.UNLOCK_GRACE = 0
+    eq("after it: the locked points too", #Entrances.available(), 4)
+    check("panel says so", Router.describe():find("unlocks not received, trying anyway", 1, true) ~= nil, Router.describe())
+    world.commF.OnInvoke = function(action) if action == "GetUnlockables" then return { DefeatedIndraTrueForm = true } end end
+    stepTasks()
+    Entrances.UNLOCK_GRACE = 60
+    eq("answer arrives: kept", Entrances.unlocks() and Entrances.unlocks().DefeatedIndraTrueForm, true)
+    clearTasks()
 end
 
 -- The portal test: each way in turn to the portal nearest an island.
@@ -1245,8 +1296,10 @@ do
     for _ = 1, 5 do stepTasks() end
     check("result reported", result and result:find("Castle on the Sea: works with the Banana way", 1, true) ~= nil,
         result)
-    local refused, why = Router.portalTest(Vector3.new(90000, 0, 90000))
-    check("no portal near: refused", not refused and why:find("no unlocked portal", 1, true) ~= nil, why)
+    stepTasks()
+    local _, nearest = Router.portalTest(Vector3.new(90000, 0, 90000))
+    eq("no distance limit: the nearest portal", nearest, "Temple of Time")
+    for _ = 1, 200 do stepTasks() end
 end
 
 -- The Temple of Time point borrows the temple map first.
@@ -1492,7 +1545,7 @@ do
     game.PlaceId = 2753915549
     Entrances.reset({})
     local city = Entrances.named("Underwater City").position
-    local plan = Router.plan(city + Vector3.new(100, 0, 0), Vector3.new(-1000, 20, 3000))
+    local plan = Router.plan(city + Vector3.new(100, 0, 0), Vector3.new(4500, 20, -1500))
     eq("leaving the Underwater City: the Whirlpool", plan.name, "Whirlpool")
     eq("sea 1 has Teddy's two Sky points", Entrances.named("Upper Sky 2") ~= nil and Entrances.named("Sky Island 2") ~= nil, true)
 
@@ -1580,10 +1633,12 @@ do
         -- Nothing works: the server puts the character back each time.
         if action == "requestEntrance" then world.hrp.Position = CASTLE + Vector3.new(100, 0, 0) end
     end
-    Router.EXACT_TIME = 0.5
+    Router.BANANA_TIME = 0.5
+    Router.WAY_ORDER = { "banana" }
     Router.testAll()
     for _ = 1, 60 do stepTasks() end
-    Router.EXACT_TIME = 15
+    Router.WAY_ORDER = { "banana", "placed", "alt" }
+    Router.BANANA_TIME = 1.5
     local text = Router.describe()
     check("portal next to the player reported too close",
         text:find("Castle on the Sea: untested (too close", 1, true) ~= nil, text)
@@ -1608,7 +1663,8 @@ do
         return nil
     end
     local done = false
-    Router.EXACT_TIME = 0.5
+    Router.BANANA_TIME = 0.5
+    Router.WAY_ORDER = { "banana" }
     check("test started", Router.testAll(function() done = true end))
     check("second test refused while running", not Router.testAll())
     for _ = 1, 40 do stepTasks() end
@@ -1617,7 +1673,8 @@ do
     check("working portal reported", text:find("Cursed Ship: works", 1, true) ~= nil, text)
     check("failed portal reported", text:find("no move after", 1, true) ~= nil, text)
     check("locked portal shown", text:find("Doflamingo Mansion: not unlocked", 1, true) ~= nil, text)
-    Router.EXACT_TIME = 15
+    Router.WAY_ORDER = { "banana", "placed", "alt" }
+    Router.BANANA_TIME = 1.5
 end
 
 -- Leaving the Temple of Time uses the game's way back.
