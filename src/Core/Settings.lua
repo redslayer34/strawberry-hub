@@ -83,6 +83,7 @@ Settings.DEFAULTS = {
     OtherChestHop = false,
     OtherChestHopAfter = 20,
     OtherChestTeleport = false,
+    ChestResetEvery = 0,
     OtherBerry = false,
     OtherHopBerry = false,
     OtherLaw = false,
@@ -269,6 +270,11 @@ Settings.DEFAULTS = {
     WebhookPrehistoric = false,
     WebhookLeviathan = false,
     WebhookIdk = false,
+    WebhookScout = false,
+    WebhookScoutEvents = {
+        ["Rare Bosses"] = true, ["Elite Hunter"] = true, ["Fruit Spawn"] = true, ["Legendary Haki"] = true,
+        ["Legendary Sword"] = true, ["Rare Berry"] = true, ["Full Moon"] = true, ["Castle Raid"] = true,
+    },
 
     -- Mastery
     MasteryFarm = false,
@@ -303,7 +309,8 @@ Settings.DEFAULTS = {
     SmartTravel = true,
     PortalFruit = false,
     LoadIslands = true,
-    RespawnShortcut = false,
+    ResetTeleport = true,
+    TeleportDistance = 2000,
 }
 
 Settings.WEAPONS = { "Melee", "Sword", "Blox Fruit", "Gun" }

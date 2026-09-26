@@ -30,6 +30,9 @@ return function(Window, ui)
     Bind.slider(chests, "OtherChestHopAfter", "Chests Before Hop", 1, 100, 0)
     Bind.toggle(chests, "OtherChestTeleport", "Teleport To Chests (risk)",
         "Instant instead of flying. Faster, but the anti-cheat may kick you.")
+    Bind.slider(chests, "ChestResetEvery", "Reset Every N Chests (teleport)", 0, 20, 0,
+        "With Teleport To Chests: resets your character after this many chests or 10 s, like Teddy Hub, to "
+            .. "shed the anti-cheat. 0 = never. Skipped while you hold a Fist, a Chalice or another item lost on death.")
 
     local berries = tab:AddSection("Berries")
     Bind.toggle(berries, "OtherBerry", "Auto Collect Berries")

@@ -97,6 +97,22 @@ function Webhook.send(event, detail)
     })
 end
 
+-- A server report (the Server scout): the event, the sea, the players and
+-- the JobId, with a line to paste into an executor to join this server.
+function Webhook.sendServer(event, detail)
+    local players = Services.get("Players")
+    local join = string.format("game:GetService('TeleportService'):TeleportToPlaceInstance(%s, '%s', "
+        .. "game.Players.LocalPlayer)", tostring(game.PlaceId), tostring(game.JobId))
+    return Webhook.post("**" .. tostring(event) .. ": " .. tostring(detail) .. "**", {
+        { name = tostring(event), value = block(tostring(detail)), inline = true },
+        { name = "Sea", value = "`" .. tostring(Player.sea() or "?") .. "`", inline = true },
+        { name = "Players", value = "`" .. tostring(#players:GetPlayers()) .. "/" .. tostring(players.MaxPlayers) .. "`",
+            inline = true },
+        { name = "JobId", value = block(tostring(game.JobId)), inline = false },
+        { name = "Join", value = "```lua\n" .. join .. "\n```", inline = false },
+    })
+end
+
 -- Sends `event` when the toggle `key` is on, without holding up the caller
 -- (the farm loop). Returns true when a message was queued.
 function Webhook.notify(key, event, detail)

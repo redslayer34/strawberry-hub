@@ -62,7 +62,7 @@ local MODULES = {
     "Features.Items", "Features.Items.Swords", "Features.Items.Cdk", "Features.Items.Guitar",
     "Features.Items.Saber", "Features.Items.Mastery", "Features.Races.Duel", "Features.Races.Upgrade",
     "Features.Races.V4", "Game.Boat", "Features.Sea.Events", "Features.Sea.Islands", "Features.Sea.Volcano",
-    "Features.TyrantFarm", "Features.Helpers", "Features.SafeSpot",
+    "Features.TyrantFarm", "Features.Helpers", "Features.SafeSpot", "Features.Scout",
 }
 for _, name in ipairs(MODULES) do
     local ok, err = pcall(require, name)
@@ -976,6 +976,14 @@ do
     eq("full moon", World.moon(), "Full Moon")
     sky.MoonTextureId = Data.MOON_NEXT
     eq("full moon next night", World.moon(), "Next Night")
+    lighting:SetAttribute("MoonPhase", 5)
+    sky.MoonTextureId = ""
+    eq("MoonPhase attribute first: full", World.moon(), "Full Moon")
+    lighting:SetAttribute("MoonPhase", 4)
+    eq("MoonPhase 4: next night", World.moon(), "Next Night")
+    lighting:SetAttribute("MoonPhase", 2)
+    eq("MoonPhase 2: normal", World.moon(), "Normal")
+    lighting:SetAttribute("MoonPhase", nil)
     lighting.ClockTime = 18.5
     eq("game clock", World.clock(), "18:30")
 
@@ -1110,10 +1118,17 @@ do
     Entrances.reset({ DefeatedIndraTrueForm = true })
     eq("unlocked: every point", #Entrances.available(), 4)
 
-    eq("goal under 3000 studs: fly", Router.plan(goal + Vector3.new(0, 0, 2000), goal).kind, "direct")
+    eq("goal closer than the teleport distance: fly", Router.plan(goal + Vector3.new(0, 0, 1500), goal).kind, "direct")
+    Settings.set("TeleportDistance", 1000)
+    eq("teleport distance lowered: portal", Router.plan(goal + Vector3.new(0, 0, 1800), goal).kind, "entrance")
+    Settings.set("TeleportDistance", 2000)
     local here = CASTLE + Vector3.new(0, 0, 500)
     local beside = Router.plan(here, CASTLE + Vector3.new(0, 0, -2600))
-    eq("standing at the portal: still called, as in the reference", beside.kind, "entrance")
+    eq("portal that would not bring you closer: fly", beside.kind, "direct")
+    check("reason: not closer", beside.reason and beside.reason:find("would not bring you closer", 1, true) ~= nil,
+        beside.reason)
+    local timed = Router.plan(Vector3.new(0, 0, 0), goal, 300)
+    check("estimate beats flying", timed.eta and timed.flyTime and timed.eta < timed.flyTime)
 
     Movement.reset()
     world.hrp.Position = Vector3.new(0, 0, 0)
@@ -1148,14 +1163,22 @@ do
     check("player tagged Teleporting", game:GetService("CollectionService"):HasTag(world.player, "Teleporting"))
 end
 
--- No move: failure; two misses in a row pause the portal and the Router flies.
+-- No way works: every way tried in order, then a miss; two misses pause
+-- the portal and the Router flies.
 setup()
 do
     game.PlaceId = SEA3
     Entrances.reset({ DefeatedIndraTrueForm = true })
     Router.COOLDOWN = 0
-    Router.EXACT_TIME = 1
-    world.commF.OnInvoke = function() return nil end
+    Router.BANANA_TIME = 1
+    local positions = {}
+    world.commF.OnInvoke = function(action)
+        if action == "requestEntrance" then
+            positions[#positions + 1] = world.hrp.Position
+            world.hrp.Position = Vector3.new(0, 0, 0)   -- the server pulls the character back
+        end
+        return nil
+    end
     local goal = CASTLE + Vector3.new(500, 0, 500)
     local function attempt()
         Router.update(Vector3.new(0, 0, 0), goal)
@@ -1163,8 +1186,15 @@ do
         Router.update(Vector3.new(0, 0, 0), goal)   -- the flying frame after a try
     end
     attempt()
-    eq("a call every 0.1 s for the whole time", #calls(world.commF, "requestEntrance"), 10)
-    check("miss explained", Router.describe():find("no move after 1 s (10 calls)", 1, true) ~= nil, Router.describe())
+    local sent = calls(world.commF, "requestEntrance")
+    eq("Banana way (10 calls), then placed (3), then Teddy's position (3)", #sent, 16)
+    near("Banana way called from where you stand", positions[1], Vector3.new(0, 0, 0))
+    near("Teddy way: placed on the point", positions[11], CASTLE + Vector3.new(0, 1.5, 0))
+    check("Teddy way: the point itself", sent[11][2] == CASTLE)
+    local alt = Entrances.named("Castle on the Sea").alt
+    check("then Teddy's position", sent[14][2] == alt, tostring(sent[14][2]))
+    near("placed on Teddy's position", positions[14], alt + Vector3.new(0, 1.5, 0))
+    check("miss explained", Router.describe():find("no way worked", 1, true) ~= nil, Router.describe())
     eq("one miss: tried again", Router.plan(Vector3.new(0, 0, 0), goal).kind, "entrance")
     attempt()
     local paused = Router.plan(Vector3.new(0, 0, 0), goal)
@@ -1174,10 +1204,32 @@ do
     eq("pause ends", Router.plan(Vector3.new(0, 0, 0), goal).kind, "entrance")
     Router.LOCK_TIME = 120
     Router.COOLDOWN = 4
-    Router.EXACT_TIME = 15
+    Router.BANANA_TIME = 1.5
 end
 
--- The Banana portal test: the reference's loop to the portal nearest an island.
+-- Teddy's way works: remembered, and tried first on the next trip.
+setup()
+do
+    game.PlaceId = SEA3
+    Entrances.reset({ DefeatedIndraTrueForm = true })
+    Router.COOLDOWN = 0
+    Router.BANANA_TIME = 0.5
+    world.commF.OnInvoke = function() return nil end   -- placing is enough: nothing pulls back
+    local goal = CASTLE + Vector3.new(500, 0, 500)
+    Router.update(Vector3.new(0, 0, 0), goal)
+    for _ = 1, 30 do stepTasks() end
+    check("done", not Router.busy())
+    check("works with the Teddy way", Router.describe():find("Castle on the Sea: works (Teddy way", 1, true) ~= nil,
+        Router.describe())
+    check("last trip reported", (Router.lastTrip() or ""):find("via Castle on the Sea (Teddy way", 1, true) ~= nil,
+        Router.lastTrip())
+    eq("Teddy way first next time", Router.waysFor(Entrances.named("Castle on the Sea"))[1], "placed")
+    eq("fixed order for the test", Router.waysFor(Entrances.named("Castle on the Sea"), true)[1], "banana")
+    Router.COOLDOWN = 4
+    Router.BANANA_TIME = 1.5
+end
+
+-- The portal test: each way in turn to the portal nearest an island.
 setup()
 do
     game.PlaceId = SEA3
@@ -1186,13 +1238,14 @@ do
         if action == "requestEntrance" and point == CASTLE then world.hrp.Position = CASTLE end
     end
     local result
-    local started, name = Router.bananaTest(CASTLE + Vector3.new(200, 0, 0), function(text) result = text end)
+    local started, name = Router.portalTest(CASTLE + Vector3.new(200, 0, 0), function(text) result = text end)
     check("test started", started)
     eq("portal nearest the island", name, "Castle on the Sea")
-    check("nothing else while it runs", not Router.bananaTest(CASTLE))
+    check("nothing else while it runs", not Router.portalTest(CASTLE))
     for _ = 1, 5 do stepTasks() end
-    check("result reported", result and result:find("Castle on the Sea: moved", 1, true) ~= nil, result)
-    local refused, why = Router.bananaTest(Vector3.new(90000, 0, 90000))
+    check("result reported", result and result:find("Castle on the Sea: works with the Banana way", 1, true) ~= nil,
+        result)
+    local refused, why = Router.portalTest(Vector3.new(90000, 0, 90000))
     check("no portal near: refused", not refused and why:find("no unlocked portal", 1, true) ~= nil, why)
 end
 
@@ -1337,10 +1390,13 @@ do
     newInstance("Model", "FarSpawn", group).WorldPivot = CFrame.new(20100, 0, 0)
     newInstance("Model", "HomeSpawn", group).WorldPivot = CFrame.new(50, 0, 0)
     local goal = Vector3.new(20200, 0, 0)
-    eq("off by default", Router.plan(Vector3.new(0, 0, 0), goal).kind, "direct")
-    Settings.set("RespawnShortcut", true)
+    Settings.set("ResetTeleport", false)
+    local off = Router.plan(Vector3.new(0, 0, 0), goal)
+    eq("off: fly", off.kind, "direct")
+    check("reason: off", off.reason and off.reason:find("reset teleport off", 1, true) ~= nil, off.reason)
+    Settings.set("ResetTeleport", true)
     local plan = Router.plan(Vector3.new(0, 0, 0), goal)
-    eq("reset teleport when on", plan.kind, "respawn")
+    eq("reset teleport on by default", plan.kind, "respawn")
     eq("the spawn of the goal's island", plan.spawn and plan.spawn.name, "FarSpawn")
     eq("same island: fly", Router.plan(Vector3.new(19000, 0, 0), goal).kind, "direct")
 
@@ -1356,6 +1412,95 @@ do
     check("spawn script off during the change", offDuring == true)
     eq("spawn point moved", calls(world.commF, "SetLastSpawnPoint")[1][2], "FarSpawn")
     eq("character reset", world.humanoid.Health, 0)
+end
+
+-- Reset teleport never while holding what death would lose, nor in a raid.
+setup()
+do
+    game.PlaceId = SEA3
+    Entrances.reset({})
+    local origin = folder("_WorldOrigin", workspace)
+    local locations = folder("Locations", origin)
+    part("Far Island", Vector3.new(20000, 0, 0), locations).Size = Vector3.new(2000, 10, 2000)
+    part("Home", Vector3.new(0, 0, 0), locations).Size = Vector3.new(2000, 10, 2000)
+    local group = folder("Pirates", folder("PlayerSpawns", origin))
+    newInstance("Model", "FarSpawn", group).WorldPivot = CFrame.new(20100, 0, 0)
+    local goal = Vector3.new(20200, 0, 0)
+    eq("nothing held: reset", Router.plan(Vector3.new(0, 0, 0), goal).kind, "respawn")
+    local chalice = newInstance("Tool", "God's Chalice", world.player.Backpack)
+    local held = Router.plan(Vector3.new(0, 0, 0), goal)
+    eq("holding a Chalice: fly", held.kind, "direct")
+    check("reason names it", held.reason and held.reason:find("holding God's Chalice", 1, true) ~= nil, held.reason)
+    check("panel names it", Router.describe():find("skipped now: holding God's Chalice", 1, true) ~= nil)
+    chalice.Parent = nil
+    local fruit = newInstance("Tool", "Kilo Fruit", world.character)
+    check("unstored fruit protected", (Router.resetBlocked() or ""):find("Kilo Fruit", 1, true) ~= nil)
+    fruit.Parent = nil
+    newInstance("Tool", "Red Key", world.player.Backpack)
+    eq("Red Key protected in Sea 3", Router.resetBlocked(), "holding Red Key")
+    world.player.Backpack:FindFirstChild("Red Key").Parent = nil
+    world.hrp.Position = Router.ISLAND
+    eq("not on the Submerged Island", Router.resetBlocked(), "on the Submerged Island")
+    world.hrp.Position = Vector3.new(0, 0, 0)
+    eq("free again", Router.resetBlocked(), nil)
+end
+
+-- Portal or reset: the one that arrives first.
+setup()
+do
+    game.PlaceId = SEA3
+    Entrances.reset({ DefeatedIndraTrueForm = true })
+    local origin = folder("_WorldOrigin", workspace)
+    local locations = folder("Locations", origin)
+    local castleIsland = part("Castle", CASTLE, locations)
+    castleIsland.Size = Vector3.new(6000, 10, 6000)
+    part("Home", Vector3.new(20000, 0, 20000), locations).Size = Vector3.new(2000, 10, 2000)
+    local group = folder("Pirates", folder("PlayerSpawns", origin))
+    local spawn = newInstance("Model", "CastleSpawn", group)
+    local here = Vector3.new(20000, 0, 20000)
+
+    -- Goal 2900 studs from the portal, a spawn right on it: the reset wins.
+    local goal = CASTLE + Vector3.new(2900, 0, 0)
+    spawn.WorldPivot = CFrame.new(goal + Vector3.new(20, 0, 0))
+    local plan = Router.plan(here, goal, 300)
+    eq("spawn on the goal beats a portal 2900 studs off", plan.kind, "respawn")
+
+    -- Goal beside the portal: the portal wins (1.5 s against 10 s).
+    goal = CASTLE + Vector3.new(50, 0, 0)
+    spawn.WorldPivot = CFrame.new(CASTLE + Vector3.new(900, 0, 0))
+    plan = Router.plan(here, goal, 300)
+    eq("portal beside the goal beats the reset", plan.kind, "entrance")
+
+    -- A failed portal cools down: the same trip goes on with the reset.
+    Router.COOLDOWN = 60
+    world.commF.OnInvoke = function(action)
+        if action == "requestEntrance" then world.hrp.Position = here end
+    end
+    Router.BANANA_TIME = 0.3
+    world.hrp.Position = here
+    Router.update(here, goal, 300)
+    for _ = 1, 30 do stepTasks() end
+    Router.update(here, goal, 300)   -- the flying frame after the try
+    eq("after the failed portal: reset teleport", Router.plan(here, goal, 300).kind, "respawn")
+    Router.COOLDOWN = 4
+    Router.BANANA_TIME = 1.5
+end
+
+-- Teddy's exits: out of the Underwater City and off the Cursed Ship.
+setup()
+do
+    game.PlaceId = 2753915549
+    Entrances.reset({})
+    local city = Entrances.named("Underwater City").position
+    local plan = Router.plan(city + Vector3.new(100, 0, 0), Vector3.new(-1000, 20, 3000))
+    eq("leaving the Underwater City: the Whirlpool", plan.name, "Whirlpool")
+    eq("sea 1 has Teddy's two Sky points", Entrances.named("Upper Sky 2") ~= nil and Entrances.named("Sky Island 2") ~= nil, true)
+
+    game.PlaceId = 4442272183
+    local ship = Entrances.named("Cursed Ship").position
+    plan = Router.plan(ship + Vector3.new(100, 0, 0), Vector3.new(-6000, 20, -2000))
+    eq("off the Cursed Ship: the Graveyard", plan.name, "Graveyard")
+    eq("staying on the ship: no exit", Router.exitFor(ship, ship + Vector3.new(500, 0, 0)), nil)
 end
 
 -- Every island kept loaded, like the reference.
@@ -1400,8 +1545,7 @@ do
     near("leaves from the dock", plan.dock, Router.DOCK)
 end
 
--- The server only answers the exact positions: every point must match the
--- reference literal digit for digit.
+-- Banana's positions are kept digit for digit (Teddy's are the `alt`).
 do
     local expected = {
         [1] = { { -7894.6201171875, 5545.49169921875, -380.2467346191406 },
@@ -1432,7 +1576,10 @@ do
     game.PlaceId = SEA3
     Entrances.reset({ DefeatedIndraTrueForm = true })
     world.hrp.Position = CASTLE + Vector3.new(100, 0, 0)
-    world.commF.OnInvoke = function() return nil end
+    world.commF.OnInvoke = function(action)
+        -- Nothing works: the server puts the character back each time.
+        if action == "requestEntrance" then world.hrp.Position = CASTLE + Vector3.new(100, 0, 0) end
+    end
     Router.EXACT_TIME = 0.5
     Router.testAll()
     for _ = 1, 60 do stepTasks() end
@@ -1452,8 +1599,12 @@ do
     game.PlaceId = 4442272183
     Entrances.reset({})
     local cursed = Entrances.POINTS[2][1].position
+    local home = world.hrp.Position
     world.commF.OnInvoke = function(action, point)
-        if action == "requestEntrance" and point == cursed then world.hrp.Position = cursed end
+        if action == "requestEntrance" then
+            if point == cursed then home = cursed end
+            world.hrp.Position = home   -- elsewhere the server puts the character back
+        end
         return nil
     end
     local done = false
@@ -1651,6 +1802,30 @@ do
     tool("God's Chalice")
     check("item obtained: done", not StackFarm.enabled())
     Chests.now = clock
+end
+
+-- Teleporting to chests: a reset every N chests, not while holding a Chalice.
+setup()
+do
+    local ChestHunt = require("Features.ChestHunt")
+    local hunt = ChestHunt.new()
+    local chests = {}
+    for index = 1, 3 do chests[index] = part("Chest" .. index, Vector3.new(index * 50, 0, 0), workspace) end
+    local collection = game:GetService("CollectionService")
+    local getTagged = collection.GetTagged
+    collection.GetTagged = function() return chests end
+    Settings.set("ChestResetEvery", 2)
+    hunt:step(true)
+    eq("first chest: no reset", world.humanoid.Health > 0, true)
+    hunt.current:SetAttribute("IsDisabled", true)
+    local chalice = newInstance("Tool", "God's Chalice", world.player.Backpack)
+    hunt:step(true)
+    check("two chests but holding a Chalice: no reset", world.humanoid.Health > 0)
+    chalice.Parent = nil
+    hunt:step(true)
+    eq("two chests: reset", world.humanoid.Health, 0)
+    eq("count starts again", hunt.sinceReset, 0)
+    collection.GetTagged = getTagged
 end
 
 -- A fruit on the ground is picked up; none and hop on: a paced hop.
@@ -2052,6 +2227,55 @@ do
     eq("user pinged", body and body.content, "<@123>")
     eq("event in the embed", body and body.embeds[1].fields[1].value, "`Test`")
     request = nil
+end
+
+-- Server scout: each event once per server, to the user's own URL only.
+otherSetup()
+do
+    local Scout = require("Features.Scout")
+    Scout.reset()
+    local posts = {}
+    request = function(options) posts[#posts + 1] = options end
+    local http = game:GetService("HttpService")
+    local bodies = {}
+    http.JSONEncode = function(_, value) bodies[#bodies + 1] = value return "json" end
+    game.JobId = "job-scout"
+    game.PlaceId = 7449423635
+    Settings.set("WebhookScout", true)
+    mob("Dough King", Vector3.new(0, 0, 0))
+    newInstance("Tool", "Kilo Fruit", workspace)
+    world.commF.OnInvoke = function(action)
+        if action == "ColorsDealer" then return "Snow White 2500000" end
+        if action == "LegendarySwordDealer" then return "Katana 1000" end
+    end
+    eq("no URL: nothing", Scout.step(), 0)
+    Settings.set("WebhookUrl", "https://discord.test/hook")
+    local count = Scout.step()
+    local events = {}
+    for _, body in ipairs(bodies) do events[#events + 1] = body.embeds[1].description end
+    local text = table.concat(events, " / ")
+    eq("three events found", count, 3)
+    check("rare boss reported", text:find("Rare Bosses: Dough King", 1, true) ~= nil, text)
+    check("fruit reported", text:find("Fruit Spawn: Kilo Fruit", 1, true) ~= nil, text)
+    check("legendary haki read without its price", text:find("Legendary Haki: Snow White", 1, true) ~= nil, text)
+    check("ordinary sword ignored", text:find("Katana", 1, true) == nil, text)
+    eq("sent to the user's URL", posts[1] and posts[1].Url, "https://discord.test/hook")
+    local join = bodies[1].embeds[1].fields[5].value
+    check("join line with the JobId", join:find("job-scout", 1, true) ~= nil, join)
+    eq("once per server", Scout.step(), 0)
+    game.JobId = "job-other"
+    eq("again in another server", Scout.step(), 3)
+    Settings.set("WebhookScoutEvents", { ["Fruit Spawn"] = true })
+    game.JobId = "job-third"
+    eq("only the chosen events", Scout.step(), 1)
+
+    local enemies = workspace:FindFirstChild("Enemies") or folder("Enemies", workspace)
+    local pirate = newInstance("Model", "Pirate", enemies)
+    pirate:SetAttribute("Level", 1200)
+    pirate.WorldPivot = CFrame.new(Scout.CASTLE + Vector3.new(100, 0, 0))
+    check("castle raid seen", Scout.castleRaid())
+    request = nil
+    game.JobId = ""
 end
 
 ---------------------------------------------------------------------------

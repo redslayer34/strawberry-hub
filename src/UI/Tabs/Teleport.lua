@@ -46,21 +46,22 @@ return function(Window, ui)
     })
 
     islands:AddButton({
-        Title = "Banana portal test",
-        Description = "Banana Cat Hub's exact portal code, from where you stand, to the portal nearest the "
-            .. "chosen island: requestEntrance every 0.1 s for up to 15 s.",
+        Title = "Portal test",
+        Description = "Calls the portal nearest the chosen island from where you stand, three ways in turn: "
+            .. "Banana Cat Hub's (5 s of calls), Teddy Hub's (placed on the point), then Teddy's position. "
+            .. "Tells which one works; travel then uses it first.",
         Callback = function()
             local name = Settings.get("Island")
             local position = World.islands()[name]
             if not position then
-                ui.Library:Notify({ Title = "Banana portal test", Content = "Choose an island first", Duration = 5 })
+                ui.Library:Notify({ Title = "Portal test", Content = "Choose an island first", Duration = 5 })
                 return
             end
-            local started, info = Router.bananaTest(position, function(text)
-                ui.Library:Notify({ Title = "Banana portal test", Content = text, Duration = 15 })
+            local started, info = Router.portalTest(position, function(text)
+                ui.Library:Notify({ Title = "Portal test", Content = text, Duration = 15 })
             end)
             ui.Library:Notify({
-                Title = "Banana portal test",
+                Title = "Portal test",
                 Content = started and ("Calling " .. info .. "... stay still") or ("Cannot test: " .. info),
                 Duration = 6,
             })

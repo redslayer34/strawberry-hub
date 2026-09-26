@@ -92,9 +92,15 @@ end
 -- Server status
 ---------------------------------------------------------------------------
 
--- "Full Moon", "Next Night" (full moon tomorrow night) or "Normal".
+-- "Full Moon", "Next Night" (full moon tomorrow night) or "Normal". The
+-- game's MoonPhase attribute on Lighting first (5 = full, 4 = the night
+-- before), the sky's moon texture when it is missing.
 function World.moon()
     local lighting = Services.get("Lighting")
+    local phase = tonumber(lighting:GetAttribute("MoonPhase"))
+    if phase == 5 then return "Full Moon" end
+    if phase == 4 then return "Next Night" end
+    if phase then return "Normal" end
     local sky = lighting:FindFirstChild("Sky") or lighting:FindFirstChild("FantasySky")
     if Player.sea() == 2 then sky = lighting:FindFirstChild("FantasySky") or sky end
     local texture = sky and sky.MoonTextureId

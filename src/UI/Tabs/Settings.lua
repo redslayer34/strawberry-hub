@@ -39,14 +39,19 @@ return function(Window, ui)
     local movement = tab:AddSection("Movement")
     Bind.slider(movement, "TweenSpeed", "Fly Speed", 100, 350, 0,
         "Studs per second. Lower it if the server keeps pulling you back.")
-    Bind.toggle(movement, "SmartTravel", "Smart travel (Banana Cat Hub portals)",
-        "Goal 3000+ studs away: requestEntrance to the unlocked portal nearest it (Rip Indra, Cursed Ship, "
-            .. "Doflamingo, Temple of Time...). Also the temple exit, the submarine, the Cake mirror and the "
-            .. "Celestial Domain.")
+    Bind.toggle(movement, "SmartTravel", "Smart travel (portals and shortcuts)",
+        "Far goals: the unlocked portal nearest it (Rip Indra, Cursed Ship, Doflamingo, Temple of Time...), "
+            .. "called Banana's way or Teddy's, or the reset teleport. Also the temple exit, the submarine, "
+            .. "the Underwater City and Cursed Ship exits, the Cake mirror and the Celestial Domain.")
     Bind.toggle(movement, "PortalFruit", "Use Portal fruit (Gateway)",
         "Portal fruit level 200+: opens the Gateway to the island nearest the goal when C is ready.")
-    Bind.toggle(movement, "RespawnShortcut", "Reset teleport (respawn near the goal)",
-        "Moves your spawn point to the goal's island and resets. Kills your character -- off by default.")
+    Bind.slider(movement, "TeleportDistance", "Teleport when farther than", 1000, 5000, 0,
+        "Studs. A farther goal is reached by a portal or the reset teleport, whichever arrives first; "
+            .. "a closer one is flown to.")
+    Bind.toggle(movement, "ResetTeleport", "Reset teleport (respawn near the goal)",
+        "Moves your spawn point to the goal's island and resets your character. Never while you hold a "
+            .. "Fist of Darkness, a Chalice, a Hallow Essence, a Microchip, a flower, the Red Key or an unstored "
+            .. "fruit, nor in a raid, a dungeon or on the Submerged Island.")
     Bind.toggle(movement, "LoadIslands", "Load every island",
         "Keeps every island loaded, like Banana Cat Hub. Uses more memory: turn it off if the game lags.")
     local portals = movement:AddParagraph({ Title = "Portals in this server", Content = Router.describe() })

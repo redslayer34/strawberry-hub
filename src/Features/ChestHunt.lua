@@ -6,25 +6,32 @@
 --  nearest one is flown to (or teleported to), touched, and given up after
 --  GIVE_UP seconds. With no chest in range the player spawns are toured,
 --  which streams more of the map in.
+--  Teleporting to chests (Teddy Hub's InstaTP) can reset the character
+--  every ChestResetEvery chests or RESET_AFTER seconds, as Teddy does to
+--  shed the anti-cheat; never while holding something death would lose.
 --=============================================================================
 
 local Common = require("Features.Stack.Common")
 local Movement = require("Game.Movement")
 local Player = require("Core.Player")
+local Router = require("Game.Router")
 local Services = require("Core.Services")
+local Settings = require("Core.Settings")
 
 local ChestHunt = {}
 ChestHunt.__index = ChestHunt
 
 ChestHunt.GIVE_UP = 5          -- seconds on a chest before giving up on it
 ChestHunt.SPAWN_REACHED = 100  -- studs from a spawn point to count it visited
+ChestHunt.RESET_AFTER = 10     -- seconds of teleporting before a reset
 
 function ChestHunt.new()
-    return setmetatable({ collected = 0, ignored = {}, visited = {} }, ChestHunt)
+    return setmetatable({ collected = 0, ignored = {}, visited = {}, sinceReset = 0 }, ChestHunt)
 end
 
 function ChestHunt:reset()
     self.collected, self.current, self.reachedAt = 0, nil, nil
+    self.sinceReset, self.teleportSince = 0, nil
     self.ignored, self.visited = {}, {}
 end
 
@@ -59,13 +66,32 @@ local function nextSpawn(visited)
     return nil
 end
 
+-- Teleport mode: resets the character once enough chests or seconds went
+-- by. Returns true when it reset.
+function ChestHunt:resetIfDue()
+    local every = tonumber(Settings.get("ChestResetEvery")) or 0
+    if every <= 0 then return false end
+    self.teleportSince = self.teleportSince or os.clock()
+    if self.sinceReset < every and os.clock() - self.teleportSince < ChestHunt.RESET_AFTER then return false end
+    if Router.resetBlocked() then return false end
+    local humanoid = Player.humanoid()
+    if not humanoid or humanoid.Health <= 0 then return false end
+    humanoid.Health = 0
+    self.sinceReset, self.teleportSince = 0, nil
+    return true
+end
+
 -- One step. `teleport` sets the character on the chest instead of flying
 -- (faster, riskier). Returns "chest", "searching" or "none".
 function ChestHunt:step(teleport)
     if not self:usable(self.current) then
         self.current, self.reachedAt = self:nearest(), nil
-        if self.current then self.collected = self.collected + 1 end
+        if self.current then
+            self.collected = self.collected + 1
+            if teleport then self.sinceReset = (self.sinceReset or 0) + 1 end
+        end
     end
+    if teleport and self:resetIfDue() then return "chest" end
 
     local chest = self.current
     if chest then

@@ -3,6 +3,7 @@
 --=============================================================================
 
 local Bind = require("UI.Bind")
+local Scout = require("Features.Scout")
 local Webhook = require("Features.Webhook")
 
 return function(Window, ui)
@@ -34,5 +35,11 @@ return function(Window, ui)
     Bind.toggle(reports, "WebhookPrehistoric", "Report Prehistoric Island")
     Bind.toggle(reports, "WebhookLeviathan", "Report Frozen Dimension (Leviathan)")
     Bind.toggle(reports, "WebhookIdk", "Report Destroy IDK Done")
+
+    local scout = tab:AddSection("Server scout")
+    Bind.toggle(scout, "WebhookScout", "Server Scout",
+        "Every 30 s, sends to your webhook above what this server has, once each, with the JobId and a line "
+            .. "to paste to join.")
+    Bind.multiDropdown(scout, "WebhookScoutEvents", "Events To Report", Scout.EVENTS)
     return tab
 end

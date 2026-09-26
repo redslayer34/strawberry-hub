@@ -28,6 +28,7 @@ local IslandLoader = require("Game.IslandLoader")
 local Pvp = require("Features.Pvp")
 local Screen = require("Features.Screen")
 local Webhook = require("Features.Webhook")
+local Scout = require("Features.Scout")
 local FluentLoader = require("UI.Fluent")
 local Interface = require("UI.Interface")
 local Loop = require("Core.Loop")
@@ -114,6 +115,7 @@ guard("esp", Esp.start)
 guard("pvp", Pvp.start)
 guard("screen", Screen.start)
 guard("webhook", Webhook.start)
+guard("server scout", Scout.start)
 
 ---------------------------------------------------------------------------
 -- Unload
