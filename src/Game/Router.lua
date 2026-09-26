@@ -26,14 +26,23 @@
 --  The gateway, the portals and the reset only count when the goal is
 --  farther than the "Teleport when farther than" setting.
 --
---  A portal is called three ways, the one that worked first next time:
+--  A portal is called in up to four ways, the one that worked first next
+--  time:
+--    gate        Teddy Hub's way for the Sea 3 rip_indra portals (Castle,
+--                Hydra, Mansion): a 0 s tween of the character onto itself,
+--                then requestEntrance with Teddy's position, GATE_TRIES
+--                times a frame apart, until within GATE_ARRIVED studs
 --    banana      from where the player stands, every EXACT_EVERY seconds
 --                (Banana Cat Hub's way)
---    placed      Teddy Hub's: the call, then the character set on the point,
---                and the flight goes on from there at once; a jump brought
---                back within ROLLBACK_NEAR of where it started during the
---                next ROLLBACK_WATCH seconds is a miss ("rolled back")
---    alt         Teddy Hub's own position for the point, the same way
+--    placed      Teddy Hub's Sea 1 way: the call, then the character set on
+--                the point; the flight goes on from there at once
+--    alt         Teddy Hub's own position for the point, placed
+--  A placed jump is only the client's: the server may put the character
+--  back to where it was, seconds later. It is watched for ROLLBACK_WATCH
+--  seconds, no other jump is made meanwhile, and a character found back
+--  within ROLLBACK_NEAR of the start is a rollback: that way is dropped for
+--  that portal (until "Clear portal pauses").
+--  The last LOG_SIZE events are kept in a travel log (Router.logText).
 --  A portal where no way works cools down, so the same trip goes on with the
 --  reset teleport; FAILS_TO_LOCK misses in a row pause it for LOCK_TIME.
 --=============================================================================
@@ -69,8 +78,12 @@ Router.BANANA_TIME = 1.5       -- seconds of Banana-way calls during a trip
 Router.TEST_BANANA_TIME = 5    -- the same, in the portal test
 Router.PLACED_TRIES = 3        -- Teddy's way: calls, PLACED_EVERY seconds apart
 Router.PLACED_EVERY = 0.15
-Router.ROLLBACK_WATCH = 4      -- seconds a Teddy-way jump is watched while flying
-Router.ROLLBACK_NEAR = 1000    -- studs from the start that mean "rolled back"
+Router.ROLLBACK_WATCH = 15     -- seconds a placed jump is watched while flying
+Router.ROLLBACK_NEAR = 1500    -- studs from the start that mean "rolled back"
+Router.GATE_TRIES = 5          -- Teddy's Sea 3 gate: calls, a frame apart
+Router.GATE_ARRIVED = 300      -- studs from the point that count as arrived
+Router.GATE_SETTLE = 0.5       -- seconds given to the server after the last call
+Router.LOG_SIZE = 15
 Router.PLACED_ARRIVED = 2000   -- studs from the point that count as there
 Router.DEFAULT_DISTANCE = 2000
 
@@ -78,11 +91,17 @@ Router.DEFAULT_DISTANCE = 2000
 Router.COST = { entrance = 1.5, exit = 1.5, gateway = 4, celestial = 3, mirror = 3, respawn = 10 }
 
 Router.WAYS = {
+    gate = "Teddy gate way",
     banana = "Banana way",
     placed = "Teddy way (placed on the point)",
     alt = "Teddy position",
 }
-Router.WAY_ORDER = { "banana", "placed", "alt" }
+Router.WAY_ORDERS = {
+    gate = { "gate", "banana", "placed", "alt" },   -- Sea 3 rip_indra portals
+    sea1 = { "banana", "placed", "alt" },           -- Teddy places only in Sea 1
+    other = { "banana", "placed" },
+}
+Router.WAY_ORDER = nil         -- test hook: one order for every point
 
 -- Teddy Hub's exits: inside `center` (radius) with the goal outside, the
 -- named point takes you out.
@@ -124,12 +143,44 @@ Router.CELESTIAL_RADIUS = 300
 
 local route, note, lastTrip
 local bestWay = {}             -- [point name] = the way that worked
-local rolledBack = {}          -- [point name] = the way that was last rolled back
-local watch                    -- the Teddy-way jump being watched, or nil
+local rolledBack = {}          -- [point name] = { [way] = true }: rolled back, not used again
+local watch                    -- the placed jump being watched, or nil
+local events = {}              -- the travel log
+local tripAt                   -- os.clock() of the trip the log is timing
+local lastLogged               -- the last plan written to the log
 local busy, justJumped = false, false
 local confirmed, lastUsed = {}, {}
 local failures, lockedAt, attempts = {}, {}, {}
 local respawns = { goal = nil, count = 0 }
+
+---------------------------------------------------------------------------
+-- Travel log
+---------------------------------------------------------------------------
+
+local function xyz(position)
+    if not position then return "?" end
+    return string.format("%d, %d, %d", math.floor(position.X), math.floor(position.Y), math.floor(position.Z))
+end
+
+-- Adds one event, timed from the start of the trip.
+function Router.log(text)
+    local now = os.clock()
+    tripAt = tripAt or now
+    events[#events + 1] = string.format("+%.1fs %s", now - tripAt, text)
+    while #events > Router.LOG_SIZE do table.remove(events, 1) end
+end
+
+-- Starts timing a new trip in the log.
+local function logTrip(here, goal)
+    tripAt = os.clock()
+    lastLogged = nil
+    Router.log(string.format("trip from %s to %s, %d studs", xyz(here), xyz(goal), math.floor((goal - here).Magnitude)))
+end
+
+function Router.logText()
+    if #events == 0 then return "No far trip yet." end
+    return table.concat(events, "\n")
+end
 
 ---------------------------------------------------------------------------
 -- Shortcut memory
@@ -502,42 +553,98 @@ local function loopResult(ok, distance, calls, answer, seconds)
     return string.format("no move after %g s (%d calls), answer %s", seconds or Router.EXACT_TIME, calls, tostring(answer))
 end
 
--- Teddy Hub's way, as it is written there: wait PLACED_EVERY, call, set
--- the character on the point; stop once it is within PLACED_ARRIVED of the
--- point (so after the first try, unless something moved it at once). No
--- holding still afterwards: the flight goes on at once.
+-- Teddy Hub's Sea 1 way, as it is written there: wait PLACED_EVERY, call,
+-- set the character on the point; stop once it is within PLACED_ARRIVED of
+-- the point (so after the first try). No holding still afterwards: the
+-- flight goes on at once. Returns whether it jumped, the calls and the last
+-- answer.
 local function placedLoop(point, position)
-    for _ = 1, Router.PLACED_TRIES do
+    local answer
+    for try = 1, Router.PLACED_TRIES do
         task.wait(Router.PLACED_EVERY)
-        Entrances.use(point, position, true)
-        if near(position, Router.PLACED_ARRIVED) then return true end
+        answer = Entrances.use(point, position, true)
+        if near(position, Router.PLACED_ARRIVED) then return true, try, answer end
     end
-    return false
+    return false, Router.PLACED_TRIES, answer
 end
 
--- One way of calling a portal. Returns whether it worked and what happened.
+-- Teddy Hub's TPToEntrance for the Sea 3 gates: a 0 s tween of the
+-- character onto itself (it stops any tween running on it), then the call,
+-- a frame apart, until the server has moved the character there. Nothing
+-- is placed, so a move here is the server's.
+local function settleTween()
+    local hrp = Player.hrp()
+    if not hrp then return end
+    pcall(function()
+        local tween = Services.get("TweenService"):Create(hrp, TweenInfo.new(0, Enum.EasingStyle.Linear), { CFrame = hrp.CFrame })
+        tween:Play()
+        tween:Cancel()
+    end)
+end
+
+local function gateLoop(point, position)
+    local answer
+    for try = 1, Router.GATE_TRIES do
+        task.wait()
+        settleTween()
+        answer = Entrances.use(point, position)
+        if near(position, Router.GATE_ARRIVED) then return true, try, answer end
+    end
+    task.wait(Router.GATE_SETTLE)
+    return near(position, Router.GATE_ARRIVED), Router.GATE_TRIES, answer
+end
+
+-- One way of calling a portal. Returns whether it worked, what happened,
+-- and whether the move was only placed by the client (to be watched).
 function Router.tryWay(point, way, bananaTime)
+    local before = Player.position()
     if way == "banana" then
         bananaTime = bananaTime or Router.BANANA_TIME
         local ok, distance, calls, answer = Router.bananaLoop(point, bananaTime)
-        return ok, loopResult(ok, distance, calls, answer, bananaTime)
+        local text = loopResult(ok, distance, calls, answer, bananaTime)
+        Router.log(string.format("%s, %s: %s", point.name, Router.WAYS[way], text))
+        return ok, text, false
     end
-    local position = way == "alt" and point.alt or point.position
-    if not position then return false, "no Teddy position for this point" end
-    local ok = placedLoop(point, position)
-    return ok, ok and "jumped" or "not moved"
+    local position = (way == "alt" or way == "gate") and point.alt or point.position
+    position = position or point.position
+    if way == "alt" and not point.alt then return false, "no Teddy position for this point", false end
+    local ok, calls, answer
+    if way == "gate" then
+        ok, calls, answer = gateLoop(point, position)
+    else
+        ok, calls, answer = placedLoop(point, position)
+    end
+    local text = string.format("%s after %d calls, answer %s", ok and "arrived" or "not moved", calls, tostring(answer))
+    Router.log(string.format("%s, %s: %s (from %s to %s)", point.name, Router.WAYS[way], text,
+        xyz(before), xyz(Player.position())))
+    return ok, text, way ~= "gate"
 end
 
--- The ways to try for `point`: the one that worked before first.
+local function dropped(point, way)
+    return rolledBack[point.name] ~= nil and rolledBack[point.name][way] == true
+end
+
+-- The ways to try for `point`: the one that worked before first, the ones
+-- that were rolled back left out.
 function Router.waysFor(point, fixedOrder)
+    local order = Router.WAY_ORDER
+    if not order then
+        if point.unlock == "DefeatedIndraTrueForm" then
+            order = Router.WAY_ORDERS.gate
+        elseif Player.sea() == 1 then
+            order = Router.WAY_ORDERS.sea1
+        else
+            order = Router.WAY_ORDERS.other
+        end
+    end
     local list = {}
     local best = not fixedOrder and bestWay[point.name]
-    local last = not fixedOrder and rolledBack[point.name]
-    if best then list[1] = best end
-    for _, way in ipairs(Router.WAY_ORDER) do
-        if way ~= best and way ~= last and (way ~= "alt" or point.alt) then list[#list + 1] = way end
+    if best and not dropped(point, best) then list[1] = best end
+    for _, way in ipairs(order) do
+        if way ~= list[1] and (way ~= "alt" or point.alt) and (fixedOrder or not dropped(point, way)) then
+            list[#list + 1] = way
+        end
     end
-    if last and last ~= best then list[#list + 1] = last end
     return list
 end
 
@@ -547,10 +654,10 @@ function actions.entrance(plan)
     local start = Player.position()
     local tried = {}
     for _, way in ipairs(Router.waysFor(point)) do
-        local ok, detail = Router.tryWay(point, way)
-        if ok and way ~= "banana" and start then
-            -- The flight goes on from the point; Router.update watches for a
-            -- rollback before calling it a success.
+        local ok, detail, placed = Router.tryWay(point, way)
+        if ok and placed and start then
+            -- Only the client moved: fly on from the point, and let
+            -- Router.update watch for the server putting the character back.
             watch = { point = point, way = way, start = start, started = started,
                 ends = os.clock() + Router.ROLLBACK_WATCH }
             lastTrip = string.format("via %s (%s), watching for a rollback", point.name, Router.WAYS[way])
@@ -564,31 +671,37 @@ function actions.entrance(plan)
         end
         tried[#tried + 1] = Router.WAYS[way] .. ": " .. detail
     end
+    if #tried == 0 then tried[1] = "every way was rolled back before" end
     recordResult(point.name, false, "no way worked (" .. table.concat(tried, "; ") .. ")")
     lastTrip = point.name .. " portal did not work, reset teleport or flight next"
 end
 
--- The watched Teddy-way jump: rolled back (the character is back near where
--- it started) or, once ROLLBACK_WATCH seconds have passed, a success.
--- Returns true while it is still being watched.
+-- The watched placed jump: rolled back (the character is back near where it
+-- started) or, once ROLLBACK_WATCH seconds have passed, a success. Returns
+-- true while it is still being watched.
 local function checkWatch(here)
     if not watch then return false end
     local jump = watch
     local name, wayName = jump.point.name, Router.WAYS[jump.way]
+    local elapsed = os.clock() - jump.started
     if here and (here - jump.start).Magnitude <= Router.ROLLBACK_NEAR then
         watch = nil
-        rolledBack[name] = jump.way
+        rolledBack[name] = rolledBack[name] or {}
+        rolledBack[name][jump.way] = true
         if bestWay[name] == jump.way then bestWay[name] = nil end
-        recordResult(name, false, "rolled back after the jump (" .. wayName .. ")")
-        lastTrip = string.format("via %s (%s): rolled back", name, wayName)
+        local text = string.format("rolled back after %.1f s (%s)", elapsed, wayName)
+        recordResult(name, false, text)
+        lastTrip = string.format("via %s: %s", name, text)
+        Router.log(string.format("%s: %s, back at %s, %d studs from the start", name, text, xyz(here),
+            math.floor((here - jump.start).Magnitude)))
         return false
     end
     if os.clock() >= jump.ends then
         watch = nil
         bestWay[name] = jump.way
-        rolledBack[name] = nil
         recordResult(name, true, nil)
-        lastTrip = string.format("via %s (%s), %.1f s, no rollback", name, wayName, jump.ends - Router.ROLLBACK_WATCH - jump.started)
+        lastTrip = string.format("via %s (%s), no rollback after %d s", name, wayName, Router.ROLLBACK_WATCH)
+        Router.log(string.format("%s: no rollback after %d s (%s), now at %s", name, Router.ROLLBACK_WATCH, wayName, xyz(here)))
         return false
     end
     return true
@@ -666,6 +779,7 @@ function actions.respawn(plan)
     if Player.data("LastSpawnPoint") ~= plan.spawn.name then
         if script then pcall(function() script.Disabled = false end) end
         recordResult(plan.name, false, "spawn point refused")
+        Router.log("reset teleport to " .. plan.spawn.name .. ": spawn point refused")
         return
     end
     local humanoid = Player.humanoid()
@@ -676,6 +790,8 @@ function actions.respawn(plan)
     if script and script.Parent then pcall(function() script.Disabled = false end) end
     recordResult(plan.name, ok, ok and "respawned" or "no new character")
     lastTrip = ok and ("reset teleport to " .. plan.spawn.name) or ("reset teleport to " .. plan.spawn.name .. " failed")
+    Router.log(string.format("reset teleport to %s: %s", plan.spawn.name, ok and ("respawned at " .. xyz(Player.position()))
+        or "no new character"))
 end
 
 local function run(plan)
@@ -725,6 +841,20 @@ function Router.update(here, goal, speed)
     if not route or (route.goal - goal).Magnitude > Router.REPLAN_MOVE
         or (route.kind == "direct" and os.clock() - route.at >= Router.REPLAN_EVERY) then
         route = Router.plan(here, goal, speed)
+        if (goal - here).Magnitude >= Router.teleportDistance() then
+            local text
+            if route.kind == "direct" then
+                text = "plan: fly" .. (route.reason and (" (" .. route.reason .. ")") or "")
+            else
+                text = string.format("plan: %s via %s, about %d s (flying: %d s)", route.kind, route.name,
+                    math.ceil(route.eta or 0), math.ceil(route.flyTime or 0))
+            end
+            if text ~= lastLogged then
+                if not lastLogged then logTrip(here, goal) end
+                lastLogged = text
+                Router.log(text)
+            end
+        end
     end
 
     if route.kind == "direct" then
@@ -775,19 +905,19 @@ function Router.testPoint(point, bananaTime)
     local tried = {}
     for _, way in ipairs(Router.waysFor(point, true)) do
         local start = Player.position()
-        local ok, detail = Router.tryWay(point, way, bananaTime)
-        if ok and way ~= "banana" and start then
+        local ok, detail, placed = Router.tryWay(point, way, bananaTime)
+        if ok and placed and start then
             task.wait(Router.ROLLBACK_WATCH)
             if near(start, Router.ROLLBACK_NEAR) then
                 ok, detail = false, "jumped, then rolled back"
-                rolledBack[point.name] = way
+                rolledBack[point.name] = rolledBack[point.name] or {}
+                rolledBack[point.name][way] = true
             else
                 detail = "jumped, no rollback"
             end
         end
         if ok then
             bestWay[point.name] = way
-            rolledBack[point.name] = nil
             recordResult(point.name, true, nil)
             return true, "works with the " .. Router.WAYS[way] .. " (" .. detail .. ")"
         end
@@ -883,6 +1013,7 @@ end
 function Router.reset()
     route, note, lastTrip = nil, nil, nil
     bestWay, rolledBack, watch = {}, {}, nil
+    events, tripAt, lastLogged = {}, nil, nil
     busy, justJumped = false, false
     confirmed, lastUsed = {}, {}
     failures, lockedAt, attempts = {}, {}, {}

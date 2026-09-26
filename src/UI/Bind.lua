@@ -102,4 +102,44 @@ function Bind.multiDropdown(parent, key, title, values, description)
     })
 end
 
+-- The current choice of a dropdown setting, as a list (a set's keys for a
+-- multi-select). A list that must be fetched starts with just these, so the
+-- saved choice survives until the full list arrives.
+function Bind.saved(key, multi)
+    local value = Settings.get(key)
+    local list = {}
+    if multi then
+        for name, on in pairs(type(value) == "table" and value or {}) do
+            if on then list[#list + 1] = name end
+        end
+        table.sort(list)
+    elseif type(value) == "string" and value ~= "" then
+        list[1] = value
+    end
+    return list
+end
+
+-- Fills a dropdown in the background: `fetch` may ask the server or load
+-- game modules, which must not hold up the window while it is built. The
+-- saved choice stays in the list and stays selected.
+function Bind.fillLater(control, key, fetch, multi)
+    task.spawn(function()
+        local ok, values = pcall(fetch)
+        if not ok or type(values) ~= "table" or #values == 0 then return end
+        local seen = {}
+        for _, name in ipairs(values) do seen[name] = true end
+        for _, name in ipairs(Bind.saved(key, multi)) do
+            if not seen[name] then values[#values + 1] = name end
+        end
+        pcall(function() control:SetValues(values) end)
+        local value = Settings.get(key)
+        if multi then
+            pcall(function() control:SetValue(type(value) == "table" and value or {}) end)
+        elseif value ~= nil and value ~= "" then
+            pcall(function() control:SetValue(value) end)
+        end
+    end)
+    return control
+end
+
 return Bind

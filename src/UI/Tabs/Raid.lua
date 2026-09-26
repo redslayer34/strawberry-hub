@@ -14,13 +14,17 @@ return function(Window)
     local fruit = tab:AddSection("Devil Fruit")
     Bind.toggle(fruit, "FruitRandom", "Random Devil Fruit", "Rolls the Cousin's gacha whenever it is allowed.")
     Bind.toggle(fruit, "FruitStore", "Auto Store Fruit", "Every fruit you hold goes to the fruit storage.")
-    Bind.multiDropdown(fruit, "FruitSniperList", "Fruits To Snipe", Fruits.stockNames(),
+    -- These lists need the server or the game's modules: filled in the
+    -- background so the window does not wait for them.
+    local sniper = Bind.multiDropdown(fruit, "FruitSniperList", "Fruits To Snipe", Bind.saved("FruitSniperList", true),
         "Bought from the stock when on sale, unless you already eat one of them.")
+    Bind.fillLater(sniper, "FruitSniperList", Fruits.stockNames, true)
     Bind.toggle(fruit, "FruitSniper", "Buy Sniped Fruits")
     Bind.toggle(fruit, "FruitAwaken", "Auto Awaken Fruit", "Asks the Awakener after each raid.")
 
     local raids = tab:AddSection("Raids")
-    Bind.dropdown(raids, "RaidName", "Raid", Raids.names())
+    local raidList = Bind.dropdown(raids, "RaidName", "Raid", Bind.saved("RaidName"))
+    Bind.fillLater(raidList, "RaidName", Raids.names)
     Bind.toggle(raids, "RaidAuto", "Auto Raid", "Level 1100+: buys the chip, starts the raid and clears it.")
     Bind.toggle(raids, "RaidCheapFruit", "Pay With A Cheap Stored Fruit",
         "Takes a fruit worth under 1M from the storage to pay the chip.")
@@ -56,10 +60,11 @@ return function(Window)
     local dungeon = tab:AddSection("Dungeon")
     Bind.dropdown(dungeon, "DungeonWeapon", "Weapon", Dungeon.WEAPONS)
     Bind.toggle(dungeon, "DungeonAttack", "Auto Attack Dungeon", "Clears each floor, then takes the exit.")
-    local cards = Dungeon.cardNames()
-    Bind.dropdown(dungeon, "DungeonCard1", "Card Priority 1", cards)
-    Bind.dropdown(dungeon, "DungeonCard2", "Card Priority 2", cards)
-    Bind.dropdown(dungeon, "DungeonCard3", "Card Priority 3", cards)
+    for index = 1, 3 do
+        local key = "DungeonCard" .. index
+        local cardList = Bind.dropdown(dungeon, key, "Card Priority " .. index, Bind.saved(key))
+        Bind.fillLater(cardList, key, Dungeon.cardNames)
+    end
     Bind.toggle(dungeon, "DungeonCards", "Auto Pick Cards", "Your priorities first, otherwise a random card.")
 
     return tab

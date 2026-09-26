@@ -1144,6 +1144,7 @@ do
     Entrances.reset({ DefeatedIndraTrueForm = true })
     local goal = CASTLE + Vector3.new(500, 0, 500)
     local tries = 0
+    Router.WAY_ORDER = { "banana" }
     world.commF.OnInvoke = function(action)
         if action == "requestEntrance" then
             tries = tries + 1
@@ -1161,6 +1162,51 @@ do
     check("with the exact point", call and call[2] == CASTLE, call and tostring(call[2]))
     check("reported working", Router.describe():find("Castle on the Sea: works", 1, true) ~= nil, Router.describe())
     check("player tagged Teleporting", game:GetService("CollectionService"):HasTag(world.player, "Teleporting"))
+    Router.WAY_ORDER = nil
+end
+
+-- Teddy's Sea 3 gate way: a 0 s tween, then the call with Teddy's position,
+-- nothing placed, a frame apart until the server has moved the character.
+setup()
+do
+    game.PlaceId = SEA3
+    Entrances.reset({ DefeatedIndraTrueForm = true })
+    local tweens = 0
+    local tweenService = game:GetService("TweenService")
+    local oldCreate, oldInfo = tweenService.Create, TweenInfo
+    TweenInfo = { new = function() return {} end }
+    tweenService.Create = function()
+        return { Play = function() tweens = tweens + 1 end, Cancel = function() end }
+    end
+    local alt = Entrances.named("Castle on the Sea").alt
+    local sent = 0
+    world.commF.OnInvoke = function(action, position)
+        if action == "requestEntrance" then
+            sent = sent + 1
+            check("nothing placed before the server moves it", (world.hrp.Position - Vector3.new(0, 0, 0)).Magnitude < 1)
+            if sent == 2 then world.hrp.Position = alt end
+        end
+    end
+    eq("rip_indra portals: gate way first", Router.waysFor(Entrances.named("Castle on the Sea"))[1], "gate")
+    game.PlaceId = 2753915549
+    eq("Sea 1: Banana way first, then placed", table.concat(Router.waysFor(Entrances.named("Whirlpool")), ","),
+        "banana,placed,alt")
+    game.PlaceId = 4442272183
+    eq("Sea 2: no Teddy position", table.concat(Router.waysFor(Entrances.named("Cursed Ship")), ","), "banana,placed")
+    game.PlaceId = SEA3
+    local goal = CASTLE + Vector3.new(500, 0, 500)
+    check("started", Router.update(Vector3.new(0, 0, 0), goal))
+    for _ = 1, 10 do stepTasks() end
+    check("done", not Router.busy())
+    eq("stopped once there", sent, 2)
+    check("the 0 s tween before each call", tweens >= 2, tweens)
+    local call = calls(world.commF, "requestEntrance")[1]
+    check("Teddy's position sent", call and call[2] == alt, call and tostring(call[2]))
+    check("works with the gate way, no watch needed",
+        Router.describe():find("Castle on the Sea: works (Teddy gate way)", 1, true) ~= nil, Router.describe())
+    check("travel log: plan and answer", Router.logText():find("plan: entrance via Castle on the Sea", 1, true) ~= nil
+        and Router.logText():find("answer nil", 1, true) ~= nil, Router.logText())
+    tweenService.Create, TweenInfo = oldCreate, oldInfo
 end
 
 -- Teddy's way: the call from where you are, then placed on the point, and
@@ -1172,6 +1218,7 @@ do
     Entrances.reset({ DefeatedIndraTrueForm = true })
     Router.COOLDOWN = 0
     Router.BANANA_TIME = 1
+    Router.WAY_ORDER = { "banana", "placed", "alt" }
     local positions = {}
     world.commF.OnInvoke = function(action)
         if action == "requestEntrance" then positions[#positions + 1] = world.hrp.Position end
@@ -1190,13 +1237,18 @@ do
     local handled = Router.update(world.hrp.Position, goal)
     check("keeps flying while the jump is watched", not handled)
     check("status: checking the jump", (Router.note() or ""):find("checking the jump", 1, true) ~= nil, Router.note())
+    local elsewhere = Entrances.named("Hydra").position + Vector3.new(300, 0, 0)
+    check("no other jump while it is watched", not Router.update(world.hrp.Position, elsewhere))
+    check("still not busy", not Router.busy())
 
-    world.hrp.Position = origin   -- the server rolls the character back
+    world.hrp.Position = origin   -- the server rolls the character back, seconds later
     Router.update(origin, goal)
-    check("rollback recorded", Router.describe():find("rolled back after the jump", 1, true) ~= nil, Router.describe())
-    local ways = Router.waysFor(Entrances.named("Castle on the Sea"))
-    eq("rolled-back way tried last", ways[#ways], "placed")
-    eq("Teddy's position before it", ways[2], "alt")
+    check("rollback recorded", Router.describe():find("rolled back after", 1, true) ~= nil, Router.describe())
+    check("rollback in the travel log", Router.logText():find("rolled back after", 1, true) ~= nil, Router.logText())
+    local ways = table.concat(Router.waysFor(Entrances.named("Castle on the Sea")), ",")
+    eq("rolled-back way dropped for this portal", ways, "banana,alt")
+    eq("the portal test still tries it", table.concat(Router.waysFor(Entrances.named("Castle on the Sea"), true), ","),
+        "banana,placed,alt")
 
     -- Next try: Teddy's position; no rollback during the watch: a success.
     Router.ROLLBACK_WATCH = 0
@@ -1210,7 +1262,11 @@ do
         Router.describe())
     check("last trip: no rollback", (Router.lastTrip() or ""):find("no rollback", 1, true) ~= nil, Router.lastTrip())
     eq("Teddy position first next time", Router.waysFor(Entrances.named("Castle on the Sea"))[1], "alt")
-    Router.ROLLBACK_WATCH = 4
+    Router.clearPauses()
+    eq("clear pauses: every way again", table.concat(Router.waysFor(Entrances.named("Castle on the Sea")), ","),
+        "alt,banana,placed")
+    Router.WAY_ORDER = nil
+    Router.ROLLBACK_WATCH = 15
     Router.COOLDOWN = 4
     Router.BANANA_TIME = 1.5
 end
@@ -1280,13 +1336,23 @@ do
     clearTasks()
 end
 
+-- The travel log keeps the last LOG_SIZE events.
+setup()
+do
+    for index = 1, Router.LOG_SIZE + 5 do Router.log("event " .. index) end
+    local text = Router.logText()
+    check("oldest dropped", text:find("event 5\n", 1, true) == nil and text:find("event 6", 1, true) ~= nil, text)
+    check("newest kept", text:find("event " .. (Router.LOG_SIZE + 5), 1, true) ~= nil)
+end
+
 -- The portal test: each way in turn to the portal nearest an island.
 setup()
 do
     game.PlaceId = SEA3
     Entrances.reset({ DefeatedIndraTrueForm = true })
+    local alt = Entrances.named("Castle on the Sea").alt
     world.commF.OnInvoke = function(action, point)
-        if action == "requestEntrance" and point == CASTLE then world.hrp.Position = CASTLE end
+        if action == "requestEntrance" and point == alt then world.hrp.Position = alt end
     end
     local result
     local started, name = Router.portalTest(CASTLE + Vector3.new(200, 0, 0), function(text) result = text end)
@@ -1294,7 +1360,7 @@ do
     eq("portal nearest the island", name, "Castle on the Sea")
     check("nothing else while it runs", not Router.portalTest(CASTLE))
     for _ = 1, 5 do stepTasks() end
-    check("result reported", result and result:find("Castle on the Sea: works with the Banana way", 1, true) ~= nil,
+    check("result reported", result and result:find("Castle on the Sea: works with the Teddy gate way", 1, true) ~= nil,
         result)
     stepTasks()
     local _, nearest = Router.portalTest(Vector3.new(90000, 0, 90000))

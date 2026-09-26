@@ -80,7 +80,20 @@ return function(Window, ui)
     Bind.toggle(travel, "LoadIslands", "Load every island",
         "Keeps every island loaded, like Banana Cat Hub. Uses more memory: turn it off if the game lags.")
     local portals = travel:AddParagraph({ Title = "Portals in this server", Content = Router.describe() })
-    Loop.start("PortalPanel", 2, function() portals:SetDesc(Router.describe()) end)
+    local log = travel:AddParagraph({ Title = "Travel log", Content = Router.logText() })
+    Loop.start("PortalPanel", 2, function()
+        portals:SetDesc(Router.describe())
+        log:SetDesc(Router.logText())
+    end)
+    travel:AddButton({
+        Title = "Copy travel log",
+        Description = "Copies the last far trips (plan, portal calls and answers, rollbacks) to paste them elsewhere.",
+        Callback = function()
+            local copy = setclipboard or toclipboard or (syn and syn.write_clipboard)
+            local ok = copy ~= nil and pcall(copy, Router.logText())
+            ui.Library:Notify({ Title = "Travel log", Content = ok and "Copied" or "Your executor cannot copy", Duration = 4 })
+        end,
+    })
 
     travel:AddButton({
         Title = "Portal test",

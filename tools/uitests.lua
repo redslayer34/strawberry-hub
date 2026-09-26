@@ -313,6 +313,20 @@ do
         not pcall(newFakeFluent().CreateWindow, newFakeFluent(), { Title = "x" }))
 end
 
+-- A list filled in the background keeps the saved choice.
+reset()
+do
+    local lib = newFakeFluent()
+    local win = lib:CreateWindow({ Title = "t", Size = UDim2.fromOffset(1, 1) })
+    local tab = win:AddTab({ Title = "t" })
+    Settings.set("FruitSniperList", { Kitsune = true })
+    local list = Bind.multiDropdown(tab, "FruitSniperList", "Fruits", Bind.saved("FruitSniperList", true))
+    eq("starts with the saved choice only", table.concat(list.Values, ","), "Kitsune")
+    Bind.fillLater(list, "FruitSniperList", function() return { "Dragon", "Leopard" } end, true)
+    eq("filled, saved choice kept in the list", table.concat(list.Values, ","), "Dragon,Leopard,Kitsune")
+    eq("saved choice still selected", Settings.get("FruitSniperList").Kitsune, true)
+end
+
 ---------------------------------------------------------------------------
 -- Touch slider
 ---------------------------------------------------------------------------
