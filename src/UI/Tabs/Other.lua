@@ -5,7 +5,6 @@
 local Bind = require("UI.Bind")
 local Dragon = require("Features.Other.Dragon")
 local Farm = require("Features.Farm")
-local Fishing = require("Features.Other.Fishing")
 local Loop = require("Core.Loop")
 
 return function(Window, ui)
@@ -17,7 +16,7 @@ return function(Window, ui)
         Content = "These run like the farms of the Farm tab: the first one on wins "
             .. "(Law > Observation V2 > Observation > Dojo > Dragon Hunter > Berries > Chests > "
             .. "Fishing), Stack events still come first, and when one has nothing to do "
-            .. "the next farm runs.",
+            .. "the next farm runs. Law is in the Fruit & Raid tab, Fishing has its own tab.",
     })
     local panel = status:AddParagraph({ Title = "Now", Content = Farm.status() })
     Loop.start("OtherPanel", 1, function()
@@ -38,10 +37,6 @@ return function(Window, ui)
     Bind.toggle(berries, "OtherBerry", "Auto Collect Berries")
     Bind.toggle(berries, "OtherHopBerry", "Hop To Find Berries")
 
-    local law = tab:AddSection("Raid Law")
-    Bind.toggle(law, "OtherLaw", "Auto Buy Chip And Kill Law",
-        "Sea 2: buys a Microchip (1000 fragments), summons Order and kills it.")
-
     local observation = tab:AddSection("Observation (Ken)")
     Bind.toggle(observation, "OtherObservation", "Farm Observation",
         "Turns Ken on next to a strong Marine and lets it miss you.")
@@ -54,27 +49,6 @@ return function(Window, ui)
         "Every belt. Yellow, Green and Red use your boat (Sea Events tab settings).")
     Bind.toggle(dragon, "OtherDragonHunter", "Auto Dragon Hunter",
         "Hydra Enforcers, Venomous Assailants, trees, embers.")
-
-    local fishing = tab:AddSection("Fishing")
-    local spot = fishing:AddParagraph({ Title = "Fishing spot", Content = Fishing.describeSpot() })
-    fishing:AddButton({
-        Title = "Save Fishing Position",
-        Description = "Stand where you want to fish, facing the water.",
-        Callback = function()
-            local text = Fishing.saveSpot()
-            if text then spot:SetDesc(text) end
-        end,
-    })
-    Bind.dropdown(fishing, "OtherBait", "Bait", Fishing.baitNames(), "Crafted when you have none.")
-    Bind.toggle(fishing, "OtherFishing", "Auto Fishing")
-    Bind.toggle(fishing, "OtherFishingVortex", "Go To Golden Vortex", "Fishes at the event spot when there is one.")
-    Bind.toggle(fishing, "OtherSellFish", "Auto Sell Fish")
-    Bind.toggle(fishing, "OtherOpenChests", "Auto Open Fishing Chests")
-    Bind.toggle(fishing, "OtherReelSize", "Bigger Reel Zone")
-    Bind.multiDropdown(fishing, "OtherAnglerRarities", "Angler Quest Rarities", Fishing.rarityNames(),
-        "Quests of other rarities are dropped. None selected = keep all.")
-    Bind.toggle(fishing, "OtherAnglerQuest", "Auto Accept Angler Quests")
-    Bind.toggle(fishing, "OtherSlapBattle", "Auto Slap Battle", "Times the jumps. It can still miss.")
 
     return tab
 end

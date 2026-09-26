@@ -21,8 +21,6 @@ return function(Window)
     Bind.toggle(actions, "PvpAimbot", "Skill Aimbot", "Every skill goes to the target.")
     Bind.toggle(actions, "PvpGunAimbot", "Gun Aimbot", "Gun shots go to the target.")
 
-    local misc = tab:AddSection("Misc")
-    Bind.toggle(misc, "PvpWaterWalk", "Walk On Water")
-    misc:AddParagraph({ Title = "Speed and jump", Content = "Walk Speed and Jump Power are in the Player tab." })
+
     return tab
 end

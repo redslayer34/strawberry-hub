@@ -28,6 +28,10 @@ return function(Window)
     Bind.toggle(raids, "RaidInstantKill", "Instant Kill (risk)", "Kills raid mobs at once. The anti-cheat may notice.")
     Bind.slider(raids, "RaidKillDelay", "Instant Kill Delay", 0, 5, 0, "Seconds between two instant kills.")
 
+    local law = tab:AddSection("Raid Law")
+    Bind.toggle(law, "OtherLaw", "Auto Buy Chip And Kill Law",
+        "Sea 2: buys a Microchip (1000 fragments), summons Order and kills it.")
+
     local multi = tab:AddSection("Multi Raid (accounts in this server)")
     multi:AddParagraph({
         Title = "How it works",

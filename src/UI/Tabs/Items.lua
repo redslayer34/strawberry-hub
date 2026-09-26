@@ -9,13 +9,6 @@ local Loop = require("Core.Loop")
 return function(Window)
     local tab = Window:AddTab({ Title = "Items", Icon = "sword" })
 
-    local buys = tab:AddSection("Buy")
-    Bind.toggle(buys, "ItemTradeBones", "Auto Trade Bones", "The Death King's gacha, with your bones.")
-    Bind.toggle(buys, "ItemLegendarySword", "Auto Buy Legendary Sword")
-    Bind.toggle(buys, "ItemHakiColour", "Auto Buy Haki Colour")
-    Bind.toggle(buys, "ItemDealerHop", "Hop For The Dealers", "Changes server every minute while buying.")
-    Bind.toggle(buys, "ItemSharkAnchor", "Auto Craft Shark Anchor", "Necklace, Terror Jaw, then the Anchor.")
-
     local swords = tab:AddSection("Swords & Haki (Sea 3)")
     swords:AddParagraph({
         Title = "Order",
@@ -44,6 +37,9 @@ return function(Window)
     local mastery = tab:AddSection("Mastery 600")
     Bind.toggle(mastery, "ItemMeleeMastery", "Auto Melee Mastery 600", "Buys each melee and farms it to 600.")
     Bind.toggle(mastery, "ItemSwordMastery", "Auto Sword Mastery 600", "Your rarest swords first.")
+
+    local craft = tab:AddSection("Craft")
+    Bind.toggle(craft, "ItemSharkAnchor", "Auto Craft Shark Anchor", "Necklace, Terror Jaw, then the Anchor.")
 
     local upgrade = tab:AddSection("Upgrade (Blacksmith)")
     Bind.toggle(upgrade, "ItemUpgradeSword", "Auto Upgrade Swords")

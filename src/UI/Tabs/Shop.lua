@@ -61,6 +61,12 @@ return function(Window, ui)
         end,
     })
 
+    local buys = tab:AddSection("Auto Buy")
+    Bind.toggle(buys, "ItemTradeBones", "Auto Trade Bones", "The Death King's gacha, with your bones.")
+    Bind.toggle(buys, "ItemLegendarySword", "Auto Buy Legendary Sword")
+    Bind.toggle(buys, "ItemHakiColour", "Auto Buy Haki Colour")
+    Bind.toggle(buys, "ItemDealerHop", "Hop For The Dealers", "Changes server every minute while buying.")
+
     local misc = tab:AddSection("Misc")
     misc:AddButton({ Title = "Buy Dual Flintlock",
         Callback = function() buy("Dual Flintlock", "BuyItem", "Dual Flintlock") end })

@@ -15,6 +15,7 @@ return function(Window)
         "Sea 2. V2: flowers (500k). V3 (2M): your race's quest (Fishman: a sea beast, by boat).")
     Bind.toggle(upgrade, "RaceDraco", "Auto Draco V2 - V3",
         "Dragon Wizard: Fire Flowers for V2, a Terrorshark at sea for V3.")
+    Bind.toggle(upgrade, "AutoV3", "Auto Race V3", "Uses your race's V3 ability every 3 seconds.")
 
     local cyborg = tab:AddSection("Cyborg & Ghoul (Sea 2)")
     Bind.toggle(cyborg, "RaceCyborg", "Auto Cyborg", "Microchip (1000 fragments), Order, Core Brain, the trainer.")

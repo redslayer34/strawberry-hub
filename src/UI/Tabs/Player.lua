@@ -31,6 +31,7 @@ return function(Window, ui)
     Bind.toggle(movement, "JumpPowerOn", "Custom Jump Power")
     Bind.slider(movement, "JumpPower", "Jump Power", 50, 300, 0)
     Bind.toggle(movement, "Noclip", "Noclip", "Walk through walls.")
+    Bind.toggle(movement, "PvpWaterWalk", "Walk On Water")
 
     return tab
 end

@@ -35,6 +35,9 @@ return function(Window, ui)
     local hop = tab:AddSection("Hop")
     Bind.toggle(hop, "AutoExecute", "Reload after teleport",
         "Starts Strawberry Hub again by itself in the next server.")
+    Bind.toggle(hop, "ScreenAutoRejoin", "Auto Rejoin On Disconnect",
+        "Rejoins the game when Roblox shows a disconnection message.")
+
     hop:AddButton({ Title = "Hop server", Callback = function()
         notify("Looking for a server...")
         task.spawn(function()
