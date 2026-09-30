@@ -196,24 +196,113 @@ end
 ---------------------------------------------------------------------------
 -- Inventory
 ---------------------------------------------------------------------------
+--  The old getInventory call now often answers nothing, so every source
+--  still around is read and merged by name:
+--    getInventory          name, type, value, rarity (older servers)
+--    getInventoryWeapons   swords and guns with their rarity (Teddy Hub)
+--    getInventoryFruits    the stored fruits
+--    ItemReplicationService + ItemConfig   the game's own item list (Banana)
 
-function Detector.inventory()
-    local fruits, items = {}, {}
-    local list = invoke("getInventory")
-    for _, item in ipairs(type(list) == "table" and list or {}) do
-        if type(item) == "table" and item.Name then
-            local name = tostring(item.Name):match("^[^%-]+") or tostring(item.Name)
-            local value, rarity = tonumber(item.Value), tonumber(item.Rarity)
-            if item.Type == "Blox Fruit" then
-                if not value or value >= CONFIG.FruitMinValue then fruits[#fruits + 1] = name end
-            elseif rarity and rarity >= CONFIG.ItemMinRarity then
-                items[#items + 1] = name
+Detector.RARITY = { common = 0, uncommon = 1, rare = 2, legendary = 3, mythical = 4 }
+Detector.RARITY_NAMES = { [0] = "Common", [1] = "Uncommon", [2] = "Rare", [3] = "Legendary", [4] = "Mythical" }
+
+local function rarityOf(value)
+    if type(value) == "number" then return value end
+    if type(value) == "string" then return tonumber(value) or Detector.RARITY[value:lower()] end
+    if type(value) == "table" then
+        return rarityOf(value.Name) or rarityOf(value.Value) or rarityOf(value.Order) or rarityOf(value.Index)
+    end
+    return nil
+end
+
+local function module(name)
+    local node = ReplicatedStorage:FindFirstChild(name)
+    if not node then return nil end
+    local ok, result = pcall(require, node)
+    return ok and result or nil
+end
+
+local function itemService()
+    local list = {}
+    pcall(function()
+        local service, config = module("ItemReplicationService"), module("ItemConfig")
+        if type(service) ~= "table" or type(config) ~= "table" then return end
+        for _, item in ipairs(service:GetItems(service.KEYS.QUANTITY)) do
+            if item.Value and item.Value > 0 then
+                local found, info = pcall(function() return config.match(item.ItemId):unwrap() end)
+                if found and type(info) == "table" and info.Display then
+                    local kind = info.Display.Category
+                    local key = info.Index and info.Index.StorageKey
+                    list[#list + 1] = {
+                        Name = kind == "Blox Fruit" and (key or info.Display.Name) or (info.Display.Name or key),
+                        Type = kind,
+                        Rarity = info.Rarity or info.Display.Rarity,
+                        Count = item.Value,
+                    }
+                end
             end
         end
+    end)
+    return list
+end
+
+function Detector.inventory()
+    local merged, order, sources = {}, {}, {}
+    local function add(source, entries, forcedType)
+        local used = false
+        for _, item in ipairs(type(entries) == "table" and entries or {}) do
+            if type(item) == "table" and item.Name then
+                used = true
+                local name = tostring(item.Name):match("^[^%-]+") or tostring(item.Name)
+                local entry = merged[name]
+                if not entry then
+                    entry = { name = name }
+                    merged[name] = entry
+                    order[#order + 1] = name
+                end
+                entry.type = entry.type or forcedType or item.Type
+                local value = tonumber(item.Value or item.Price)
+                if value and value > (entry.value or -1) then entry.value = value end
+                local rarity = rarityOf(item.Rarity)
+                if rarity and rarity > (entry.rarity or -1) then entry.rarity = rarity end
+            end
+        end
+        if used then sources[#sources + 1] = source end
     end
-    table.sort(fruits)
-    table.sort(items)
-    return { fruits = fruits, items = items }
+    add("getInventory", invoke("getInventory"))
+    add("getInventoryWeapons", invoke("getInventoryWeapons"))
+    add("getInventoryFruits", invoke("getInventoryFruits"), "Blox Fruit")
+    add("item service", itemService())
+
+    local fruits, items = {}, {}
+    for _, name in ipairs(order) do
+        local entry = merged[name]
+        if entry.type == "Blox Fruit" then
+            local keep
+            if entry.value then
+                keep = entry.value >= CONFIG.FruitMinValue
+            else
+                keep = entry.rarity == nil or entry.rarity >= CONFIG.ItemMinRarity
+            end
+            if keep then fruits[#fruits + 1] = entry end
+        elseif entry.rarity and entry.rarity >= CONFIG.ItemMinRarity then
+            items[#items + 1] = entry
+        end
+    end
+    local function byRarity(a, b)
+        if (a.rarity or 0) ~= (b.rarity or 0) then return (a.rarity or 0) > (b.rarity or 0) end
+        if (a.value or 0) ~= (b.value or 0) then return (a.value or 0) > (b.value or 0) end
+        return a.name < b.name
+    end
+    table.sort(fruits, byRarity)
+    table.sort(items, byRarity)
+    return { fruits = fruits, items = items, sources = sources }
+end
+
+-- "Cursed Dual Katana (Mythical)".
+function Detector.itemLabel(entry)
+    local rarity = entry.rarity and Detector.RARITY_NAMES[entry.rarity]
+    return rarity and (entry.name .. " (" .. rarity .. ")") or entry.name
 end
 
 ---------------------------------------------------------------------------
@@ -328,6 +417,12 @@ end
 
 local function yes(value) return value and "yes" or "no" end
 
+local function labels(entries)
+    local out = {}
+    for _, entry in ipairs(entries) do out[#out + 1] = Detector.itemLabel(entry) end
+    return out
+end
+
 function Detector.report(result)
     result = result or Detector.scan()
     local p, s, i, b, w = result.player, result.server, result.islands, result.bosses, result.world
@@ -342,8 +437,9 @@ function Detector.report(result)
         "Melees: " .. list(p.melees),
         string.format("Beli: %s | Fragments: %s", number(p.beli), number(p.fragments)),
         "== Inventory ==",
-        "Fruits: " .. list(result.inventory.fruits),
-        "Rare items: " .. list(result.inventory.items),
+        "Fruits: " .. list(labels(result.inventory.fruits)),
+        "Rare items: " .. list(labels(result.inventory.items)),
+        "(read from: " .. list(result.inventory.sources) .. ")",
         "== Server ==",
         string.format("Players %s | time %s | moon: %s", s.players, s.time, s.moon),
         "JobId: " .. s.jobId,
@@ -389,21 +485,75 @@ local function httpRequest()
     return (syn and syn.request) or request or http_request or (http and http.request) or (fluxus and fluxus.request)
 end
 
--- Posts `text` to the webhook URL of the options. Returns true when sent.
-function Detector.post(title, text)
+Detector.COLOUR = 15087942   -- strawberry red
+Detector.EVENT_COLOUR = 3066993  -- green: something worth joining for
+
+local function clip(text, size)
+    text = tostring(text)
+    if #text > size then text = text:sub(1, size - 3) .. "..." end
+    return text
+end
+
+local function lines(items, empty)
+    if #items == 0 then return empty or "—" end
+    return clip(table.concat(items, "\n"), 1000)
+end
+
+local function mark(on, name)
+    return (on and "✅ " or "❌ ") .. name
+end
+
+-- The Discord embed of a scan: one field per topic, the join line last.
+function Detector.embed(result, title, colour)
+    local p, s, i, b, w = result.player, result.server, result.islands, result.bosses, result.world
+    local fruit = "**" .. tostring(p.fruit.name) .. "**"
+    if p.fruit.mastery then fruit = fruit .. "\nMastery " .. p.fruit.mastery end
+    if p.fruit.awakened and #p.fruit.awakened > 0 then
+        fruit = fruit .. "\nAwakened: " .. table.concat(p.fruit.awakened, " ")
+    end
+    local bosses = {}
+    for _, name in ipairs(b.rare) do bosses[#bosses + 1] = "👹 " .. name end
+    bosses[#bosses + 1] = "🎯 Elite: " .. tostring(b.elite or "none")
+    bosses[#bosses + 1] = mark(b.castleRaid, "Castle raid")
+    local world = {}
+    for _, name in ipairs(w.fruits) do world[#world + 1] = "🍏 " .. name end
+    for _, name in ipairs(w.berries) do world[#world + 1] = "🍒 " .. name end
+    world[#world + 1] = "🌈 Haki: " .. tostring(w.legendaryHaki or "none")
+    world[#world + 1] = "🗡️ Sword: " .. tostring(w.legendarySword or "none")
+    local moon = s.moon == "Normal" and "🌑 Normal" or ("🌕 " .. s.moon)
+    local join = string.format("game:GetService('TeleportService'):TeleportToPlaceInstance(%s, '%s', "
+        .. "game.Players.LocalPlayer)", tostring(s.placeId), s.jobId)
+    return {
+        title = title,
+        description = string.format("**Level %s** · Sea %s · **%s %s**", tostring(p.level), tostring(p.sea or "?"),
+            tostring(p.race), p.raceVersion),
+        color = colour or Detector.COLOUR,
+        fields = {
+            { name = "🍎 Devil fruit", value = fruit, inline = true },
+            { name = "💰 Money", value = "Beli **" .. number(p.beli) .. "**\nFragments **" .. number(p.fragments) .. "**",
+                inline = true },
+            { name = "🥋 Melees (" .. #p.melees .. "/" .. #Detector.MELEES .. ")", value = lines(p.melees), inline = true },
+            { name = "🎒 Fruits in inventory", value = lines(labels(result.inventory.fruits)), inline = true },
+            { name = "⚔️ Rare items", value = lines(labels(result.inventory.items)), inline = true },
+            { name = "🌐 Server", value = "👥 " .. s.players .. "\n🕑 " .. s.time .. "\n" .. moon, inline = true },
+            { name = "🏝️ Islands", value = table.concat({ mark(i.mirage, "Mirage"), mark(i.kitsune, "Kitsune"),
+                mark(i.prehistoric, "Prehistoric"), mark(i.frozenDimension, "Frozen Dimension") }, "\n"), inline = true },
+            { name = "👹 Bosses", value = lines(bosses), inline = true },
+            { name = "🌍 World", value = lines(world), inline = true },
+            { name = "🔗 Join this server", value = "```lua\n" .. join .. "\n```", inline = false },
+        },
+        footer = { text = "🍓 Strawberry Detector · JobId " .. s.jobId },
+        timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    }
+end
+
+-- Posts a scan to the webhook URL of the options. Returns true when sent.
+function Detector.post(result, title, colour)
     local url, send = tostring(CONFIG.WebhookUrl or ""), httpRequest()
     if url == "" or not send then return false end
-    local join = string.format("game:GetService('TeleportService'):TeleportToPlaceInstance(%s, '%s', "
-        .. "game.Players.LocalPlayer)", tostring(game.PlaceId), tostring(game.JobId))
     local body = HttpService:JSONEncode({
         username = "Strawberry Detector",
-        embeds = { {
-            title = title,
-            description = "```\n" .. text:sub(1, 3800) .. "\n```",
-            color = 16733525,
-            fields = { { name = "Join", value = "```lua\n" .. join .. "\n```" } },
-            timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
-        } },
+        embeds = { Detector.embed(result, title, colour) },
     })
     return pcall(send, { Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
 end
@@ -422,7 +572,7 @@ function Detector.run()
     if CONFIG.Print then print("\n" .. text) end
     local events = Detector.events(result)
     notify(#events > 0 and table.concat(events, ", ") or "Scan done (F9 for the report)")
-    Detector.post("Scan of " .. (player and player.Name or "?"), text)
+    Detector.post(result, "🍓 " .. (player and player.Name or "?"), #events > 0 and Detector.EVENT_COLOUR or nil)
     return result
 end
 
@@ -438,7 +588,7 @@ function Detector.loop()
                     sent[key] = true
                     notify(event)
                     if CONFIG.Print then print("[Strawberry Detector] " .. event) end
-                    Detector.post(event, Detector.report(result))
+                    Detector.post(result, "🔔 " .. event, Detector.EVENT_COLOUR)
                 end
             end
         end
