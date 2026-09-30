@@ -18,6 +18,12 @@
 --  execute. The report is printed (F9 console) and shown as a notification;
 --  with a webhook URL it is also posted there. Detector.scan() returns the
 --  whole result as a table for your own scripts.
+--
+--  Local panel (PanelUrl): every PanelEvery seconds the scan is POSTed as
+--  JSON { username, userId, player, inventory, server, islands, bosses,
+--  world, events, time }. The heavy parts are cached (player + inventory
+--  PlayerEvery, dealers DealerEvery). 429 = wait longer, 404 = the account
+--  is unknown to the panel: sending stops for this session.
 --=============================================================================
 
 local env = (getgenv and getgenv()) or _G
@@ -29,6 +35,10 @@ local defaults = {
     Notify = true,            -- short in-game notification
     FruitMinValue = 0,        -- stored fruits listed from this price (0 = all)
     Avatar = true,            -- your Roblox headshot in the webhook
+    PanelUrl = "",            -- URL de ton panel local, ex. "http://10.0.2.2:8000/api/scan" (vide = désactivé)
+    PanelEvery = 30,          -- secondes entre deux envois au panel
+    PlayerEvery = 300,        -- secondes entre deux relectures du joueur + inventaire (lourd : ~15 appels au jeu)
+    DealerEvery = 120,        -- secondes entre deux questions aux marchands (Haki / épée légendaires)
     ItemMinRarity = 3,        -- items listed from this rarity
 }
 local CONFIG = env.DETECTOR or {}
@@ -402,7 +412,7 @@ function Detector.bosses()
     return { rare = rare, elite = elite, castleRaid = Detector.castleRaid() }
 end
 
-function Detector.world()
+function Detector.world(dealers)
     local fruits = {}
     for _, child in ipairs(workspace:GetChildren()) do
         if child.Name ~= "Fruit" and child.Name:find("Fruit", 1, true) and (child:IsA("Tool") or child:IsA("Model")) then
@@ -416,25 +426,60 @@ function Detector.world()
             if Detector.BERRIES[value] then berries[#berries + 1] = value end
         end
     end
-    local haki = dealerName(invoke("ColorsDealer", "1", true))
-    local sword = dealerName(invoke("LegendarySwordDealer", "1"))
+    dealers = dealers or Detector.dealers()
     return {
         fruits = fruits,
         berries = berries,
+        legendaryHaki = dealers.legendaryHaki,
+        legendarySword = dealers.legendarySword,
+    }
+end
+
+-- The Colors Dealer's and the sword dealer's legendary stock ("1" only
+-- asks, nothing is bought).
+function Detector.dealers()
+    local haki = dealerName(invoke("ColorsDealer", "1", true))
+    local sword = dealerName(invoke("LegendarySwordDealer", "1"))
+    return {
         legendaryHaki = haki and Detector.HAKI[haki] and haki or nil,
         legendarySword = sword and Detector.SWORDS[sword] and sword or nil,
     }
 end
 
--- Everything at once.
+local cache = {}
+
+-- Everything at once (and the cache refreshed).
 function Detector.scan()
+    local now = os.clock()
+    cache.player, cache.inventory, cache.playerAt = Detector.player(), Detector.inventory(), now
+    cache.dealers, cache.dealersAt = Detector.dealers(), now
     return {
-        player = Detector.player(),
-        inventory = Detector.inventory(),
+        player = cache.player,
+        inventory = cache.inventory,
         server = Detector.server(),
         islands = Detector.islands(),
         bosses = Detector.bosses(),
-        world = Detector.world(),
+        world = Detector.world(cache.dealers),
+    }
+end
+
+-- The same, with the heavy parts reused: player and inventory for
+-- PlayerEvery seconds, the dealers for DealerEvery seconds. For the loops.
+function Detector.scanCached()
+    local now = os.clock()
+    if not cache.playerAt or now - cache.playerAt >= CONFIG.PlayerEvery then
+        cache.player, cache.inventory, cache.playerAt = Detector.player(), Detector.inventory(), now
+    end
+    if not cache.dealersAt or now - cache.dealersAt >= CONFIG.DealerEvery then
+        cache.dealers, cache.dealersAt = Detector.dealers(), now
+    end
+    return {
+        player = cache.player,
+        inventory = cache.inventory,
+        server = Detector.server(),
+        islands = Detector.islands(),
+        bosses = Detector.bosses(),
+        world = Detector.world(cache.dealers),
     }
 end
 
@@ -711,11 +756,19 @@ function Detector.run()
     return result
 end
 
+-- Each run of the script gets its own session: the loops of an older run
+-- stop as soon as a newer one starts (or DETECTOR_RUNNING is set to false).
+local session = {}
+env.DETECTOR_SESSION = session
+local function running()
+    return env.DETECTOR_SESSION == session and env.DETECTOR_RUNNING ~= false
+end
+
 -- Loop mode: every CONFIG.Every seconds, each new event posted once per server.
 function Detector.loop()
     local sent = {}
-    while env.DETECTOR_RUNNING do
-        local ok, result = pcall(Detector.scan)
+    while running() do
+        local ok, result = pcall(Detector.scanCached)
         if ok then
             for _, event in ipairs(Detector.events(result)) do
                 local key = tostring(game.JobId) .. "|" .. event
@@ -723,7 +776,7 @@ function Detector.loop()
                     sent[key] = true
                     notify(event)
                     if CONFIG.Print then print("[Strawberry Detector] " .. event) end
-                    Detector.post(result, "🔔 " .. event, Detector.EVENT_COLOUR)
+                    pcall(Detector.post, result, "🔔 " .. event, Detector.EVENT_COLOUR)
                 end
             end
         end
@@ -731,10 +784,66 @@ function Detector.loop()
     end
 end
 
+---------------------------------------------------------------------------
+-- Local panel
+---------------------------------------------------------------------------
+
+Detector.PANEL_MAX_WAIT = 300   -- seconds: the longest wait after 429s
+
+-- POSTs a scan to CONFIG.PanelUrl. Returns the HTTP status (or nil).
+function Detector.postPanel(result)
+    local url, send = tostring(CONFIG.PanelUrl or ""), httpRequest()
+    if url == "" or not send then return nil end
+    local ok, response = pcall(function()
+        local body = HttpService:JSONEncode({
+            username = player and player.Name or "?",
+            userId = player and player.UserId or 0,
+            player = result.player,
+            inventory = result.inventory,
+            server = result.server,
+            islands = result.islands,
+            bosses = result.bosses,
+            world = result.world,
+            events = Detector.events(result),
+            time = os.time(),
+        })
+        return send({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
+    end)
+    if not ok or type(response) ~= "table" then return nil end
+    return tonumber(response.StatusCode)
+end
+
+-- Every PanelEvery seconds: a cached scan to the panel. 429 doubles the
+-- wait (up to PANEL_MAX_WAIT), a success brings it back; 404 stops.
+function Detector.panelLoop()
+    local wait = CONFIG.PanelEvery
+    while running() do
+        local ok, result = pcall(Detector.scanCached)
+        if ok then
+            local status = Detector.postPanel(result)
+            if status == 404 then
+                print("[Strawberry Detector] panel: account " .. tostring(player and player.Name)
+                    .. " unknown to the panel (404), sending stopped")
+                return
+            elseif status == 429 then
+                wait = math.min(wait * 2, Detector.PANEL_MAX_WAIT)
+            elseif status and status < 300 then
+                wait = CONFIG.PanelEvery
+            end
+        end
+        task.wait(wait)
+    end
+end
+
 env.StrawberryDetector = Detector
-Detector.run()
+pcall(Detector.run)
 if CONFIG.Loop then
     env.DETECTOR_RUNNING = true
     task.spawn(Detector.loop)
+end
+if tostring(CONFIG.PanelUrl or "") ~= "" then
+    print(string.format("[Strawberry Detector] panel: sending to %s every %d s", tostring(CONFIG.PanelUrl),
+        CONFIG.PanelEvery))
+    task.spawn(Detector.panelLoop)
 end
 return Detector
