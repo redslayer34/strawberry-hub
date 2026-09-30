@@ -814,9 +814,12 @@ function Detector.postPanel(result)
 end
 
 -- Every PanelEvery seconds: a cached scan to the panel. 429 doubles the
--- wait (up to PANEL_MAX_WAIT), a success brings it back; 404 stops.
+-- wait (up to PANEL_MAX_WAIT), a success brings it back; 404 stops. The
+-- console gets one line at the first success and one at the first failure
+-- (an unreachable 10.0.2.2 would otherwise go unnoticed), nothing more.
 function Detector.panelLoop()
     local wait = CONFIG.PanelEvery
+    local saidOk, saidFailed = false, false
     while running() do
         local ok, result = pcall(Detector.scanCached)
         if ok then
@@ -827,8 +830,16 @@ function Detector.panelLoop()
                 return
             elseif status == 429 then
                 wait = math.min(wait * 2, Detector.PANEL_MAX_WAIT)
-            elseif status and status < 300 then
+            elseif status and status >= 200 and status < 300 then
                 wait = CONFIG.PanelEvery
+                if not saidOk then
+                    saidOk = true
+                    print("[Strawberry Detector] panel OK (" .. tostring(CONFIG.PanelUrl) .. ")")
+                end
+            elseif not saidFailed then
+                saidFailed = true
+                print(string.format("[Strawberry Detector] panel unreachable (%s, %s), retrying silently",
+                    tostring(CONFIG.PanelUrl), status and ("HTTP " .. status) or "no answer"))
             end
         end
         task.wait(wait)
@@ -842,8 +853,6 @@ if CONFIG.Loop then
     task.spawn(Detector.loop)
 end
 if tostring(CONFIG.PanelUrl or "") ~= "" then
-    print(string.format("[Strawberry Detector] panel: sending to %s every %d s", tostring(CONFIG.PanelUrl),
-        CONFIG.PanelEvery))
     task.spawn(Detector.panelLoop)
 end
 return Detector
