@@ -11,6 +11,7 @@
 --                                                  quest givers of THIS sea
 --=============================================================================
 
+local Enemies = require("Game.Enemies")
 local Services = require("Core.Services")
 
 local Quests = {}
@@ -248,6 +249,48 @@ function Quests.best(level)
                             level = required,
                             npc = npc.NPCName,
                             position = toVector(npc.Position),
+                        }
+                        bestLevel = required
+                    end
+                end
+            end
+        end
+    end
+    return best
+end
+
+-- The best boss quest for `level` whose boss is alive right now (in the
+-- world, or kept in ReplicatedStorage while out of streaming range), or nil.
+-- Same shape as Quests.best. A boss quest gives far more experience than a
+-- mob quest: the Teddy Kaitun's "Triple Quest Method" takes one whenever
+-- its boss is up.
+function Quests.bossQuest(level)
+    local data = guideData()
+    local npcs = data and data.NPCList
+    local all = Services.module("Quests")
+    if type(npcs) ~= "table" or type(all) ~= "table" then return nil end
+
+    local best, bestLevel = nil, -1
+    for _, npc in pairs(npcs) do
+        local questName = npc.InternalQuestName
+        local list = questName and all[questName]
+        if type(list) == "table" and not Quests.EXCLUDED[questName]
+            and type(npc.Levels) == "table" then
+            for id, required in pairs(npc.Levels) do
+                local quest = list[id]
+                if type(quest) == "table" and type(quest.Task) == "table" then
+                    local mob, count = next(quest.Task)
+                    if mob and count == 1 and required <= level and required > bestLevel
+                        and Enemies.findBoss(mob) then
+                        best = {
+                            questName = questName,
+                            id = id,
+                            mob = mob,
+                            count = count,
+                            level = required,
+                            npc = npc.NPCName,
+                            position = toVector(npc.Position),
+                            boss = true,
                         }
                         bestLevel = required
                     end

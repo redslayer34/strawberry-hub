@@ -64,7 +64,7 @@ local MODULES = {
     "Features.Races.V4", "Game.Boat", "Features.Sea.Events", "Features.Sea.Islands", "Features.Sea.Volcano",
     "Features.TyrantFarm", "Features.Helpers", "Features.SafeSpot", "Features.Scout",
     "Kaitun.Config", "Kaitun.Tasks", "Kaitun.Engine", "Kaitun.Screen",
-    "Features.Items.Melee", "Features.Items.Electric",
+    "Features.Items.Melee", "Features.Items.Electric", "Features.SkipLevel",
 }
 for _, name in ipairs(MODULES) do
     local ok, err = pcall(require, name)
@@ -3750,6 +3750,86 @@ do
     for _, task in ipairs(KTasks.LIST) do if task.name == "Electric" then electric = task end end
     eq("electric: hop when no cloud", electric.hop(), "no charged storm cloud")
     eq("electric: waits 3 minutes first", electric.hopAfter, 180)
+end
+
+---------------------------------------------------------------------------
+-- Skip level (Teddy's Jump Lv Farming) and boss quests first
+---------------------------------------------------------------------------
+
+local SkipLevel = require("Features.SkipLevel")
+
+setup({ level = 10 })
+game.PlaceId = 2753915549
+do
+    eq("skip: level 10 -> Sky Bandit", SkipLevel.step(10).mob, "Sky Bandit")
+    eq("skip: level 80 -> God's Guard", SkipLevel.step(80).mob, "God's Guard")
+    eq("skip: done at 150", SkipLevel.step(150), nil)
+    Settings.set("AutoSkipLevel", true)
+    check("skip: on under 150 in Sea 1", SkipLevel.mode.enabled())
+    SkipLevel.mode.tick()
+    eq("skip: flies to the Skylands first", SkipLevel.mode.status, "Going to the Sky Bandits")
+    local bandit = mob("Sky Bandit", Vector3.new(0, 0, 10))
+    SkipLevel.mode.tick()
+    eq("skip: fights the loaded mob", SkipLevel.mode.target, bandit)
+    world.level.Value = 150
+    check("skip: off at 150", not SkipLevel.mode.enabled())
+    world.level.Value = 50
+    game.PlaceId = 4442272183
+    check("skip: off outside Sea 1", not SkipLevel.mode.enabled())
+end
+
+setup()
+do
+    eq("boss quest: none while the boss is away", Quests.bossQuest(960), nil)
+    local boss = mob("Some Boss", Vector3.new(0, 0, 30))
+    local plan = Quests.bossQuest(960)
+    eq("boss quest: picked when the boss is up", plan and plan.questName, "BossQuest")
+    eq("boss quest: too high for the level", Quests.bossQuest(900), nil)
+    boss.Parent = rs
+    check("boss quest: a boss kept in ReplicatedStorage counts", Quests.bossQuest(960) ~= nil)
+end
+
+setup()
+LevelFarm.stop()
+do
+    Settings.set("FarmBossQuests", true)
+    mob("Some Boss", Vector3.new(0, 0, 30))
+    world.commF.OnInvoke = function() return true end
+    LevelFarm.tick()
+    check("boss first: goes for the boss quest", tostring(LevelFarm.status):find("Some Boss", 1, true) ~= nil, LevelFarm.status)
+
+    world.guide.Data.QuestData = { Task = { Zombie = 8 } }
+    world.questPanel.Visible = true
+    LevelFarm.tick()
+    eq("boss first: a mob quest is dropped", #calls(world.commF, "AbandonQuest"), 1)
+end
+
+setup()
+LevelFarm.stop()
+do
+    Settings.set("FarmBossQuests", true)
+    world.guide.Data.QuestData = { Task = { ["Some Boss"] = 1 } }
+    world.questPanel.Visible = true
+    LevelFarm.tick()
+    eq("boss gone: its quest is dropped", #calls(world.commF, "AbandonQuest"), 1)
+    Settings.set("FarmBossQuests", false)
+    world.guide.Data.QuestData = { Task = { Zombie = 8 } }
+    mob("Some Boss", Vector3.new(0, 0, 30))
+    LevelFarm.tick()
+    eq("boss quests off: nothing dropped", #calls(world.commF, "AbandonQuest"), 1)
+end
+
+kaitunSetup(2753915549, 50)
+do
+    local keys, name = KEngine.idle(1, 50)
+    eq("kaitun: skip under 150", keys.AutoSkipLevel, true)
+    eq("kaitun: skip name", name, "Skip level (God's Guard)")
+    eq("kaitun: boss quests on", keys.FarmBossQuests, true)
+    keys = KEngine.idle(1, 200)
+    eq("kaitun: no skip at 200", keys.AutoSkipLevel, nil)
+    KConfig.load({ SkipLevel = false })
+    eq("kaitun: skip can be turned off", KEngine.idle(1, 50).AutoSkipLevel, nil)
+    KConfig.reset()
 end
 
 ---------------------------------------------------------------------------

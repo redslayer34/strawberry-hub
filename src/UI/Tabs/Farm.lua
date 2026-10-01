@@ -36,6 +36,11 @@ return function(Window)
     local level = tab:AddSection("Level Farm")
     Bind.toggle(level, "AutoFarmLevel", "Auto Farm Level",
         "Takes the best quest for your level and farms its mobs.")
+    Bind.toggle(level, "AutoSkipLevel", "Skip Level (under 150)",
+        "Sea 1: Sky Bandits, then God's Guards from level 31, without a quest (Teddy's fast start). "
+        .. "Auto Farm Level takes over at 150.")
+    Bind.toggle(level, "FarmBossQuests", "Boss Quests First",
+        "Takes a quest boss's quest whenever the boss is up: much more experience than a mob quest.")
     Bind.dropdown(level, "Weapon", "Weapon", Settings.WEAPONS,
         "Equipped automatically while farming.")
     Bind.toggle(level, "BringMob", "Bring Mob",

@@ -28,8 +28,19 @@ local LevelFarm = {
 LevelFarm.QUEST_RANGE = 8        -- studs from the quest giver to talk to it
 LevelFarm.QUEST_SETTLE = 1       -- seconds standing there before StartQuest
 LevelFarm.QUEST_RETRY = 3        -- seconds between two StartQuest attempts
+LevelFarm.ABANDON_EVERY = 3      -- seconds between two AbandonQuest (boss quests)
+LevelFarm.BOSS_TRIES = 3         -- boss quest asks that give nothing...
+LevelFarm.BOSS_PAUSE = 120       -- ...then boss quests are left alone this long
 
-local arrivedAt, lastStart
+local arrivedAt, lastStart, lastAbandon
+local bossTries, bossPausedUntil = 0, nil
+
+-- Boss quests are wanted: the setting is on and the server did not keep
+-- refusing one.
+local function bossQuestsOn()
+    if not Settings.get("FarmBossQuests") then return false end
+    return not bossPausedUntil or os.clock() >= bossPausedUntil
+end
 local search = Fight.newSearch()
 
 function LevelFarm.enabled()
@@ -39,7 +50,7 @@ end
 local function takeQuest(weapon)
     LevelFarm.target = nil
     Player.equip(weapon or Settings.get("Weapon"))
-    local plan = Quests.best(Player.level())
+    local plan = (bossQuestsOn() and Quests.bossQuest(Player.level())) or Quests.best(Player.level())
     if not plan or not plan.position then
         LevelFarm.status = "No quest found for level " .. Player.level()
         Movement.stop()
@@ -61,6 +72,12 @@ local function takeQuest(weapon)
     if now - arrivedAt >= LevelFarm.QUEST_SETTLE
         and (not lastStart or now - lastStart >= LevelFarm.QUEST_RETRY) then
         lastStart = now
+        if plan.boss then
+            bossTries = bossTries + 1
+            if bossTries > LevelFarm.BOSS_TRIES then
+                bossTries, bossPausedUntil = 0, now + LevelFarm.BOSS_PAUSE
+            end
+        end
         local result = Quests.start(plan)
         if result == nil or result == false then
             LevelFarm.status = LevelFarm.status .. " (server answered " .. tostring(result) .. ")"
@@ -84,6 +101,37 @@ local function hunt(name)
     end
 end
 
+local function abandon(reason)
+    LevelFarm.target = nil
+    local now = os.clock()
+    if not lastAbandon or now - lastAbandon >= LevelFarm.ABANDON_EVERY then
+        lastAbandon = now
+        Quests.abandon()
+    end
+    LevelFarm.status = reason
+end
+
+-- With FarmBossQuests: a mob quest gives way to a boss quest whose boss is
+-- up, and a boss quest whose boss is gone (someone else killed it) is
+-- dropped. Returns true when it acted.
+local function bossSwitch(quest)
+    if not Settings.get("FarmBossQuests") then return false end
+    bossTries = 0
+    if quest.count == 1 then
+        if not Enemies.findBoss(quest.mob) then
+            abandon("Boss " .. quest.mob .. " is gone: dropping its quest")
+            return true
+        end
+        return false
+    end
+    local boss = bossQuestsOn() and Quests.bossQuest(Player.level())
+    if boss then
+        abandon("Boss " .. boss.mob .. " is up: switching to its quest")
+        return true
+    end
+    return false
+end
+
 -- `weapon` (optional) replaces the Weapon setting (mastery farms).
 function LevelFarm.tick(weapon)
     if not Player.alive() then
@@ -104,7 +152,22 @@ function LevelFarm.tick(weapon)
         return
     end
 
+    if bossSwitch(quest) then return end
+
     local mob = Enemies.nearest(quest.mob)
+    if not mob and quest.count == 1 then
+        -- A boss kept in ReplicatedStorage is out of streaming range: going
+        -- there loads it.
+        local boss, inWorld = Enemies.findBoss(quest.mob)
+        if boss and inWorld then
+            mob = boss
+        elseif boss then
+            LevelFarm.target = nil
+            Movement.to(boss.HumanoidRootPart.CFrame * CFrame.new(0, Fight.SPAWN_HEIGHT, 0))
+            LevelFarm.status = "Boss quest: going to " .. quest.mob
+            return
+        end
+    end
     if mob then
         local hasWeapon = Fight.engage(LevelFarm, mob, weapon)
         LevelFarm.status = Fight.status(mob, hasWeapon, quest.count and (" x" .. quest.count) or "", weapon)
@@ -117,7 +180,8 @@ end
 function LevelFarm.stop()
     LevelFarm.target = nil
     LevelFarm.status = "Idle"
-    arrivedAt, lastStart = nil, nil
+    arrivedAt, lastStart, lastAbandon = nil, nil, nil
+    bossTries, bossPausedUntil = 0, nil
     search:reset()
 end
 

@@ -50,6 +50,7 @@ local Melee = require("Features.Items.Melee")
 local Player = require("Core.Player")
 local Services = require("Core.Services")
 local Settings = require("Core.Settings")
+local SkipLevel = require("Features.SkipLevel")
 local StackFarm = require("Features.StackFarm")
 local StackWorld = require("Features.Stack.World")
 local Summons = require("Features.Stack.Summons")
@@ -203,6 +204,12 @@ function Engine.idle(sea, level)
     local keys = { Weapon = Engine.weapon() }
     if level < Engine.MAX_LEVEL or sea ~= 3 then
         keys.AutoFarmLevel = true
+        keys.FarmBossQuests = true
+        -- Teddy's skip under 150; the level farm (still on) takes over after.
+        if sea == 1 and level < SkipLevel.UNTIL and Config.get("SkipLevel") ~= false then
+            keys.AutoSkipLevel = true
+            return keys, SkipLevel.describe() or "Level farm"
+        end
         return keys, "Level farm"
     end
     if not Config.skipped("Godhuman") and not Melee.unlocked("Dragon Talon") then
@@ -287,7 +294,7 @@ Engine.LAYER_KEYS = {
     "StackNewWorld", "StackThirdWorld", "StackFactory", "StackDarkbeard", "StackSummonDarkbeard",
     "StackChests", "StackEliteHunter", "StackPirateRaid", "StackRipIndra", "StackSummonRipIndra",
     "StackHakiPads", "StackSoulReaper", "StackSummonSoulReaper", "StackDoughKing", "StackSummonDoughKing",
-    "AutoFarmLevel", "AutoKatakuri", "AutoBone",
+    "AutoFarmLevel", "AutoKatakuri", "AutoBone", "AutoSkipLevel", "FarmBossQuests",
 }
 
 -- Whether the player should stay in this sea for now.

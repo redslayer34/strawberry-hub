@@ -112,6 +112,7 @@ Farm.MODES = {
     require("Features.MaterialFarm"),
     require("Features.KillMobFarm"),
     require("Features.AuraFarm"),
+    require("Features.SkipLevel").mode,
     require("Features.LevelFarm"),
 }
 

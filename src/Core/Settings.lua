@@ -13,6 +13,8 @@ local Settings = {}
 Settings.DEFAULTS = {
     -- Farm
     AutoFarmLevel = false,
+    AutoSkipLevel = false,
+    FarmBossQuests = false,
     Weapon = "Melee",
     BringMob = true,
     BringCount = 3,
