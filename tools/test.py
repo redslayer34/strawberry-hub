@@ -39,6 +39,11 @@ SUITES = {
         # becomes an assignment.
         "entry": 'SMOKE_HUB = require("main")',
     },
+    "smoke-kaitun": {
+        "file": "kaitunsmoke.lua",
+        "stubs": ["stubs.lua", "fakefluent.lua", "smokeprelude.lua", "kaitunprelude.lua"],
+        "entry": 'SMOKE_KAITUN = require("kaitun")',
+    },
 }
 
 

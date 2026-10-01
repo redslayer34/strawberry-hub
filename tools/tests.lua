@@ -63,6 +63,7 @@ local MODULES = {
     "Features.Items.Saber", "Features.Items.Mastery", "Features.Races.Duel", "Features.Races.Upgrade",
     "Features.Races.V4", "Game.Boat", "Features.Sea.Events", "Features.Sea.Islands", "Features.Sea.Volcano",
     "Features.TyrantFarm", "Features.Helpers", "Features.SafeSpot", "Features.Scout",
+    "Kaitun.Config", "Kaitun.Tasks", "Kaitun.Engine", "Kaitun.Screen",
 }
 for _, name in ipairs(MODULES) do
     local ok, err = pcall(require, name)
@@ -3143,6 +3144,147 @@ do
     local target = mob("Zombie", Vector3.new(0, 0, 0))
     require("Features.Fight").engage({}, target)
     eq("fight turns buso on", #calls(world.commF, "Buso"), 2)
+end
+
+---------------------------------------------------------------------------
+-- Kaitun: config, layers, task choice, watchdog
+---------------------------------------------------------------------------
+
+local KConfig = require("Kaitun.Config")
+local KEngine = require("Kaitun.Engine")
+local KTasks = require("Kaitun.Tasks")
+
+local function kaitunSetup(place, level, inventory, answers)
+    itemsSetup(place, level, inventory, answers)
+    KConfig.reset()
+    KEngine.reset()
+end
+
+do
+    local merged = KConfig.merge({ Team = "Marines", Speed = "fast", Skip = { CDK = true }, Extra = 1 })
+    eq("config: string kept", merged.Team, "Marines")
+    eq("config: wrong type falls back", merged.Speed, 300)
+    eq("config: skip merged key by key", merged.Skip.CDK, true)
+    eq("config: other skips kept", merged.Skip.Yama, false)
+    eq("config: unknown key kept", merged.Extra, 1)
+    eq("config: defaults untouched", KConfig.DEFAULTS.Skip.CDK, false)
+    eq("config: nil gives the defaults", KConfig.merge(nil).Team, "Pirates")
+end
+
+kaitunSetup(2753915549, 100)
+do
+    eq("sea 1 below 700: no New World", KEngine.background(1, 500).StackNewWorld, false)
+    eq("sea 1 at 700: New World", KEngine.background(1, 700).StackNewWorld, true)
+    local sea2 = KEngine.background(2, 1600)
+    eq("sea 2 at 1500: Third World", sea2.StackThirdWorld, true)
+    eq("sea 2: factory", sea2.StackFactory, true)
+    eq("sea 2: no elite hunter", sea2.StackEliteHunter, nil)
+    local sea3 = KEngine.background(3, 2000)
+    eq("sea 3: elite hunter", sea3.StackEliteHunter, true)
+    eq("sea 3: dough king", sea3.StackDoughKing, true)
+    eq("sea 3: no New World", sea3.StackNewWorld, nil)
+    eq("helpers on", sea3.AutoStats, true)
+    eq("no webhook without a url", sea3.WebhookUrl, nil)
+    KConfig.load({ WebhookUrl = "https://example.invalid/hook" })
+    eq("own webhook used", KEngine.background(3, 2000).WebhookUrl, "https://example.invalid/hook")
+    KConfig.reset()
+
+    local keys, name = KEngine.idle(2, 1000)
+    eq("idle: level farm below max", keys.AutoFarmLevel, true)
+    eq("idle name", name, "Level farm")
+    keys, name = KEngine.idle(3, 2800)
+    eq("idle: Katakuri at max in sea 3", keys.AutoKatakuri, true)
+    eq("idle: Katakuri name", name, "Katakuri")
+    keys = KEngine.idle(2, 2800)
+    eq("idle: still level farm in sea 2 at max", keys.AutoFarmLevel, true)
+    eq("wanted sea by level", KEngine.wantedSea(1600), 3)
+end
+
+kaitunSetup(7449423635, 2000)
+do
+    local doneB = false
+    local list = {
+        { name = "A", priority = 5, seas = { 3 }, keys = { ItemYama = true } },
+        { name = "B", priority = 1, seas = { 3 }, keys = { ItemTushita = true }, done = function() return doneB end },
+        { name = "C", priority = 1, seas = { 1 }, keys = { ItemSaber = true } },
+        { name = "D", priority = 0, seas = { 3 }, minLevel = 2500, keys = { ItemCDK = true } },
+    }
+    eq("lowest priority number in this sea wins", KEngine.pick(3, 2000, list).name, "B")
+    eq("level gate", KEngine.blocked(list[4], 3, 2000), "level 2500")
+    eq("sea gate", KEngine.blocked(list[3], 3, 2000), "other sea")
+    local wanted, task = KEngine.desired(3, 2000, list)
+    eq("desired: task chosen", task.name, "B")
+    eq("desired: its key on", wanted.ItemTushita, true)
+    eq("desired: other task keys off", wanted.ItemYama, false)
+    eq("desired: idle stays under the task", wanted.AutoFarmLevel, true)
+
+    KConfig.load({ Skip = { B = true } })
+    eq("skipped task gives way", KEngine.pick(3, 2000, list).name, "A")
+    KConfig.reset()
+    doneB = true
+    KEngine.reset()
+    eq("done task gives way", KEngine.pick(3, 2000, list).name, "A")
+    eq("ready() false blocks", KEngine.blocked({ name = "E", priority = 1, ready = function() return false end }, 3, 2000), "not ready")
+
+    -- Real list order follows Teddy's priorities.
+    local ordered = KTasks.ordered()
+    eq("CDK first", ordered[1].name, "CDK")
+    eq("Yama last", ordered[#ordered].name, "Yama")
+end
+
+kaitunSetup(7449423635, 2000)
+do
+    local saved = KTasks.LIST
+    local idleMode = { name = "Fake", status = "Nothing to do", enabled = function() return false end }
+    KTasks.LIST = { { name = "Lazy", priority = 1, seas = { 3 }, mode = idleMode, keys = { ItemYama = true } } }
+    local limit = KEngine.IDLE_LIMIT
+    KEngine.IDLE_LIMIT = 0
+    KEngine.tick()
+    eq("watchdog: rests a task with nothing to do", KEngine.blocked(KTasks.LIST[1], 3, 2000), "resting")
+    check("watchdog: logged", (KEngine.status().log[1] or ""):find("Lazy rests", 1, true) ~= nil, KEngine.status().log[1])
+    eq("watchdog: resting listed", #KEngine.status().resting, 1)
+    KEngine.tick()
+    eq("watchdog: key off once resting", Settings.get("ItemYama"), false)
+    KEngine.IDLE_LIMIT = limit
+
+    KEngine.reset()
+    local busyMode = { name = "Busy", status = "working", enabled = function() return true end }
+    KTasks.LIST = { { name = "Slow", priority = 1, seas = { 3 }, mode = busyMode, keys = { ItemYama = true }, maxTime = 0 } }
+    KEngine.tick()
+    eq("watchdog: rests a task past its max time", KEngine.blocked(KTasks.LIST[1], 3, 2000), "resting")
+    check("watchdog: says why", (KEngine.status().log[1] or ""):find("took too long", 1, true) ~= nil)
+
+    KEngine.reset()
+    KTasks.LIST = { { name = "Work", priority = 1, seas = { 3 }, mode = busyMode, keys = { ItemYama = true } } }
+    KEngine.tick()
+    eq("tick: task key on", Settings.get("ItemYama"), true)
+    eq("tick: idle key on", Settings.get("AutoFarmLevel"), true)
+    eq("tick: background on", Settings.get("StackEliteHunter"), true)
+    eq("status: current task", KEngine.status().task, "Work")
+    KEngine.stop()
+    eq("stop: task key back to default", Settings.get("ItemYama"), false)
+    eq("stop: idle key back to default", Settings.get("AutoFarmLevel"), false)
+    KTasks.LIST = saved
+end
+
+kaitunSetup(7449423635, 2000, {}, {
+    getAwakenedAbilities = { { Awakened = true, Cost = 100 }, { Awakened = false, Cost = 500 } },
+})
+do
+    local data = world.player.Data
+    local fruit = newInstance("StringValue", "DevilFruit", data)
+    fruit.Value = "Flame-Flame"
+    local fragments = newInstance("IntValue", "Fragments", data)
+    fragments.Value = 100
+    eq("fruit raid from the eaten fruit", KTasks.fruitRaid(), "Flame")
+    local can, all = KTasks.awakening()
+    check("awakening: not affordable yet", not can)
+    check("awakening: not all done", not all)
+    fragments.Value = 600
+    require("Features.Stack.Common").forget()
+    check("awakening: affordable", (KTasks.awakening()))
+    fruit.Value = "Kitsune-Kitsune"
+    eq("no raid for a fruit without one", KTasks.fruitRaid(), nil)
 end
 
 ---------------------------------------------------------------------------

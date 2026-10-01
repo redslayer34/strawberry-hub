@@ -32,6 +32,9 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
 DIST = ROOT / "StrawberryHub.lua"
+# Every distributed script: (entry module, packed file). The hub and the
+# Kaitun share all their modules; each build only ships what its entry uses.
+TARGETS = [("main", DIST), ("kaitun", ROOT / "StrawberryKaitun.lua")]
 KEY = "str4wb3rry_hub_k3y_2026"
 ENTRY = "main"
 
@@ -192,6 +195,19 @@ return fn()
 """
 
 
+def build(entry: str, dist: pathlib.Path, no_prune: bool = False) -> None:
+    modules = collect(entry)
+    if not no_prune:
+        modules = reachable(modules, entry)
+    bundled = bundle(modules, entry)
+    dist.parent.mkdir(parents=True, exist_ok=True)
+    dist.write_text(pack(bundled), encoding="utf-8")
+    print(
+        f"packed {len(modules)} modules (entry {entry}) -> {dist.name} "
+        f"({len(bundled)} bytes source, {dist.stat().st_size} bytes dist)"
+    )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
@@ -201,8 +217,8 @@ def main() -> int:
     )
     ap.add_argument(
         "--entry",
-        default=ENTRY,
-        help=f"module to require at the end of the bundle (default: {ENTRY})",
+        default=None,
+        help=f"module to require at the end of the bundle (default: build every target, {ENTRY} for --bundle-only)",
     )
     ap.add_argument(
         "--out",
@@ -216,25 +232,24 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    modules = collect(args.entry)
-    if not args.no_prune:
-        modules = reachable(modules, args.entry)
-    bundled = bundle(modules, args.entry)
+    if args.entry is None and not args.bundle_only and not args.out:
+        for entry, dist in TARGETS:
+            build(entry, dist, args.no_prune)
+        return 0
 
+    entry = args.entry or ENTRY
     if args.bundle_only:
+        modules = collect(entry)
+        if not args.no_prune:
+            modules = reachable(modules, entry)
+        bundled = bundle(modules, entry)
         out = pathlib.Path(args.bundle_only)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(bundled, encoding="utf-8")
         print(f"bundle -> {args.bundle_only} ({len(modules)} modules, {len(bundled)} bytes)")
         return 0
 
-    dist = pathlib.Path(args.out) if args.out else DIST
-    dist.parent.mkdir(parents=True, exist_ok=True)
-    dist.write_text(pack(bundled), encoding="utf-8")
-    print(
-        f"packed {len(modules)} modules (entry {args.entry}) -> {dist} "
-        f"({len(bundled)} bytes source, {dist.stat().st_size} bytes dist)"
-    )
+    build(entry, pathlib.Path(args.out) if args.out else DIST, args.no_prune)
     return 0
 
 
