@@ -13,7 +13,6 @@
 
 local AimHook = require("Game.AimHook")
 local Boat = require("Game.Boat")
-local Entrances = require("Game.Entrances")
 local Esp = require("Features.Esp")
 local Dungeon = require("Features.Dungeon")
 local Farm = require("Features.Farm")
@@ -95,7 +94,6 @@ if afk then connections[#connections + 1] = afk end
 ---------------------------------------------------------------------------
 
 guard("movement", Movement.start)
-guard("portal unlocks", Entrances.refresh)
 local stopIslands = guard("island loader", IslandLoader.start)
 if stopIslands then connections[#connections + 1] = { Disconnect = stopIslands } end
 guard("farm", Farm.start)

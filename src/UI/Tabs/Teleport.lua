@@ -65,13 +65,14 @@ return function(Window, ui)
     Bind.slider(travel, "TweenSpeed", "Fly Speed", 100, 350, 0,
         "Studs per second. Lower it if the server keeps pulling you back.")
     Bind.toggle(travel, "SmartTravel", "Smart travel (portals and shortcuts)",
-        "Far goals: the unlocked portal nearest it (Rip Indra, Cursed Ship, Doflamingo, Temple of Time...), "
-            .. "called Banana's way or Teddy's, or the reset teleport. Also the temple exit, the submarine, "
-            .. "the Underwater City and Cursed Ship exits, the Cake mirror and the Celestial Domain.")
+        "Far goals: the game's portal doors (flies to the door, stands on it until it sends you on), "
+            .. "or the reset teleport, whichever arrives first. Castle <-> Mansion / Hydra need the Valkyrie "
+            .. "Helm, Castle <-> Tiki the Feathered Visage. Also the Temple of Time, the submarine, the Cake "
+            .. "mirror and the Celestial Domain.")
     Bind.toggle(travel, "PortalFruit", "Use Portal fruit (Gateway)",
         "Portal fruit level 200+: opens the Gateway to the island nearest the goal when C is ready.")
     Bind.slider(travel, "TeleportDistance", "Teleport when farther than", 1000, 5000, 0,
-        "Studs. A farther goal is reached by a portal or the reset teleport, whichever arrives first; "
+        "Studs. A farther goal is reached through portal doors or the reset teleport, whichever arrives first; "
             .. "a closer one is flown to.")
     Bind.toggle(travel, "ResetTeleport", "Reset teleport (respawn near the goal)",
         "Moves your spawn point to the goal's island and resets your character. Never while you hold a "
@@ -79,7 +80,7 @@ return function(Window, ui)
             .. "fruit, nor in a raid, a dungeon or on the Submerged Island.")
     Bind.toggle(travel, "LoadIslands", "Load every island",
         "Keeps every island loaded, like Banana Cat Hub. Uses more memory: turn it off if the game lags.")
-    local portals = travel:AddParagraph({ Title = "Portals in this server", Content = Router.describe() })
+    local portals = travel:AddParagraph({ Title = "Portal doors in this sea", Content = Router.describe() })
     local log = travel:AddParagraph({ Title = "Travel log", Content = Router.logText() })
     Loop.start("PortalPanel", 2, function()
         portals:SetDesc(Router.describe())
@@ -87,7 +88,7 @@ return function(Window, ui)
     end)
     travel:AddButton({
         Title = "Copy travel log",
-        Description = "Copies the last far trips (plan, portal calls and answers, rollbacks) to paste them elsewhere.",
+        Description = "Copies the last far trips (plan, doors and their answers, resets) to paste them elsewhere.",
         Callback = function()
             local copy = setclipboard or toclipboard or (syn and syn.write_clipboard)
             local ok = copy ~= nil and pcall(copy, Router.logText())
@@ -96,46 +97,25 @@ return function(Window, ui)
     })
 
     travel:AddButton({
-        Title = "Portal test",
-        Description = "Calls the portal nearest the island chosen above from where you stand, three ways in turn: "
-            .. "Banana Cat Hub's (5 s of calls), Teddy Hub's (placed on the point), then Teddy's position. "
-            .. "Tells which one works; travel then uses it first.",
+        Title = "Show route",
+        Description = "For the island chosen above: the doors, reset or flight the hub would take from here. "
+            .. "Nothing moves.",
         Callback = function()
             local name = Settings.get("Island")
             local position = World.islands()[name]
             if not position then
-                ui.Library:Notify({ Title = "Portal test", Content = "Choose an island first", Duration = 5 })
+                ui.Library:Notify({ Title = "Route", Content = "Choose an island first", Duration = 5 })
                 return
             end
-            local started, info = Router.portalTest(position, function(text)
-                ui.Library:Notify({ Title = "Portal test", Content = text, Duration = 15 })
-            end)
-            ui.Library:Notify({
-                Title = "Portal test",
-                Content = started and ("Calling " .. info .. "... stay still") or ("Cannot test: " .. info),
-                Duration = 6,
-            })
+            ui.Library:Notify({ Title = "Route to " .. tostring(name), Content = Router.routeText(position), Duration = 12 })
         end,
     })
 
     travel:AddButton({ Title = "Stop travelling", Callback = Travel.cancel })
-    travel:AddButton({
-        Title = "Test portals",
-        Description = "Tries every unlocked portal of this sea once, from where you are. Results in the Portals panel above.",
-        Callback = function()
-            local started = Router.testAll(function()
-                ui.Library:Notify({ Title = "Portals", Content = "Test finished",
-                    SubContent = "See Teleport > Travel > Portals", Duration = 6 })
-            end)
-            if not started then
-                ui.Library:Notify({ Title = "Portals", Content = "A teleport is already running", Duration = 4 })
-            end
-        end,
-    })
 
     travel:AddButton({
         Title = "Clear portal pauses",
-        Description = "Forgets the portals' misses, pauses and rollbacks, so they are tried again at once.",
+        Description = "Forgets the doors' pauses, so they are tried again at once.",
         Callback = function()
             Router.clearPauses()
             portals:SetDesc(Router.describe())

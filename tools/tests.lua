@@ -52,7 +52,7 @@ local MODULES = {
     "Features.MaterialFarm", "Features.KillMobFarm", "Features.AuraFarm",
     "Game.Mastery", "Game.AimHook", "Game.Data",
     "Features.Travel", "Features.Stats", "Features.PlayerTweaks", "Game.World", "Game.Server",
-    "Game.Router", "Game.Entrances", "Game.Hook", "Game.Regions", "Game.TeleportTag", "Game.Gateway",
+    "Game.Router", "Game.Entrances", "Game.Pads", "Game.Hook", "Game.Regions", "Game.TeleportTag", "Game.Gateway",
     "Game.IslandLoader",
     "Features.StackFarm", "Features.Stack.Common", "Features.Stack.World", "Features.Stack.Chests",
     "Features.Stack.Bosses", "Features.Stack.Summons", "Features.Stack.EliteHunter", "Features.Stack.Events",
@@ -95,6 +95,7 @@ local Stats = require("Features.Stats")
 local Server = require("Game.Server")
 local Router = require("Game.Router")
 local Entrances = require("Game.Entrances")
+local Pads = require("Game.Pads")
 local Regions = require("Game.Regions")
 local TeleportTag = require("Game.TeleportTag")
 local Gateway = require("Game.Gateway")
@@ -157,7 +158,7 @@ local function setup(options)
     Quests.reset()
     Quests.SCAN_EVERY = 0
     Router.reset()
-    Entrances.reset(nil)
+    Pads.reset()
     Regions.reset()
     TeleportTag.reset()
     IslandLoader.reset()
@@ -1092,44 +1093,23 @@ do
 end
 
 ---------------------------------------------------------------------------
--- Smart travel (the reference's rules)
+-- Smart travel: portal doors (Vxeze's), temple, reset teleport
 ---------------------------------------------------------------------------
 
-local CASTLE = Vector3.new(-4967.6826171875, 314.88238525390625, -3157.098388671875)
 local SEA3 = 7449423635
+local CASTLE = Vector3.new(-5000, 318, -3100)
+local function door(name)
+    for _, pad in ipairs(Pads.LIST[3]) do
+        if pad.name == name then return pad end
+    end
+end
+local function wear(item)
+    return newInstance("Accessory", item, world.character)
+end
 
--- A far goal near an unlocked portal: requestEntrance to its point.
+-- Short trips are set in one go.
 setup()
 do
-    game.PlaceId = SEA3
-    Entrances.reset({ DefeatedIndraTrueForm = true })
-    local goal = CASTLE + Vector3.new(500, 0, 500)
-    local plan = Router.plan(Vector3.new(0, 0, 0), goal)
-    eq("far goal: entrance", plan.kind, "entrance")
-    eq("the portal nearest the goal", plan.name, "Castle on the Sea")
-
-    Entrances.reset({})
-    local locked = Router.plan(Vector3.new(0, 0, 0), goal)
-    eq("portal not unlocked: fly", locked.kind, "direct")
-    check("reason given", locked.reason and locked.reason:find("no portal near the goal", 1, true) ~= nil, locked.reason)
-
-    Entrances.reset(nil)
-    eq("unlocks unknown: only the open points", #Entrances.available(), 1)
-    Entrances.reset({ DefeatedIndraTrueForm = true })
-    eq("unlocked: every point", #Entrances.available(), 4)
-
-    eq("goal closer than the teleport distance: fly", Router.plan(goal + Vector3.new(0, 0, 1500), goal).kind, "direct")
-    Settings.set("TeleportDistance", 1000)
-    eq("teleport distance lowered: portal", Router.plan(goal + Vector3.new(0, 0, 1800), goal).kind, "entrance")
-    Settings.set("TeleportDistance", 2000)
-    local here = CASTLE + Vector3.new(0, 0, 500)
-    local beside = Router.plan(here, CASTLE + Vector3.new(0, 0, -2600))
-    eq("portal that would not bring you closer: fly", beside.kind, "direct")
-    check("reason: not closer", beside.reason and beside.reason:find("would not bring you closer", 1, true) ~= nil,
-        beside.reason)
-    local timed = Router.plan(Vector3.new(0, 0, 0), goal, 300)
-    check("estimate beats flying", timed.eta and timed.flyTime and timed.eta < timed.flyTime)
-
     Movement.reset()
     world.hrp.Position = Vector3.new(0, 0, 0)
     Movement.to(CFrame.new(100, 0, 0))
@@ -1137,203 +1117,171 @@ do
     near("short trip set in one go", world.hrp.Position, Vector3.new(100, 0, 0))
 end
 
--- The entrance: calls repeated until the player moves, then "works".
+-- Choosing a route through the doors.
 setup()
 do
     game.PlaceId = SEA3
-    Entrances.reset({ DefeatedIndraTrueForm = true })
-    local goal = CASTLE + Vector3.new(500, 0, 500)
-    local tries = 0
-    Router.WAY_ORDER = { "banana" }
-    world.commF.OnInvoke = function(action)
-        if action == "requestEntrance" then
-            tries = tries + 1
-            if tries == 3 then world.hrp.Position = CASTLE end
-        end
-        return nil
-    end
-    check("shortcut started", Router.update(Vector3.new(0, 0, 0), goal))
-    check("holds still while busy", Router.update(Vector3.new(0, 0, 0), goal))
-    check("status names the portal", (Router.note() or ""):find("Castle on the Sea", 1, true) ~= nil, Router.note())
-    for _ = 1, 20 do stepTasks() end
-    check("done", not Router.busy())
-    eq("called again until the move", tries, 3)
-    local call = calls(world.commF, "requestEntrance")[1]
-    check("with the exact point", call and call[2] == CASTLE, call and tostring(call[2]))
-    check("reported working", Router.describe():find("Castle on the Sea: works", 1, true) ~= nil, Router.describe())
-    check("player tagged Teleporting", game:GetService("CollectionService"):HasTag(world.player, "Teleporting"))
-    Router.WAY_ORDER = nil
+    local toHydra = door("Castle to Hydra")
+    local goal = toHydra.dest + Vector3.new(300, 0, 0)
+    local locked = Router.plan(CASTLE, goal)
+    eq("no Valkyrie Helm: fly", locked.kind, "direct")
+    check("reason: the helm", locked.reason and locked.reason:find("needs Valkyrie Helm", 1, true) ~= nil, locked.reason)
+
+    wear("Valkyrie Helm")
+    Pads.reset()
+    local plan = Router.plan(CASTLE, goal, 300)
+    eq("with the helm: through the door", plan.kind, "pad")
+    eq("the Castle to Hydra door", plan.name, "Castle to Hydra")
+    near("fly to where the door is", plan.dock, toHydra.stand)
+    check("faster than flying", plan.eta < plan.flyTime)
+
+    eq("closer than the teleport distance: fly", Router.plan(goal + Vector3.new(0, 0, 1500), goal).kind, "direct")
+    local saves = Router.plan(goal + Vector3.new(0, 0, -4000), goal)
+    eq("a door that saves too little: fly", saves.kind, "direct")
+
+    local fromMansion = door("Mansion to Castle").stand + Vector3.new(50, 0, 0)
+    local chained = Router.plan(fromMansion, goal, 300)
+    eq("two doors in a row", chained.chain and #chained.chain, 2)
+    eq("first the Mansion door", chained.chain and chained.chain[1].name, "Mansion to Castle")
+    eq("then the Hydra door", chained.chain and chained.chain[2].name, "Castle to Hydra")
+
+    world.hrp.Position = CASTLE
+    local text = Router.routeText(goal)
+    check("show route", text:find("pad via Castle to Hydra", 1, true) ~= nil and text:find("then fly", 1, true) ~= nil, text)
 end
 
--- Teddy's Sea 3 gate way: a 0 s tween, then the call with Teddy's position,
--- nothing placed, a frame apart until the server has moved the character.
+-- Using a door: fly to it, stand on it, call it until it sends you on.
 setup()
 do
     game.PlaceId = SEA3
-    Entrances.reset({ DefeatedIndraTrueForm = true })
-    local tweens = 0
-    local tweenService = game:GetService("TweenService")
-    local oldCreate, oldInfo = tweenService.Create, TweenInfo
-    TweenInfo = { new = function() return {} end }
-    tweenService.Create = function()
-        return { Play = function() tweens = tweens + 1 end, Cancel = function() end }
-    end
-    local alt = Entrances.named("Castle on the Sea").alt
-    local sent = 0
-    world.commF.OnInvoke = function(action, position)
+    wear("Valkyrie Helm")
+    local toHydra = door("Castle to Hydra")
+    local goal = toHydra.dest + Vector3.new(300, 0, 0)
+    local seen = {}
+    world.commF.OnInvoke = function(action, where)
         if action == "requestEntrance" then
-            sent = sent + 1
-            check("nothing placed before the server moves it", (world.hrp.Position - Vector3.new(0, 0, 0)).Magnitude < 1)
-            if sent == 2 then world.hrp.Position = alt end
+            seen[#seen + 1] = { where = where, at = world.hrp.Position }
+            if #seen == 3 then world.hrp.Position = toHydra.dest end
         end
     end
-    eq("rip_indra portals: gate way first", Router.waysFor(Entrances.named("Castle on the Sea"))[1], "gate")
-    game.PlaceId = 2753915549
-    eq("Sea 1: Banana way first, then placed", table.concat(Router.waysFor(Entrances.named("Whirlpool")), ","),
-        "banana,placed,alt")
-    game.PlaceId = 4442272183
-    eq("Sea 2: no Teddy position", table.concat(Router.waysFor(Entrances.named("Cursed Ship")), ","), "banana,placed")
-    game.PlaceId = SEA3
-    local goal = CASTLE + Vector3.new(500, 0, 500)
-    check("started", Router.update(Vector3.new(0, 0, 0), goal))
-    for _ = 1, 10 do stepTasks() end
+    local handled, aim = Router.update(CASTLE, goal, 300)
+    check("first fly to the door", not handled and aim ~= nil and (aim - toHydra.stand).Magnitude < 1)
+    world.hrp.Position = toHydra.stand + Vector3.new(2, 0, 0)
+    check("at the door: the door is used", Router.update(world.hrp.Position, goal, 300))
+    world.hrp.Position = toHydra.stand + Vector3.new(10, 0, 0)
+    for _ = 1, 30 do stepTasks() end
     check("done", not Router.busy())
-    eq("stopped once there", sent, 2)
-    check("the 0 s tween before each call", tweens >= 2, tweens)
-    local call = calls(world.commF, "requestEntrance")[1]
-    check("Teddy's position sent", call and call[2] == alt, call and tostring(call[2]))
-    check("works with the gate way, no watch needed",
-        Router.describe():find("Castle on the Sea: works (Teddy gate way)", 1, true) ~= nil, Router.describe())
-    check("travel log: plan and answer", Router.logText():find("plan: entrance via Castle on the Sea", 1, true) ~= nil
-        and Router.logText():find("answer nil", 1, true) ~= nil, Router.logText())
-    tweenService.Create, TweenInfo = oldCreate, oldInfo
+    eq("called until it sent us on", #seen, 3)
+    check("asked for the door's destination", seen[1].where == toHydra.dest)
+    near("held on the door while calling", seen[2].at, toHydra.stand)
+    check("door works", Router.describe():find("Castle to Hydra: works", 1, true) ~= nil, Router.describe())
+    check("travel log", Router.logText():find("Castle to Hydra: sent on after 3 calls", 1, true) ~= nil, Router.logText())
 end
 
--- Teddy's way: the call from where you are, then placed on the point, and
--- the flight goes on at once; a rollback during the watch is a miss and the
--- next way comes first.
+-- A door that does not open is paused; so is one used twice in a row, and
+-- one that cannot be reached.
 setup()
 do
     game.PlaceId = SEA3
-    Entrances.reset({ DefeatedIndraTrueForm = true })
+    wear("Valkyrie Helm")
     Router.COOLDOWN = 0
-    Router.BANANA_TIME = 1
-    Router.WAY_ORDER = { "banana", "placed", "alt" }
-    local positions = {}
-    world.commF.OnInvoke = function(action)
-        if action == "requestEntrance" then positions[#positions + 1] = world.hrp.Position end
-        return nil
-    end
-    local origin = Vector3.new(0, 0, 0)
-    local goal = CASTLE + Vector3.new(500, 0, 500)
-    check("shortcut started", Router.update(origin, goal))
-    for _ = 1, 20 do stepTasks() end
-    check("action over: nothing held still", not Router.busy())
-    local sent = calls(world.commF, "requestEntrance")
-    eq("Banana way (10 calls), then one Teddy call", #sent, 11)
-    check("Teddy way: the point itself", sent[11][2] == CASTLE)
-    near("called from where you stand, before the placement", positions[11], origin)
-    near("then placed on the point", world.hrp.Position, CASTLE + Vector3.new(0, 1.5, 0))
-    local handled = Router.update(world.hrp.Position, goal)
-    check("keeps flying while the jump is watched", not handled)
-    check("status: checking the jump", (Router.note() or ""):find("checking the jump", 1, true) ~= nil, Router.note())
-    local elsewhere = Entrances.named("Hydra").position + Vector3.new(300, 0, 0)
-    check("no other jump while it is watched", not Router.update(world.hrp.Position, elsewhere))
-    check("still not busy", not Router.busy())
-
-    world.hrp.Position = origin   -- the server rolls the character back, seconds later
-    Router.update(origin, goal)
-    check("rollback recorded", Router.describe():find("rolled back after", 1, true) ~= nil, Router.describe())
-    check("rollback in the travel log", Router.logText():find("rolled back after", 1, true) ~= nil, Router.logText())
-    local ways = table.concat(Router.waysFor(Entrances.named("Castle on the Sea")), ",")
-    eq("rolled-back way dropped for this portal", ways, "banana,alt")
-    eq("the portal test still tries it", table.concat(Router.waysFor(Entrances.named("Castle on the Sea"), true), ","),
-        "banana,placed,alt")
-
-    -- Next try: Teddy's position; no rollback during the watch: a success.
-    Router.ROLLBACK_WATCH = 0
-    Router.update(origin, goal)   -- the flying frame after the try
-    check("tried again", Router.update(origin, goal))
-    for _ = 1, 20 do stepTasks() end
-    local alt = Entrances.named("Castle on the Sea").alt
-    near("placed on Teddy's position", world.hrp.Position, alt + Vector3.new(0, 1.5, 0))
-    Router.update(world.hrp.Position, goal)
-    check("works with Teddy's position", Router.describe():find("Castle on the Sea: works (Teddy position)", 1, true) ~= nil,
-        Router.describe())
-    check("last trip: no rollback", (Router.lastTrip() or ""):find("no rollback", 1, true) ~= nil, Router.lastTrip())
-    eq("Teddy position first next time", Router.waysFor(Entrances.named("Castle on the Sea"))[1], "alt")
-    Router.clearPauses()
-    eq("clear pauses: every way again", table.concat(Router.waysFor(Entrances.named("Castle on the Sea")), ","),
-        "alt,banana,placed")
-    Router.WAY_ORDER = nil
-    Router.ROLLBACK_WATCH = 15
-    Router.COOLDOWN = 4
-    Router.BANANA_TIME = 1.5
-end
-
--- No way moves the character: a miss; two misses pause the portal, and
--- "Clear portal pauses" forgets them.
-setup()
-do
-    game.PlaceId = SEA3
-    Entrances.reset({ DefeatedIndraTrueForm = true })
-    Router.COOLDOWN = 0
-    Router.BANANA_TIME = 0.5
-    Router.PLACED_ARRIVED = -1   -- the placement never counts
+    local toHydra = door("Castle to Hydra")
+    local goal = toHydra.dest + Vector3.new(300, 0, 0)
     world.commF.OnInvoke = function() return nil end
-    local origin = Vector3.new(0, 0, 0)
-    local goal = CASTLE + Vector3.new(500, 0, 500)
-    local function attempt()
-        world.hrp.Position = origin
-        Router.update(origin, goal)
-        for _ = 1, 40 do stepTasks() end
-        Router.update(origin, goal)
-    end
-    attempt()
-    check("miss explained", Router.describe():find("no way worked", 1, true) ~= nil, Router.describe())
-    eq("one miss: tried again", Router.plan(origin, goal).kind, "entrance")
-    attempt()
-    local paused = Router.plan(origin, goal)
-    eq("two misses: fly", paused.kind, "direct")
-    check("reason: paused", paused.reason and paused.reason:find("paused", 1, true) ~= nil, paused.reason)
+    Router.PAD_TIME = 0.5
+    world.hrp.Position = toHydra.stand
+    check("door used", Router.update(toHydra.stand, goal, 300))
+    for _ = 1, 20 do stepTasks() end
+    check("not opened: paused", Router.describe():find("Castle to Hydra: paused", 1, true) ~= nil, Router.describe())
+    check("why", Router.describe():find("did not open after 2 calls", 1, true) ~= nil, Router.describe())
+    eq("paused: no route through it", Router.plan(CASTLE, goal).kind, "direct")
     Router.clearPauses()
-    eq("pauses cleared: portal again", Router.plan(origin, goal).kind, "entrance")
-    check("panel shows Now", Router.describe():find("Now:", 1, true) ~= nil)
-    Router.PLACED_ARRIVED = 2000
+    eq("cleared: the door again", Router.plan(CASTLE, goal).kind, "pad")
+    Router.PAD_TIME = 8
+
+    -- Used twice in a row (each time it worked).
+    world.commF.OnInvoke = function(action)
+        if action == "requestEntrance" then world.hrp.Position = toHydra.dest end
+    end
+    for _ = 1, 2 do
+        Router.update(CASTLE, goal, 300)   -- a flying frame (also the one after a jump)
+        world.hrp.Position = toHydra.stand
+        check("door used again", Router.update(toHydra.stand, goal, 300))
+        for _ = 1, 30 do stepTasks() end
+    end
+    local again = Router.plan(CASTLE, goal)
+    eq("twice in a row: flying instead", again.kind, "direct")
+    check("logged", Router.logText():find("used twice in a row", 1, true) ~= nil, Router.logText())
+
+    -- Cannot be reached.
+    Router.clearPauses()
+    Router.PAD_STUCK = 0
+    Router.update(CASTLE, goal, 300)   -- the flying frame after the last jump
+    Router.update(CASTLE, goal, 300)   -- heading for the door
+    Router.update(CASTLE, goal, 300)   -- no closer
+    check("no progress toward the door: paused", Router.describe():find("could not reach the door", 1, true) ~= nil,
+        Router.describe())
+    Router.PAD_STUCK = 10
     Router.COOLDOWN = 4
-    Router.BANANA_TIME = 1.5
 end
 
--- A portal far from the goal still counts when it saves time.
+-- The Castle <-> Tiki door works by touching its tagged hitbox.
 setup()
 do
     game.PlaceId = SEA3
-    Entrances.reset({ DefeatedIndraTrueForm = true })
-    local goal = Entrances.named("Hydra").position + Vector3.new(4000, 0, 0)
-    local plan = Router.plan(Vector3.new(-16000, 0, 400), goal, 300)
-    eq("Hydra 4000 studs from the goal, 20000 away: portal", plan.kind, "entrance")
-    eq("Hydra", plan.name, "Hydra")
+    wear("Feathered Visage")
+    local fromTiki = door("Tiki to Castle")
+    local teleporter = newInstance("Model", "MapTeleportC", folder("TikiOutpost", folder("Map", workspace)))
+    local hitbox = part("Hitbox", fromTiki.stand, teleporter)
+    local goal = CASTLE + Vector3.new(0, 0, -200)
+    eq("door not open (untagged): no route", Router.plan(fromTiki.stand + Vector3.new(30, 0, 0), goal).kind, "direct")
+    game:GetService("CollectionService"):AddTag(teleporter, "BoatCastleTeleporter")
+    Pads.reset()
+    local plan = Router.plan(fromTiki.stand + Vector3.new(30, 0, 0), goal, 300)
+    eq("tagged: through the Tiki door", plan.name, "Tiki to Castle")
+    local touched = {}
+    firetouchinterest = function(_, target, state)
+        touched[#touched + 1] = target
+        if state == 1 then world.hrp.Position = fromTiki.dest end
+    end
+    world.hrp.Position = fromTiki.stand
+    Router.update(fromTiki.stand, goal, 300)
+    for _ = 1, 30 do stepTasks() end
+    eq("the hitbox touched", touched[1], hitbox)
+    eq("no requestEntrance for a touch door", #calls(world.commF, "requestEntrance"), 0)
+    check("sent on", Router.describe():find("Tiki to Castle: works", 1, true) ~= nil, Router.describe())
+    firetouchinterest = nil
 end
 
--- Unlocks that never come: asked again, then the locked points are tried.
+-- Into the Temple of Time through the Mysterious Force.
 setup()
 do
     game.PlaceId = SEA3
-    Entrances.reset(nil)
-    local asks = 0
-    world.commF.OnInvoke = function(action) if action == "GetUnlockables" then asks = asks + 1 end end
-    Entrances.refresh()
-    for _ = 1, 3 do stepTasks() end
-    check("asked again while no answer", asks >= 3, asks)
-    eq("before the grace time: open points only", #Entrances.available(), 1)
-    Entrances.UNLOCK_GRACE = 0
-    eq("after it: the locked points too", #Entrances.available(), 4)
-    check("panel says so", Router.describe():find("unlocks not received, trying anyway", 1, true) ~= nil, Router.describe())
-    world.commF.OnInvoke = function(action) if action == "GetUnlockables" then return { DefeatedIndraTrueForm = true } end end
-    stepTasks()
-    Entrances.UNLOCK_GRACE = 60
-    eq("answer arrives: kept", Entrances.unlocks() and Entrances.unlocks().DefeatedIndraTrueForm, true)
-    clearTasks()
+    local npc = newInstance("Model", "Mysterious Force", folder("NPCs", workspace))
+    part("HumanoidRootPart", Vector3.new(100, 0, 0), npc)
+    local temple = newInstance("Model", "Temple of Time", folder("MapStash", rs))
+    local map = folder("Map", workspace)
+    local progress = 0
+    world.commF.OnInvoke = function(action, step)
+        if action == "RaceV4Progress" and step == "Check" then return progress end
+        if action == "RaceV4Progress" and step == "Teleport" then world.hrp.Position = Router.TEMPLE end
+    end
+    local goal = Router.TEMPLE + Vector3.new(100, 0, 0)
+    local locked = Router.plan(Vector3.new(0, 0, 0), goal)
+    check("locked temple explained", locked.reason and locked.reason:find("Temple of Time locked", 1, true) ~= nil,
+        locked.reason)
+    progress = 1
+    Router.reset()
+    local plan = Router.plan(Vector3.new(0, 0, 0), goal)
+    eq("through the Mysterious Force", plan.kind, "templeIn")
+    near("by the NPC", plan.dock, Vector3.new(100, 0, 4))
+    world.hrp.Position = plan.dock
+    check("at the NPC: entrance taken", Router.update(plan.dock, goal, 300))
+    for _ = 1, 10 do stepTasks() end
+    local steps = {}
+    for _, call in ipairs(calls(world.commF, "RaceV4Progress")) do steps[#steps + 1] = call[2] end
+    check("Begin, then Teleport", table.concat(steps, ","):find("Begin,Teleport", 1, true) ~= nil, table.concat(steps, ","))
+    eq("temple borrowed into the map", temple.Parent, map)
 end
 
 -- The travel log keeps the last LOG_SIZE events.
@@ -1343,49 +1291,6 @@ do
     local text = Router.logText()
     check("oldest dropped", text:find("event 5\n", 1, true) == nil and text:find("event 6", 1, true) ~= nil, text)
     check("newest kept", text:find("event " .. (Router.LOG_SIZE + 5), 1, true) ~= nil)
-end
-
--- The portal test: each way in turn to the portal nearest an island.
-setup()
-do
-    game.PlaceId = SEA3
-    Entrances.reset({ DefeatedIndraTrueForm = true })
-    local alt = Entrances.named("Castle on the Sea").alt
-    world.commF.OnInvoke = function(action, point)
-        if action == "requestEntrance" and point == alt then world.hrp.Position = alt end
-    end
-    local result
-    local started, name = Router.portalTest(CASTLE + Vector3.new(200, 0, 0), function(text) result = text end)
-    check("test started", started)
-    eq("portal nearest the island", name, "Castle on the Sea")
-    check("nothing else while it runs", not Router.portalTest(CASTLE))
-    for _ = 1, 5 do stepTasks() end
-    check("result reported", result and result:find("Castle on the Sea: works with the Teddy gate way", 1, true) ~= nil,
-        result)
-    stepTasks()
-    local _, nearest = Router.portalTest(Vector3.new(90000, 0, 90000))
-    eq("no distance limit: the nearest portal", nearest, "Temple of Time")
-    for _ = 1, 200 do stepTasks() end
-end
-
--- The Temple of Time point borrows the temple map first.
-setup()
-do
-    game.PlaceId = SEA3
-    Entrances.reset({})
-    local temple = newInstance("Model", "Temple of Time", folder("MapStash", rs))
-    local map = folder("Map", workspace)
-    local goal = Entrances.TEMPLE + Vector3.new(100, 0, 0)
-    eq("far from the temple: its point", Router.plan(Vector3.new(0, 0, 0), goal).name, "Temple of Time")
-    world.commF.OnInvoke = function(action)
-        if action == "requestEntrance" then world.hrp.Position = Entrances.TEMPLE end
-    end
-    Router.update(Vector3.new(0, 0, 0), goal)
-    eq("temple borrowed into the map", temple.Parent, map)
-    eq("marked borrowed", temple:GetAttribute("ClientBorrowed"), true)
-    for _ = 1, 10 do stepTasks() end
-    eq("reached: the temple stays", temple.Parent, map)
-    check("no longer marked", temple:GetAttribute("ClientBorrowed") == nil)
 end
 
 -- Seated: stand up before flying; the Teleporting tag while flying.
@@ -1427,7 +1332,6 @@ end
 setup()
 do
     game.PlaceId = SEA3
-    Entrances.reset({})
     Settings.set("PortalFruit", true)
     newInstance("StringValue", "DevilFruit", world.player.Data).Value = "Portal-Portal"
     local fruit = newInstance("Tool", "Portal-Portal", world.player.Backpack)
@@ -1465,7 +1369,6 @@ end
 setup()
 do
     game.PlaceId = SEA3
-    Entrances.reset({})
     local locations = folder("Locations", folder("_WorldOrigin", workspace))
     local domain = part("Celestial Domain", Vector3.new(20000, 5000, 0), locations)
     newInstance("SpecialMesh", "Mesh", domain).Scale = Vector3.new(2000, 1, 1)
@@ -1488,7 +1391,6 @@ end
 setup()
 do
     game.PlaceId = SEA3
-    Entrances.reset({})
     local mirror = part("Main", Vector3.new(-2000, 100, -12000),
         folder("BigMirror", folder("CakeLoaf", folder("Map", workspace))))
     local plan = Router.plan(Vector3.new(-1800, 60, -11900), Router.MIRROR_INSIDE + Vector3.new(10, 0, 0))
@@ -1500,7 +1402,6 @@ end
 setup()
 do
     game.PlaceId = SEA3
-    Entrances.reset({})
     local origin = folder("_WorldOrigin", workspace)
     local locations = folder("Locations", origin)
     part("Far Island", Vector3.new(20000, 0, 0), locations).Size = Vector3.new(2000, 10, 2000)
@@ -1537,7 +1438,6 @@ end
 setup()
 do
     game.PlaceId = SEA3
-    Entrances.reset({})
     local origin = folder("_WorldOrigin", workspace)
     local locations = folder("Locations", origin)
     part("Far Island", Vector3.new(20000, 0, 0), locations).Size = Vector3.new(2000, 10, 2000)
@@ -1562,64 +1462,6 @@ do
     eq("not on the Submerged Island", Router.resetBlocked(), "on the Submerged Island")
     world.hrp.Position = Vector3.new(0, 0, 0)
     eq("free again", Router.resetBlocked(), nil)
-end
-
--- Portal or reset: the one that arrives first.
-setup()
-do
-    game.PlaceId = SEA3
-    Entrances.reset({ DefeatedIndraTrueForm = true })
-    local origin = folder("_WorldOrigin", workspace)
-    local locations = folder("Locations", origin)
-    local castleIsland = part("Castle", CASTLE, locations)
-    castleIsland.Size = Vector3.new(6000, 10, 6000)
-    part("Home", Vector3.new(20000, 0, 20000), locations).Size = Vector3.new(2000, 10, 2000)
-    local group = folder("Pirates", folder("PlayerSpawns", origin))
-    local spawn = newInstance("Model", "CastleSpawn", group)
-    local here = Vector3.new(20000, 0, 20000)
-
-    -- Goal 2900 studs from the portal, a spawn right on it: the reset wins.
-    local goal = CASTLE + Vector3.new(2900, 0, 0)
-    spawn.WorldPivot = CFrame.new(goal + Vector3.new(20, 0, 0))
-    local plan = Router.plan(here, goal, 300)
-    eq("spawn on the goal beats a portal 2900 studs off", plan.kind, "respawn")
-
-    -- Goal beside the portal: the portal wins (1.5 s against 10 s).
-    goal = CASTLE + Vector3.new(50, 0, 0)
-    spawn.WorldPivot = CFrame.new(CASTLE + Vector3.new(900, 0, 0))
-    plan = Router.plan(here, goal, 300)
-    eq("portal beside the goal beats the reset", plan.kind, "entrance")
-
-    -- A failed portal cools down: the same trip goes on with the reset.
-    Router.COOLDOWN = 60
-    world.commF.OnInvoke = function(action)
-        if action == "requestEntrance" then world.hrp.Position = here end
-    end
-    Router.BANANA_TIME = 0.3
-    world.hrp.Position = here
-    Router.update(here, goal, 300)
-    for _ = 1, 30 do stepTasks() end
-    Router.update(here, goal, 300)   -- the flying frame after the try
-    eq("after the failed portal: reset teleport", Router.plan(here, goal, 300).kind, "respawn")
-    Router.COOLDOWN = 4
-    Router.BANANA_TIME = 1.5
-end
-
--- Teddy's exits: out of the Underwater City and off the Cursed Ship.
-setup()
-do
-    game.PlaceId = 2753915549
-    Entrances.reset({})
-    local city = Entrances.named("Underwater City").position
-    local plan = Router.plan(city + Vector3.new(100, 0, 0), Vector3.new(4500, 20, -1500))
-    eq("leaving the Underwater City: the Whirlpool", plan.name, "Whirlpool")
-    eq("sea 1 has Teddy's two Sky points", Entrances.named("Upper Sky 2") ~= nil and Entrances.named("Sky Island 2") ~= nil, true)
-
-    game.PlaceId = 4442272183
-    local ship = Entrances.named("Cursed Ship").position
-    plan = Router.plan(ship + Vector3.new(100, 0, 0), Vector3.new(-6000, 20, -2000))
-    eq("off the Cursed Ship: the Graveyard", plan.name, "Graveyard")
-    eq("staying on the ship: no exit", Router.exitFor(ship, ship + Vector3.new(500, 0, 0)), nil)
 end
 
 -- Every island kept loaded, like the reference.
@@ -1649,7 +1491,6 @@ end
 setup()
 do
     game.PlaceId = SEA3
-    Entrances.reset({})
     local island = Router.ISLAND + Vector3.new(100, 0, 0)
     local handled, aim = Router.update(Vector3.new(0, 0, 0), island)
     check("submarine: fly to the worker first", not handled and aim ~= nil and (aim - Router.WORKER).Magnitude < 1)
@@ -1664,90 +1505,10 @@ do
     near("leaves from the dock", plan.dock, Router.DOCK)
 end
 
--- Banana's positions are kept digit for digit (Teddy's are the `alt`).
-do
-    local expected = {
-        [1] = { { -7894.6201171875, 5545.49169921875, -380.2467346191406 },
-                { -4607.82275390625, 872.5422973632812, -1667.556884765625 },
-                { 61163.8515625, 11.759522438049316, 1819.7841796875 },
-                { 3876.280517578125, 35.10614013671875, -1939.3201904296875 } },
-        [2] = { { 923.21252441406, 126.9760055542, 32852.83203125 },
-                { -6508.5581054688, 89.034996032715, -132.83953857422 },
-                { -288.46246337890625, 306.130615234375, 597.9988403320312 },
-                { 2284.912109375, 15.152046203613281, 905.48291015625 } },
-        [3] = { { 28282.5703125, 14896.8505859375, 105.1042709350586 },
-                { -4967.6826171875, 314.88238525390625, -3157.098388671875 },
-                { 5661.5302734375, 1013.4113159179688, -334.9619140625 },
-                { -12463.8740234375, 374.9144592285156, -7523.77392578125 } },
-    }
-    for sea, list in pairs(expected) do
-        for index, xyz in ipairs(list) do
-            local point = Entrances.POINTS[sea][index]
-            check("exact coordinates: " .. point.name,
-                point.position == Vector3.new(xyz[1], xyz[2], xyz[3]), tostring(point.position))
-        end
-    end
-end
-
--- Test portals: a portal next to the player is not requested.
-setup()
-do
-    game.PlaceId = SEA3
-    Entrances.reset({ DefeatedIndraTrueForm = true })
-    world.hrp.Position = CASTLE + Vector3.new(100, 0, 0)
-    world.commF.OnInvoke = function(action)
-        -- Nothing works: the server puts the character back each time.
-        if action == "requestEntrance" then world.hrp.Position = CASTLE + Vector3.new(100, 0, 0) end
-    end
-    Router.BANANA_TIME = 0.5
-    Router.WAY_ORDER = { "banana" }
-    Router.testAll()
-    for _ = 1, 60 do stepTasks() end
-    Router.WAY_ORDER = { "banana", "placed", "alt" }
-    Router.BANANA_TIME = 1.5
-    local text = Router.describe()
-    check("portal next to the player reported too close",
-        text:find("Castle on the Sea: untested (too close", 1, true) ~= nil, text)
-    for _, call in ipairs(calls(world.commF, "requestEntrance")) do
-        check("too-close portal not requested", call[2] ~= CASTLE)
-    end
-    check("no false 'works' without moving", text:find("works", 1, true) == nil, text)
-end
-
--- Test portals: each unlocked point tried, each result recorded.
-setup()
-do
-    game.PlaceId = 4442272183
-    Entrances.reset({})
-    local cursed = Entrances.POINTS[2][1].position
-    local home = world.hrp.Position
-    world.commF.OnInvoke = function(action, point)
-        if action == "requestEntrance" then
-            if point == cursed then home = cursed end
-            world.hrp.Position = home   -- elsewhere the server puts the character back
-        end
-        return nil
-    end
-    local done = false
-    Router.BANANA_TIME = 0.5
-    Router.WAY_ORDER = { "banana" }
-    check("test started", Router.testAll(function() done = true end))
-    check("second test refused while running", not Router.testAll())
-    for _ = 1, 40 do stepTasks() end
-    check("test finished", done)
-    local text = Router.describe()
-    check("working portal reported", text:find("Cursed Ship: works", 1, true) ~= nil, text)
-    check("failed portal reported", text:find("no move after", 1, true) ~= nil, text)
-    check("locked portal shown", text:find("Doflamingo Mansion: not unlocked", 1, true) ~= nil, text)
-    Router.WAY_ORDER = { "banana", "placed", "alt" }
-    Router.BANANA_TIME = 1.5
-end
-
 -- Leaving the Temple of Time uses the game's way back.
 setup()
 do
     game.PlaceId = SEA3
-    Entrances.reset({})
     world.commF.OnInvoke = function() return true end
     local handled, aim = Router.update(Router.TEMPLE + Vector3.new(500, 0, 0), Vector3.new(0, 0, 0))
     check("temple exit: fly to the exit point first", not handled and aim ~= nil and (aim - Router.TEMPLE).Magnitude < 1)
