@@ -64,6 +64,7 @@ local MODULES = {
     "Features.Races.V4", "Game.Boat", "Features.Sea.Events", "Features.Sea.Islands", "Features.Sea.Volcano",
     "Features.TyrantFarm", "Features.Helpers", "Features.SafeSpot", "Features.Scout",
     "Kaitun.Config", "Kaitun.Tasks", "Kaitun.Engine", "Kaitun.Screen",
+    "Features.Items.Melee", "Features.Items.Electric",
 }
 for _, name in ipairs(MODULES) do
     local ok, err = pcall(require, name)
@@ -3193,8 +3194,13 @@ do
     eq("idle: level farm below max", keys.AutoFarmLevel, true)
     eq("idle name", name, "Level farm")
     keys, name = KEngine.idle(3, 2800)
+    eq("idle: bones while Dragon Talon is locked", keys.AutoBone, true)
+    eq("idle: bones name", name, "Bones (Fire Essence)")
+    KConfig.load({ Skip = { Godhuman = true } })
+    keys, name = KEngine.idle(3, 2800)
     eq("idle: Katakuri at max in sea 3", keys.AutoKatakuri, true)
     eq("idle: Katakuri name", name, "Katakuri")
+    KConfig.reset()
     keys = KEngine.idle(2, 2800)
     eq("idle: still level farm in sea 2 at max", keys.AutoFarmLevel, true)
     eq("wanted sea by level", KEngine.wantedSea(1600), 3)
@@ -3285,6 +3291,170 @@ do
     check("awakening: affordable", (KTasks.awakening()))
     fruit.Value = "Kitsune-Kitsune"
     eq("no raid for a fruit without one", KTasks.fruitRaid(), nil)
+end
+
+---------------------------------------------------------------------------
+-- Melee chain to Godhuman, Electric (Lightning Bolt)
+---------------------------------------------------------------------------
+
+local Melee = require("Features.Items.Melee")
+local Electric = require("Features.Items.Electric")
+
+local function meleeSetup(place, level, inventory, answers, beli, fragments)
+    itemsSetup(place, level, inventory, answers)
+    Melee.reset()
+    Electric.reset()
+    local data = world.player.Data
+    newInstance("IntValue", "Beli", data).Value = beli or 0
+    newInstance("IntValue", "Fragments", data).Value = fragments or 0
+end
+
+local function style(name, mastery)
+    return { Name = name, Type = "Melee", Count = 1, Mastery = mastery }
+end
+
+meleeSetup(2753915549, 100, {}, {}, 200000)
+do
+    local name, state = Melee.current()
+    eq("melee: first style is Black Leg", name, "Black Leg")
+    eq("melee: to buy", state, "buy")
+    local npc = newInstance("Model", "Dark Step Teacher", folder("NPCs", workspace))
+    part("HumanoidRootPart", Vector3.new(0, 0, -4), npc)
+    Settings.set("ItemMeleeProgress", true)
+    check("melee mode on while something to buy", Melee.mode.enabled())
+    Melee.mode.tick()
+    eq("melee: bought at the teacher", #calls(world.commF, "BuyBlackLeg"), 1)
+end
+
+meleeSetup(2753915549, 100, { style("Dark Step", 150) }, {}, 200000)
+do
+    eq("melee: old inventory name counts as Black Leg", Melee.mastery("Black Leg"), 150)
+    check("melee: owned through the alias", Melee.owned("Black Leg"))
+    local action, name = Melee.action()
+    eq("melee: not held -> load", action, "load")
+    eq("melee: load which", name, "Black Leg")
+    Settings.set("ItemMeleeProgress", true)
+    Melee.mode.tick()
+    local load = calls(world.commF, "LoadItem")[1]
+    eq("melee: LoadItem with the inventory's name", load and load[2], "Dark Step")
+    local tool = newInstance("Tool", "Dark Step", world.player.Backpack)
+    tool.ToolTip = "Melee"
+    eq("melee: held -> nothing for the mode", (Melee.action()), nil)
+    eq("melee: describe", Melee.describe(), "Black Leg 150/400")
+end
+
+meleeSetup(2753915549, 400, { style("Dark Step", 400) }, {}, 200000)
+do
+    eq("melee: Electric waits on its quest", Melee.missing(Melee.step("Electro")), "the Lightning Bolt quest")
+    eq("melee: Fishman waits on money", Melee.missing(Melee.step("Fishman Karate")), "$750000")
+    eq("melee: Dragon Claw waits on Sea 2", Melee.missing(Melee.step("Dragon Claw")), "Sea 2")
+    eq("melee: nothing buyable -> keep the best owned", (Melee.current()), "Black Leg")
+end
+
+meleeSetup(4442272183, 1200, {
+    style("Dark Step", 300), style("Electric", 300), style("Water Kung Fu", 450), style("Dragon Breath", 300),
+}, {}, 4000000, 2000)
+do
+    eq("melee: first under 400 is worked on", (Melee.current()), "Black Leg")
+    local superhuman = Melee.step("Superhuman")
+    eq("melee: Superhuman needs the four at 300 -- met", Melee.missing(superhuman), nil)
+    eq("melee: Sharkman waits on its unlock", Melee.missing(Melee.step("Sharkman Karate")), "unlock")
+    eq("melee: Death Step waits on Black Leg 400", Melee.missing(Melee.step("Death Step")), "Black Leg 400")
+end
+
+meleeSetup(4442272183, 1200, { style("Water Kung Fu", 450) }, { BuySharkmanKarate = 3 }, 4000000, 6000)
+do
+    check("melee: Sharkman unlocked by the check call", Melee.unlocked("Sharkman Karate"))
+    eq("melee: Sharkman buyable", Melee.missing(Melee.step("Sharkman Karate")), nil)
+end
+
+meleeSetup(4442272183, 1200, { style("Water Kung Fu", 450) }, { BuySharkmanKarate = "locked" }, 4000000, 6000)
+do
+    eq("melee: Sharkman locked", Melee.missing(Melee.step("Sharkman Karate")), "unlock")
+    Settings.set("ItemWaterKey", true)
+    check("water key: nothing without the boss or the key", not Melee.waterKey.enabled())
+    newInstance("Tool", "Water Key", world.player.Backpack)
+    check("water key: key held", Melee.waterKey.enabled())
+    Melee.waterKey.tick()
+    local use = calls(world.commF, "BuySharkmanKarate")
+    check("water key: used", #use >= 1 and use[#use][2] == true)
+end
+
+meleeSetup(7449423635, 2000, {
+    style("Superhuman", 400), style("Death Step", 400), style("Sharkman Karate", 400),
+    style("Electric Claw", 400), style("Dragon Talon", 400),
+    { Name = "Fish Tail", Type = "Material", Count = 20 }, { Name = "Magma Ore", Type = "Material", Count = 3 },
+}, { BuyGodhuman = 2 }, 6000000, 6000)
+do
+    eq("godhuman: first missing material", Melee.missingMaterial(), "Magma Ore")
+    eq("godhuman: waits on the materials", Melee.missing(Melee.step("Godhuman")), "unlock")
+end
+
+meleeSetup(7449423635, 2000, {
+    style("Superhuman", 400), style("Death Step", 400), style("Sharkman Karate", 400),
+    style("Electric Claw", 400), style("Dragon Talon", 400),
+}, { BuyGodhuman = 0 }, 6000000, 6000)
+do
+    eq("godhuman: materials in -> buy it", (Melee.current()), "Godhuman")
+    check("melee: first-sea style not needed any more", not Melee.useful(Melee.step("Black Leg")))
+end
+
+meleeSetup(7449423635, 2000, { { Name = "Bones", Type = "Material", Count = 80 } },
+    { BuyDragonTalon = "Set your heart ablaze." })
+do
+    check("fire essence: Dragon Talon locked", not Melee.unlocked("Dragon Talon"))
+    Settings.set("ItemDragonTalon", true)
+    check("fire essence: rolls with 50+ bones", Melee.dragonTalon.enabled())
+    Melee.dragonTalon.tick()
+    eq("fire essence: bone gacha", #calls(world.commF, "Bones"), 1)
+end
+
+-- Electric: the Lightning Bolt quest.
+local electricState = 0
+meleeSetup(2753915549, 300, {}, {
+    ElectroQuestState = function() return electricState end,
+    DeliverLightningBolt = 0,
+}, 600000)
+do
+    local npc = newInstance("Model", "Mad Scientist", folder("NPCs", workspace))
+    part("HumanoidRootPart", Vector3.new(0, 0, -4), npc)
+    Settings.set("ItemElectric", true)
+    check("electric: wanted with $500k", Electric.mode.enabled())
+    Electric.mode.tick()
+    eq("electric: quest accepted", #calls(world.commF, "AcceptElectroQuest"), 1)
+
+    require("Features.Stack.Common").forget()
+    electricState = 1
+    Electric.mode.tick()
+    eq("electric: no cloud -> waits over the Skylands", Electric.mode.status, "Looking for a charged storm cloud")
+
+    local cloud = part("StormCloud", Vector3.new(0, 0, 0), workspace)
+    local piece = part("CloudPiece", Vector3.new(0, 0, 3), workspace)
+    game:GetService("CollectionService"):AddTag(piece, "M1HitRegistry")
+    Electric.onMoment("Some Other Moment", "Charge", cloud, piece)
+    eq("electric: other moments ignored", Electric.target(), nil)
+    Electric.onMoment("Electric Fighting Teacher", "Charge", cloud, piece)
+    eq("electric: charged piece known", Electric.target(), piece)
+    Electric.mode.tick()
+    eq("electric: strike status", Electric.mode.status, "Striking the charged storm cloud")
+    local swing = world.registerAttack.Fired and world.registerAttack.Fired[1]
+    eq("electric: RegisterAttack 0.3", swing and swing[1], 0.3)
+    local hit = world.moduleRegisterHit.Fired and world.moduleRegisterHit.Fired[1]
+    eq("electric: RegisterHit on the piece", hit and hit[1], piece)
+    Electric.onMoment("Electric Fighting Teacher", "Break", cloud)
+    eq("electric: broken cloud forgotten", Electric.target(), nil)
+
+    require("Features.Stack.Common").forget()
+    electricState = 4
+    Electric.mode.tick()
+    eq("electric: bolt delivered", #calls(world.commF, "DeliverLightningBolt"), 1)
+    eq("electric: delivery not 1 -> BuyElectro", #calls(world.commF, "BuyElectro"), 1)
+end
+
+meleeSetup(2753915549, 300, { style("Electric", 10) }, {}, 600000)
+do
+    Settings.set("ItemElectric", true)
+    check("electric: owned -> nothing to do", not Electric.mode.enabled())
 end
 
 ---------------------------------------------------------------------------

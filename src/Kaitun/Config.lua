@@ -29,6 +29,8 @@ Config.DEFAULTS = {
         Race = false,
         AwakenFruit = false,
         Rainbow = false,
+        Godhuman = false,    -- every step of the melee chain (and Electric)
+        Electric = false,
     },
     StoreFruits = true,
     WebhookUrl = "",

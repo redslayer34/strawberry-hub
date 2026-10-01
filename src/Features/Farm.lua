@@ -20,8 +20,10 @@ local Farm = {}
 local Cdk = require("Features.Items.Cdk")
 local Dragon = require("Features.Other.Dragon")
 local Dungeon = require("Features.Dungeon")
+local Electric = require("Features.Items.Electric")
 local Fishing = require("Features.Other.Fishing")
 local Guitar = require("Features.Items.Guitar")
+local Melee = require("Features.Items.Melee")
 local ItemMastery = require("Features.Items.Mastery")
 local Observation = require("Features.Other.Observation")
 local Pvp = require("Features.Pvp")
@@ -82,6 +84,12 @@ Farm.MODES = {
     Swords.rainbow,
     Guitar.mode,
     Saber.mode,
+    Electric.mode,
+    Melee.libraryKey,
+    Melee.waterKey,
+    Melee.electricClaw,
+    Melee.dragonTalon,
+    Melee.mode,
     Swords.ttk,
     ItemMastery.upgradeSword,
     ItemMastery.upgradeGun,

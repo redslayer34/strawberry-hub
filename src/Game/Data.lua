@@ -128,20 +128,33 @@ Data.ISLANDS = {
     },
 }
 
--- Fighting styles: the CommF_ call(s) that buy them and the teacher NPC to
--- stand next to.
+-- Fighting styles: the CommF_ call(s) that buy them, the teacher NPC to
+-- stand next to, the names the inventory may list them under (the game
+-- keeps the old internal names for the first styles, Vxeze's MeleeInfo) and
+-- the sea their teacher is in.
 Data.FIGHTING_STYLES = {
-    { name = "Black Leg", npc = "Dark Step Teacher", calls = { { "BuyBlackLeg" } } },
-    { name = "Electro", npc = "Mad Scientist", calls = { { "BuyElectro" } } },
-    { name = "Fishman Karate", npc = "Water Kung-fu Teacher", calls = { { "BuyFishmanKarate" } } },
-    { name = "Dragon Claw", npc = "Sabi", calls = { { "BlackbeardReward", "DragonClaw", "1" }, { "BlackbeardReward", "DragonClaw", "2" } } },
-    { name = "Superhuman", npc = "Martial Arts Master", calls = { { "BuySuperhuman" } } },
-    { name = "Death Step", npc = "Phoeyu, the Reformed", calls = { { "BuyDeathStep" } } },
-    { name = "Sharkman Karate", npc = "Sharkman Teacher", calls = { { "BuySharkmanKarate" } } },
-    { name = "Electric Claw", npc = "Previous Hero", calls = { { "BuyElectricClaw" } } },
-    { name = "Dragon Talon", npc = "Uzoth", calls = { { "BuyDragonTalon" } } },
-    { name = "Godhuman", npc = "Ancient Monk", calls = { { "BuyGodhuman" } } },
-    { name = "Sanguine Art", npc = "Shafi", calls = { { "BuySanguineArt" } } },
+    { name = "Black Leg", npc = "Dark Step Teacher", calls = { { "BuyBlackLeg" } },
+        inv = { "Black Leg", "Dark Step" }, sea = 1 },
+    { name = "Electro", npc = "Mad Scientist", calls = { { "BuyElectro" } },
+        inv = { "Electro", "Electric" }, sea = 1 },
+    { name = "Fishman Karate", npc = "Water Kung-fu Teacher", calls = { { "BuyFishmanKarate" } },
+        inv = { "Fishman Karate", "Water Kung Fu" }, sea = 1 },
+    { name = "Dragon Claw", npc = "Sabi", calls = { { "BlackbeardReward", "DragonClaw", "1" }, { "BlackbeardReward", "DragonClaw", "2" } },
+        inv = { "Dragon Claw", "Dragon Breath" }, sea = 2 },
+    { name = "Superhuman", npc = "Martial Arts Master", calls = { { "BuySuperhuman" } },
+        inv = { "Superhuman" }, sea = 2 },
+    { name = "Death Step", npc = "Phoeyu, the Reformed", calls = { { "BuyDeathStep" } },
+        inv = { "Death Step" }, sea = 2 },
+    { name = "Sharkman Karate", npc = "Sharkman Teacher", calls = { { "BuySharkmanKarate" } },
+        inv = { "Sharkman Karate" }, sea = 2 },
+    { name = "Electric Claw", npc = "Previous Hero", calls = { { "BuyElectricClaw" } },
+        inv = { "Electric Claw" }, sea = 3 },
+    { name = "Dragon Talon", npc = "Uzoth", calls = { { "BuyDragonTalon" } },
+        inv = { "Dragon Talon" }, sea = 3 },
+    { name = "Godhuman", npc = "Ancient Monk", calls = { { "BuyGodhuman" } },
+        inv = { "Godhuman", "God Human" }, sea = 3 },
+    { name = "Sanguine Art", npc = "Shafi", calls = { { "BuySanguineArt" } },
+        inv = { "Sanguine Art", "SanguineArt" }, sea = 3 },
 }
 
 function Data.fightingStyleNames()

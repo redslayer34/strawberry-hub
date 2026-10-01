@@ -23,6 +23,7 @@ local Config = require("Kaitun.Config")
 local Data = require("Game.Data")
 local Farm = require("Features.Farm")
 local Loop = require("Core.Loop")
+local Melee = require("Features.Items.Melee")
 local Player = require("Core.Player")
 local Services = require("Core.Services")
 local Settings = require("Core.Settings")
@@ -78,6 +79,7 @@ function Engine.background(sea, level)
         ScreenBlack = Config.get("BlackScreen") == true,
         ScreenBoostFps = Config.get("FpsBoost") == true,
         StackFruit = true,
+        ItemMeleeProgress = not Config.skipped("Godhuman"),
     }
     local url = Config.get("WebhookUrl")
     if type(url) == "string" and url ~= "" then
@@ -106,7 +108,9 @@ function Engine.background(sea, level)
     return keys
 end
 
--- Teddy's fn22: levels first, then Katakuri in Sea 3. The idle mode stays
+-- Teddy's fn22: levels first, then in Sea 3 bones while Dragon Talon is
+-- locked (its Fire Essence comes from the bone gacha), then Katakuri. The
+-- idle mode stays
 -- on under the task (it is last in Farm.MODES), so a task with nothing to
 -- do falls back to it at once.
 function Engine.idle(sea, level)
@@ -114,6 +118,10 @@ function Engine.idle(sea, level)
     if level < Engine.MAX_LEVEL or sea ~= 3 then
         keys.AutoFarmLevel = true
         return keys, "Level farm"
+    end
+    if not Config.skipped("Godhuman") and not Melee.unlocked("Dragon Talon") then
+        keys.AutoBone = true
+        return keys, "Bones (Fire Essence)"
     end
     keys.AutoKatakuri = true
     return keys, "Katakuri"
@@ -148,7 +156,7 @@ end
 
 -- Why `task` cannot run now, or nil.
 function Engine.blocked(task, sea, level)
-    if Config.skipped(task.name) then return "skipped" end
+    if Config.skipped(task.name) or (task.group and Config.skipped(task.group)) then return "skipped" end
     if not inSea(task, sea) then return "other sea" end
     if task.minLevel and level < task.minLevel then return "level " .. task.minLevel end
     local resting = rest[task.name]
@@ -194,7 +202,7 @@ function Engine.desired(sea, level, list)
     for _, key in ipairs({ "StackNewWorld", "StackThirdWorld", "StackFactory", "StackDarkbeard",
         "StackSummonDarkbeard", "StackEliteHunter", "StackPirateRaid", "StackRipIndra",
         "StackSummonRipIndra", "StackHakiPads", "StackSoulReaper", "StackSummonSoulReaper",
-        "StackDoughKing", "StackSummonDoughKing", "AutoFarmLevel", "AutoKatakuri" }) do
+        "StackDoughKing", "StackSummonDoughKing", "AutoFarmLevel", "AutoKatakuri", "AutoBone" }) do
         if wanted[key] == nil then wanted[key] = false end
     end
     taskKeysOff(wanted, list)

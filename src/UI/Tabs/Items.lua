@@ -34,6 +34,17 @@ return function(Window)
     local saber = tab:AddSection("Saber (Sea 1)")
     Bind.toggle(saber, "ItemSaber", "Auto Saber", "Level 200: plates, torch, cup, Relic, Saber Expert.")
 
+    local godhuman = tab:AddSection("Godhuman")
+    Bind.toggle(godhuman, "ItemMeleeProgress", "Auto Godhuman Styles",
+        "Learns and equips each style in order (Black Leg, Electric, Fishman, Dragon Claw, then their upgrades) "
+        .. "until Godhuman; the farms do the mastery with the Melee weapon.")
+    Bind.toggle(godhuman, "ItemElectric", "Auto Electric (Lightning Bolt)",
+        "Sea 1: the Mad Scientist's quest. Strikes a charged storm cloud over the Skylands for the bolt, then buys Electric.")
+    Bind.toggle(godhuman, "ItemLibraryKey", "Auto Library Key", "Sea 2: Awakened Ice Admiral's key, opens Death Step.")
+    Bind.toggle(godhuman, "ItemWaterKey", "Auto Water Key", "Sea 2: Tide Keeper's key, opens Sharkman Karate.")
+    Bind.toggle(godhuman, "ItemElectricClaw", "Auto Electric Claw Quest", "Sea 3: the Previous Hero's run (Electric at 400).")
+    Bind.toggle(godhuman, "ItemDragonTalon", "Auto Fire Essence", "Sea 3: rolls bones for a Fire Essence and gives it to Uzoth.")
+
     local mastery = tab:AddSection("Mastery 600")
     Bind.toggle(mastery, "ItemMeleeMastery", "Auto Melee Mastery 600", "Buys each melee and farms it to 600.")
     Bind.toggle(mastery, "ItemSwordMastery", "Auto Sword Mastery 600", "Your rarest swords first.")

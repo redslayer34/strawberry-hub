@@ -9,6 +9,7 @@
 local Engine = require("Kaitun.Engine")
 local Farm = require("Features.Farm")
 local Loop = require("Core.Loop")
+local Melee = require("Features.Items.Melee")
 local Player = require("Core.Player")
 local Services = require("Core.Services")
 local Tasks = require("Kaitun.Tasks")
@@ -132,8 +133,6 @@ end
 -- The rows' text, separate from the Instances so tests can read it.
 function Screen.lines()
     local status = Engine.status()
-    local melee = Player.findTool("Melee")
-    local level = melee and melee:FindFirstChild("Level")
     local items = {}
     for _, entry in ipairs(Tasks.CHECKLIST) do
         local ok, has = pcall(Tasks.owned, entry.item)
@@ -144,7 +143,7 @@ function Screen.lines()
         Status = "Now: " .. tostring(Farm.status()),
         Level = string.format("Level %s  ·  Sea %s  ·  up %s", tostring(Player.level()), tostring(Player.sea()), uptime()),
         Money = string.format("Beli %s  ·  Fragments %s", short(Player.data("Beli")), short(Player.data("Fragments"))),
-        Melee = "Melee: " .. (melee and (melee.Name .. (level and (" " .. tostring(level.Value)) or "")) or "none"),
+        Melee = "Melee: " .. Melee.describe(),
         Items = table.concat(items, "  "),
         Resting = "Resting: " .. (#status.resting > 0 and table.concat(status.resting, ", ") or "none"),
         Last = status.log[1] or "",

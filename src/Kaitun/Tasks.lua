@@ -16,12 +16,17 @@
 --    ready()    optional: extra condition to start
 --    done()     optional: finished for good (the screen's checklist)
 --    maxTime    optional: seconds before the watchdog gives it a rest
+--    group      optional: a second Skip key (Skip.Godhuman skips every
+--               step of the melee chain)
 --=============================================================================
 
 local Cdk = require("Features.Items.Cdk")
 local Common = require("Features.Stack.Common")
 local Config = require("Kaitun.Config")
+local Electric = require("Features.Items.Electric")
 local Guitar = require("Features.Items.Guitar")
+local MaterialFarm = require("Features.MaterialFarm")
+local Melee = require("Features.Items.Melee")
 local Player = require("Core.Player")
 local RaceUpgrade = require("Features.Races.Upgrade")
 local Raids = require("Features.Raids")
@@ -107,6 +112,50 @@ Tasks.LIST = {
             return all
         end,
         maxTime = 1800,
+    },
+    -- The melee chain to Godhuman (Melee.mode itself runs in the background
+    -- layer: it only learns and equips styles).
+    {
+        name = "ElectricClaw", group = "Godhuman", priority = 3, seas = { 3 }, mode = Melee.electricClaw,
+        keys = { ItemElectricClaw = true },
+        done = function() return Melee.unlocked("Electric Claw") end,
+        maxTime = 600,
+    },
+    {
+        -- Electric is a Sea 1 quest: from a later sea only once Black Leg and
+        -- Fishman are ready for Superhuman, so the trip back is worth it.
+        name = "Electric", group = "Godhuman", priority = 4, seas = { 1, 2, 3 }, mode = Electric.mode,
+        keys = { ItemElectric = true },
+        ready = function()
+            if (Player.data("Beli") or 0) < Electric.PRICE then return false end
+            if Player.sea() == 1 then return true end
+            return Melee.mastery("Black Leg") >= Melee.SUPERHUMAN_NEEDS
+                and Melee.mastery("Fishman Karate") >= Melee.SUPERHUMAN_NEEDS
+        end,
+        done = function() return Electric.owned() end,
+        maxTime = 1800,
+    },
+    {
+        name = "LibraryKey", group = "Godhuman", priority = 4, seas = { 2 }, mode = Melee.libraryKey,
+        keys = { ItemLibraryKey = true },
+        done = function() return Melee.unlocked("Death Step") end,
+    },
+    {
+        name = "WaterKey", group = "Godhuman", priority = 4, seas = { 2 }, mode = Melee.waterKey,
+        keys = { ItemWaterKey = true },
+        done = function() return Melee.unlocked("Sharkman Karate") end,
+    },
+    {
+        name = "FireEssence", group = "Godhuman", priority = 6, seas = { 3 }, mode = Melee.dragonTalon,
+        keys = { ItemDragonTalon = true },
+        done = function() return Melee.unlocked("Dragon Talon") end,
+    },
+    {
+        name = "GodhumanMaterials", group = "Godhuman", priority = 7, seas = { 2, 3 }, mode = MaterialFarm,
+        keys = function() return { AutoMaterial = true, Material = Melee.missingMaterial() or "" } end,
+        ready = function() return Melee.owned("Dragon Talon") and Melee.missingMaterial() ~= nil end,
+        done = function() return Melee.owned("Godhuman") end,
+        maxTime = 3600,
     },
     {
         name = "Rainbow", priority = 8, seas = { 3 }, mode = Swords.rainbow,
