@@ -193,14 +193,19 @@ Tasks.LIST = {
         maxTime = 600,
     },
     {
-        -- Electric is a Sea 1 quest: from a later sea only once Black Leg and
-        -- Fishman are ready for Superhuman, so the trip back is worth it.
-        name = "Electric", group = "Godhuman", priority = 4, seas = { 1, 2, 3 }, mode = Electric.mode,
+        -- Electric is a Sea 1 quest. Before Saber (priority 3): it is part of
+        -- the Godhuman chain, and the quest itself costs nothing, only the
+        -- delivery ($500,000). From a later sea only with the money and once
+        -- Black Leg and Fishman are ready for Superhuman, so the trip back is
+        -- worth it.
+        name = "Electric", group = "Godhuman", priority = 3, seas = { 1, 2, 3 }, mode = Electric.mode,
         keys = { ItemElectric = true },
         ready = function()
-            if (Player.data("Beli") or 0) < Electric.PRICE then return false end
+            local beli = Player.data("Beli") or 0
+            if Electric.state() == Electric.STATE_HAS_BOLT and beli < Electric.PRICE then return false end
             if Player.sea() == 1 then return true end
-            return Melee.mastery("Black Leg") >= Melee.SUPERHUMAN_NEEDS
+            return beli >= Electric.PRICE
+                and Melee.mastery("Black Leg") >= Melee.SUPERHUMAN_NEEDS
                 and Melee.mastery("Fishman Karate") >= Melee.SUPERHUMAN_NEEDS
         end,
         done = function() return Electric.owned() end,

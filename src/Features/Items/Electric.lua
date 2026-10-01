@@ -191,11 +191,13 @@ end
 Electric.mode = Mode({
     name = "Electric",
     key = "ItemElectric",
+    -- The quest and the bolt cost nothing: only the delivery wants $500,000,
+    -- so with the bolt in hand and less money the farms go on meanwhile.
     want = function()
         if Electric.owned() then return false end
-        return (Player.data("Beli") or 0) >= Electric.PRICE or Electric.state() == Electric.STATE_HAS_BOLT
+        return Electric.state() ~= Electric.STATE_HAS_BOLT or (Player.data("Beli") or 0) >= Electric.PRICE
     end,
-    idleStatus = "Owned, or $500,000 needed",
+    idleStatus = "Owned, or holding the bolt until $500,000",
     tick = Electric.step,
 })
 

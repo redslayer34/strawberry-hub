@@ -78,6 +78,7 @@ Engine.ROLL_BELI = 10000000    -- the Cousin's gacha only with money to spare
 Engine.BUY_EVERY = 5
 
 local current, startedAt
+local currentWorking = false
 local idleSince, lastStatus, statusSince
 local rest = {}        -- [task name] = { untilAt, why, count }
 local doneCache = {}   -- [task name] = { done, at }
@@ -268,11 +269,17 @@ function Engine.blocked(task, sea, level)
     return nil
 end
 
+-- The first ready task by priority. A task that is working keeps the
+-- character until it is done, rests, or a strictly more urgent one is
+-- ready: a task of the same priority coming back from its rest (Saber and
+-- Electric, say) must not cut a running quest in the middle.
 function Engine.pick(sea, level, list)
+    local keep = currentWorking and current and not Engine.blocked(current, sea, level) and current or nil
     for _, task in ipairs(Tasks.ordered(list)) do
-        if not Engine.blocked(task, sea, level) then return task end
+        if keep and task.priority >= keep.priority then return keep end
+        if task == keep or not Engine.blocked(task, sea, level) then return task end
     end
-    return nil
+    return keep
 end
 
 ---------------------------------------------------------------------------
@@ -497,6 +504,7 @@ function Engine.tick()
     idleName = name
     Engine.apply(wanted)
     local working = watch(task)
+    currentWorking = working
     pcall(purchases, sea, level)
 
     local reason, after = taskHop, taskHopAfter
@@ -538,6 +546,7 @@ end
 -- Test hook.
 function Engine.reset()
     current, startedAt, idleSince, lastStatus, statusSince = nil, nil, nil, nil, nil
+    currentWorking = false
     rest, doneCache, applied, log = {}, {}, {}, {}
     lastTravel, lastBuy = -math.huge, -math.huge
     idleName = "Idle"

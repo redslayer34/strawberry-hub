@@ -259,12 +259,16 @@ function Quests.best(level)
     return best
 end
 
--- The best boss quest for `level` whose boss is alive right now (in the
--- world, or kept in ReplicatedStorage while out of streaming range), or nil.
--- Same shape as Quests.best. A boss quest gives far more experience than a
--- mob quest: the Teddy Kaitun's "Triple Quest Method" takes one whenever
--- its boss is up.
+-- The best boss quest for `level` whose boss is up, or nil. Same shape as
+-- Quests.best. A boss quest gives far more experience than a mob quest: the
+-- Teddy Kaitun's "Triple Quest Method" takes one whenever its boss is up,
+-- but only among the bosses of the current level bracket, and only a boss
+-- actually in workspace.Enemies (its CheckEnemySpawn). So a boss below the
+-- best mob quest (the Gorilla King at level 300) is never worth the trip,
+-- and a boss model merely kept in ReplicatedStorage does not count.
 function Quests.bossQuest(level)
+    local route = Quests.best(level)
+    local floor = route and route.level or 0
     local data = guideData()
     local npcs = data and data.NPCList
     local all = Services.module("Quests")
@@ -280,8 +284,8 @@ function Quests.bossQuest(level)
                 local quest = list[id]
                 if type(quest) == "table" and type(quest.Task) == "table" then
                     local mob, count = next(quest.Task)
-                    if mob and count == 1 and required <= level and required > bestLevel
-                        and Enemies.findBoss(mob) then
+                    if mob and count == 1 and required <= level and required >= floor
+                        and required > bestLevel and select(2, Enemies.findBoss(mob)) == true then
                         best = {
                             questName = questName,
                             id = id,

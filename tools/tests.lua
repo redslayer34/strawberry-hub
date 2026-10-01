@@ -3658,6 +3658,32 @@ do
     eq("free: New World on", wanted.StackNewWorld, true)
 end
 
+-- A working task keeps the character against a task of the same priority.
+kaitunSetup(7449423635, 2500)
+do
+    local saved = KTasks.LIST
+    local busy = { name = "Busy", status = "working", enabled = function() return true end }
+    local first = { name = "First", priority = 4, seas = { 3 }, mode = busy, keys = { ItemYama = true } }
+    local second = { name = "Second", priority = 4, seas = { 3 }, mode = busy, keys = { ItemTushita = true } }
+    local urgent = { name = "Urgent", priority = 1, seas = { 3 }, mode = busy, keys = { ItemCDK = true },
+        ready = function() return false end }
+    KTasks.LIST = { first, second, urgent }
+    KEngine.rest(first, 1, "test")
+    KEngine.tick()
+    eq("sticky: the other task runs while the first rests", KEngine.status().task, "Second")
+    KEngine.reset()
+    KTasks.LIST = { first, second, urgent }
+    KEngine.tick()
+    eq("sticky: first by order", KEngine.status().task, "First")
+    KTasks.LIST = { second, first, urgent }
+    KEngine.tick()
+    eq("sticky: a same-priority task does not cut in", KEngine.status().task, "First")
+    urgent.ready = function() return true end
+    KEngine.tick()
+    eq("sticky: a more urgent task does", KEngine.status().task, "Urgent")
+    KTasks.LIST = saved
+end
+
 -- Rests double, and wake() ends one early.
 kaitunSetup(7449423635, 2500)
 do
@@ -3785,8 +3811,9 @@ do
     local plan = Quests.bossQuest(960)
     eq("boss quest: picked when the boss is up", plan and plan.questName, "BossQuest")
     eq("boss quest: too high for the level", Quests.bossQuest(900), nil)
+    eq("boss quest: below the level's mob quest -> not worth it", Quests.bossQuest(980), nil)
     boss.Parent = rs
-    check("boss quest: a boss kept in ReplicatedStorage counts", Quests.bossQuest(960) ~= nil)
+    eq("boss quest: a model kept in ReplicatedStorage does not count", Quests.bossQuest(960), nil)
 end
 
 setup()
@@ -3925,6 +3952,23 @@ do
     game.HttpGet = realGet
     getcustomasset, writefile, isfile, makefolder, isfolder = saved[1], saved[2], saved[3], saved[4], saved[5]
     Logo.reset()
+end
+
+-- The user's account: level 320, Sea 1, $504k, no Saber, no Electric. The
+-- Electric quest must be what actually runs (not Saber, not the level farm).
+for _, beli in ipairs({ 504694, 200000 }) do
+    meleeSetup(2753915549, 320, {}, {}, beli)
+    KConfig.reset()
+    KEngine.reset()
+    KEngine.tick()
+    KEngine.tick()
+    local Farm = require("Features.Farm")
+    local active
+    for _, mode in ipairs(Farm.MODES) do
+        if mode.enabled() then active = mode.name break end
+    end
+    eq("electric before saber ($" .. beli .. ")", KEngine.status().task, "Electric")
+    eq("electric is the running farm mode ($" .. beli .. ")", active, "Electric")
 end
 
 ---------------------------------------------------------------------------
