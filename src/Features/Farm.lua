@@ -78,6 +78,7 @@ Farm.MODES = {
     SeaEvents.driveTiki,
     SeaEvents.driveHydra,
     Cdk.mode,
+    Cdk.mastery,
     Swords.tushita,
     Swords.yama,
     Swords.yoru,

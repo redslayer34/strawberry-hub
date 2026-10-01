@@ -45,6 +45,7 @@ local function label(parent, name, y, size, color, bold)
 end
 
 local ROWS = { "Task", "Status", "Level", "Money", "Melee", "Items", "Resting", "Last" }
+local TALL = { Task = true, Status = true, Items = true, Last = true }   -- may wrap to two lines
 
 function Screen.build()
     Screen.destroy()
@@ -57,7 +58,9 @@ function Screen.build()
 
     local frame = Instance.new("Frame")
     frame.Name = "Panel"
-    frame.Size = UDim2.fromOffset(330, 52 + #ROWS * 22)
+    local height = 44
+    for _, name in ipairs(ROWS) do height = height + (TALL[name] and 34 or 20) end
+    frame.Size = UDim2.fromOffset(330, height)
     frame.Position = UDim2.new(0, 16, 0, 80)
     frame.BackgroundColor3 = DARK
     frame.BackgroundTransparency = 0.08
@@ -83,8 +86,11 @@ function Screen.build()
     barCorner.Parent = bar
     label(bar, "Header", 8, 16, TEXT, true).Text = "🍓 Strawberry Kaitun"
 
+    local y = 40
     for index, name in ipairs(ROWS) do
-        label(frame, name, 40 + (index - 1) * 22, 13, index <= 2 and TEXT or MUTED, index == 1)
+        local text = label(frame, name, y, 13, index <= 2 and TEXT or MUTED, index == 1)
+        if TALL[name] then text.Size = UDim2.new(1, -24, 0, 32) end
+        y = y + (TALL[name] and 34 or 20)
     end
 
     -- Drag by the title bar.

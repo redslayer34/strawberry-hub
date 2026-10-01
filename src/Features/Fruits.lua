@@ -23,6 +23,22 @@ Fruits.RARITIES = { "Mythical", "Legendary", "Rare", "Uncommon", "Common" }
 Fruits.STORE_EVERY = 2   -- seconds between two stores (the reference waits 2 s)
 
 local stored = setmetatable({}, { __mode = "k" })
+local kept = {}   -- [storage name] = until (os.clock)
+
+-- Leaves the fruit `storageName` out of the storing for `seconds`: another
+-- feature took it out on purpose (Trevor's fruit, a raid chip's payment),
+-- and storing it back would undo that every two seconds.
+function Fruits.keep(storageName, seconds)
+    kept[storageName] = os.clock() + (seconds or 60)
+end
+
+local function isKept(name)
+    local untilAt = kept[name]
+    if not untilAt then return false end
+    if os.clock() < untilAt then return true end
+    kept[name] = nil
+    return false
+end
 
 ---------------------------------------------------------------------------
 -- Random fruit (Cousin)
@@ -82,7 +98,8 @@ local function heldFruits()
     local found, player = {}, Services.player()
     for _, container in ipairs({ player and player:FindFirstChild("Backpack"), Player.character() }) do
         for _, tool in ipairs(container and container:GetChildren() or {}) do
-            if tool:IsA("Tool") and tool.Name:find("Fruit", 1, true) and not stored[tool] then
+            if tool:IsA("Tool") and tool.Name:find("Fruit", 1, true) and not stored[tool]
+                and not isKept(Fruits.storageName(tool)) then
                 found[#found + 1] = tool
             end
         end
@@ -159,6 +176,7 @@ end
 -- Test hook.
 function Fruits.reset()
     stored = setmetatable({}, { __mode = "k" })
+    kept = {}
 end
 
 return Fruits

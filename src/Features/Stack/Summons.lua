@@ -28,8 +28,10 @@ Summons.PAD_COLOURS = {
 Summons.HAKI_COLOURS = { "Winter Sky", "Pure Red", "Snow White" }
 Summons.STAND_TIME = 2     -- seconds on a pad
 Summons.RECHECK = 300      -- seconds before checking finished pads again
+Summons.PAD_GIVE_UP = 30   -- seconds on one pad that will not light (colour not unlocked)
+Summons.FAILED_PAUSE = 600 -- then the pads are left alone this long
 
-local padsDoneAt, pad, padSince
+local padsDoneAt, pad, padSince, padFirst, failedAt
 
 local function summoner()
     return Services.find(workspace, "Map.Boat Castle.Summoner")
@@ -87,7 +89,13 @@ function Summons.enabled()
         and Player.sea() == 3
 end
 
+-- True while the pads are left alone after one would not light.
+function Summons.resting()
+    return failedAt ~= nil and os.clock() - failedAt < Summons.FAILED_PAUSE
+end
+
 function Summons.want()
+    if Summons.resting() then return false end
     if Settings.get("StackSummonRipIndra") and Common.has("God's Chalice") then return true end
     if not Settings.get("StackHakiPads") then return false end
     if loaded() then return Summons.pendingPad() ~= nil end
@@ -107,14 +115,19 @@ function Summons.run(mode, usePads, useSummon)
     if pending then
         local colour = Summons.colourFor(pending)
         if pending ~= pad then
-            pad, padSince = pending, nil
+            pad, padSince, padFirst = pending, nil, os.clock()
             if colour then wearColour(colour) end
+        elseif padFirst and os.clock() - padFirst >= Summons.PAD_GIVE_UP then
+            -- Standing on it does nothing: the colour is not unlocked. Without
+            -- this the character would stay on the pad forever.
+            failedAt, pad, padFirst = os.clock(), nil, nil
+            return "Pad " .. tostring(colour or Common.colorName(pending)) .. " will not light: leaving the pads"
         end
         Common.goTo(pending.CFrame)
         if Common.near(pending.Position, 5) then
             Common.touch(pending)
             padSince = padSince or os.clock()
-            if os.clock() - padSince >= Summons.STAND_TIME then pad = nil end
+            if os.clock() - padSince >= Summons.STAND_TIME then padSince = nil end
         end
         return "Haki pad (" .. tostring(colour or Common.colorName(pending)) .. ")"
     end
@@ -136,7 +149,7 @@ function Summons.tick(mode)
 end
 
 function Summons.reset()
-    padsDoneAt, pad, padSince = nil, nil, nil
+    padsDoneAt, pad, padSince, padFirst, failedAt = nil, nil, nil, nil, nil
 end
 
 return Summons

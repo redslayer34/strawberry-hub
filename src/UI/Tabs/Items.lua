@@ -22,6 +22,7 @@ return function(Window)
     Bind.toggle(swords, "ItemYoruHop", "Yoru: Hop After Chests", "Uses the Chests Before Hop value of Farm Other.")
 
     local cdk = tab:AddSection("Cursed Dual Katana")
+    Bind.toggle(cdk, "ItemCdkMastery", "Auto Tushita & Yama 350", "Level-farms with the sword further behind until both reach 350.")
     Bind.toggle(cdk, "ItemCDK", "Auto CDK", "Needs Tushita and Yama at 350 mastery. Every trial, the pedestals, the boss.")
     Bind.toggle(cdk, "CdkHopRaid", "Hop When No Castle Raid", "Good trial 4: hops after 20 s without a raid.")
     Bind.toggle(cdk, "CdkHopCakeQueen", "Hop To Find Cake Queen", "Good trial 5.")

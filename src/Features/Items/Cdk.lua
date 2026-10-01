@@ -22,6 +22,7 @@ local Data = require("Game.Data")
 local Enemies = require("Game.Enemies")
 local Events = require("Features.Stack.Events")
 local Fight = require("Features.Fight")
+local LevelFarm = require("Features.LevelFarm")
 local Mode = require("Features.Other.Mode")
 local Movement = require("Game.Movement")
 local Player = require("Core.Player")
@@ -297,6 +298,36 @@ Cdk.mode = Mode({
         return "Starting the evil trial"
     end,
     stop = function() search:reset() end,
+})
+
+-- Tushita and Yama to 350 first: the one further behind is held and the
+-- level farm is done with it (the quest mobs give sword mastery).
+function Cdk.masteryTarget()
+    if not owns("Tushita") or not owns("Yama") or owns("Cursed Dual Katana") then return nil end
+    local tushita, yama = Common.masteryOf("Tushita"), Common.masteryOf("Yama")
+    if tushita >= Cdk.MASTERY and yama >= Cdk.MASTERY then return nil end
+    return tushita <= yama and "Tushita" or "Yama"
+end
+
+Cdk.mastery = Mode({
+    name = "CDK swords mastery",
+    key = "ItemCdkMastery",
+    want = function() return Cdk.masteryTarget() ~= nil end,
+    idleStatus = "Tushita and Yama at 350, or not both owned",
+    tick = function(mode)
+        local sword = Cdk.masteryTarget()
+        if not sword then return "Done" end
+        if not Common.has(sword) then
+            Movement.stop()
+            if Common.every("CdkLoadSword", 3) then Services.invoke("LoadItem", sword) end
+            return "Taking " .. sword .. " out"
+        end
+        Common.equip(sword)
+        LevelFarm.tick(SWORD)
+        mode.target = LevelFarm.target
+        return string.format("%s %d/%d: %s", sword, Common.masteryOf(sword), Cdk.MASTERY, tostring(LevelFarm.status))
+    end,
+    stop = function() pcall(LevelFarm.stop) end,
 })
 
 function Cdk.reset()

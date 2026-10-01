@@ -147,6 +147,7 @@ Settings.DEFAULTS = {
     ItemYoru = false,
     ItemYoruHop = false,
     ItemCDK = false,
+    ItemCdkMastery = false,
     CdkHopRaid = false,
     CdkHopCakeQueen = false,
     ItemSoulGuitar = false,

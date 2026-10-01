@@ -221,12 +221,14 @@ Guitar.mode = Mode({
     want = function() return Common.invoke("soulGuitarBuy", true) ~= Guitar.OWNED end,
     idleStatus = "Owned",
     tick = function(mode)
+        -- Materials first: they need no fragments, so the wait for 5000
+        -- fragments does not hold them up.
+        local need = Guitar.missing()
+        if need then return materials(mode, need) end
         if (Player.data("Fragments") or 0) < Guitar.FRAGMENTS then
             Movement.stop()
             return "Needs 5000 fragments"
         end
-        local need = Guitar.missing()
-        if need then return materials(mode, need) end
         if Common.every("GuitarBuy", 5) then
             Services.invoke("soulGuitarBuy", true)
             Services.invoke("soulGuitarBuy")

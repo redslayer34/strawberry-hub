@@ -31,6 +31,10 @@ Config.DEFAULTS = {
         Rainbow = false,
         Godhuman = false,    -- every step of the melee chain (and Electric)
         Electric = false,
+        Fragments = false,   -- raids for the fragments a step waits on
+        MirrorFractal = false,
+        ValkyrieHelm = false,
+        HakiColours = false,
     },
     StoreFruits = true,
     WebhookUrl = "",

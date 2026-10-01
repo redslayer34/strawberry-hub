@@ -15,6 +15,7 @@
 local Common = require("Features.Stack.Common")
 local Enemies = require("Game.Enemies")
 local Fight = require("Features.Fight")
+local Fruits = require("Features.Fruits")
 local Movement = require("Game.Movement")
 local Player = require("Core.Player")
 local Services = require("Core.Services")
@@ -140,6 +141,29 @@ local function stage()
     return nil
 end
 
+-- Trevor's step with no fruit worth 1M to give: what the Kaitun buys or
+-- hops for (Teddy's Swan Door Hop).
+function World.needsTrevorFruit()
+    if Player.sea() ~= 2 then return false end
+    local step = stage()
+    if step ~= "trevor" then return false end
+    local names, tools = valuableFruits()
+    return heldFruit(tools) == nil and storedFruit(names) == nil
+end
+
+-- The cheapest fruit worth 1M or more on sale, and its price.
+function World.cheapestTrevorFruit()
+    local list = Common.invoke("GetFruits", false)
+    local best, bestPrice
+    for _, fruit in ipairs(type(list) == "table" and list or {}) do
+        local price = type(fruit) == "table" and tonumber(fruit.Price) or 0
+        if fruit.OnSale and price >= World.FRUIT_PRICE and (not bestPrice or price < bestPrice) then
+            best, bestPrice = fruit.Name, price
+        end
+    end
+    return best, bestPrice
+end
+
 function thirdWorld.want()
     local step, progress = stage()
     if step == "trevor" then
@@ -209,7 +233,10 @@ function thirdWorld.tick(mode)
         local fruit = heldFruit(tools)
         if not fruit then
             local stored = storedFruit(names)
-            if stored and Common.every("LoadFruit", 3) then Services.invoke("LoadFruit", stored) end
+            if stored and Common.every("LoadFruit", 3) then
+                Fruits.keep(stored, 120)
+                Services.invoke("LoadFruit", stored)
+            end
             Movement.stop()
             return "Trevor: taking a fruit out of the inventory"
         end

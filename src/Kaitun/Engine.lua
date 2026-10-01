@@ -11,52 +11,81 @@
 --                the character when something is up
 --    task        one long job at a time (Tasks.LIST), the first by priority
 --                that is ready and not resting
---    idle        Teddy's fn22: level farm until the max level, then
---                Katakuri in Sea 3
+--    idle        Teddy's fn22: level farm until the max level, then bones
+--                while Dragon Talon is locked, then Katakuri
 --
---  Targeted hops (Teddy's "Sea 2 Key Hop"...): a task whose mode has
---  nothing to do may name what this server lacks (task.hop); with Hop on
---  the Kaitun changes server for it instead of giving the task a rest.
+--  God's Chalice (elites, chests) can summon rip_indra or, as a Sweet
+--  Chalice, Dough King; both summons would take it. The chalice plan picks
+--  one, in Teddy's order: rip_indra while Tushita is missing (its torches
+--  need rip_indra alive), Dough King while there is no Mirror Fractal,
+--  rip_indra again for the Valkyrie Helm. rip_indra's pads need the three
+--  legendary haki colours, bought from the Colors Dealer.
+--
+--  Hops (with Hop on), Teddy's targeted ones:
+--    task.hop()     what this server lacks for the current task (the Sea 2
+--                   keys' bosses, a charged storm cloud)
+--    Swan door      a fruit worth 1M for Trevor (Sea 2, level 1500), when
+--                   the money for one on sale is far off
+--    max level      the haki colour dealer, Mirror Fractal (an elite for a
+--                   chalice), the Valkyrie Helm / Tushita (an elite or
+--                   rip_indra)
+--  A reason must hold HOP_AFTER seconds (task.hopAfter for a task); the late
+--  game ones only while no task is working and no stack event is on.
 --
 --  Watchdog, so one job can never hold the Kaitun forever:
 --    its mode says "nothing to do" for IDLE_LIMIT s   -> rests IDLE_PAUSE s
 --    the same status for STUCK_LIMIT s, or maxTime    -> rests STUCK_PAUSE s
+--  Each new rest of the same task lasts twice as long (up to REST_MAX), so a
+--  job that cannot be done (a race V3 the Kaitun cannot do) fades out.
 --=============================================================================
 
 local Common = require("Features.Stack.Common")
 local Config = require("Kaitun.Config")
 local Data = require("Game.Data")
+local Enemies = require("Game.Enemies")
+local EliteHunter = require("Features.Stack.EliteHunter")
 local Farm = require("Features.Farm")
 local Loop = require("Core.Loop")
 local Melee = require("Features.Items.Melee")
 local Player = require("Core.Player")
 local Services = require("Core.Services")
 local Settings = require("Core.Settings")
+local StackFarm = require("Features.StackFarm")
+local StackWorld = require("Features.Stack.World")
+local Summons = require("Features.Stack.Summons")
 local Tasks = require("Kaitun.Tasks")
 
 local Engine = {}
 
 Engine.EVERY = 1
-Engine.MAX_LEVEL = 2800
+Engine.MAX_LEVEL = Tasks.MAX_LEVEL
+Engine.LATE_LEVEL = 2200       -- chalice plan, haki colours, late hops (Teddy's CDK gate)
 Engine.IDLE_LIMIT = 30
 Engine.IDLE_PAUSE = 300
 Engine.STUCK_LIMIT = 300
 Engine.STUCK_PAUSE = 600
+Engine.REST_MAX = 3600
 Engine.DEFAULT_MAX_TIME = 1800
 Engine.DONE_CACHE = 15
 Engine.TRAVEL_EVERY = 60
+Engine.HOP_AFTER = 20
 Engine.LOG_SIZE = 10
 Engine.SEA_LEVEL = { [2] = 700, [3] = 1500 }
+Engine.COCOA = 10
+Engine.COLOUR_FRAGMENTS = Tasks.COLOUR_FRAGMENTS
+Engine.ROLL_BELI = 10000000    -- the Cousin's gacha only with money to spare
+Engine.BUY_EVERY = 5
 
 local current, startedAt
 local idleSince, lastStatus, statusSince
-local rest = {}        -- [task name] = { untilAt, why }
+local rest = {}        -- [task name] = { untilAt, why, count }
 local doneCache = {}   -- [task name] = { done, at }
 local applied = {}     -- keys the Kaitun has set
 local log = {}
-local lastTravel = -math.huge
+local lastTravel, lastBuy = -math.huge, -math.huge
 local idleName = "Idle"
-local hopNote
+local taskHop, taskHopAfter
+local hopReason, hopSince, hopNote
 
 local function now() return os.clock() end
 
@@ -65,16 +94,57 @@ local function note(text)
     while #log > Engine.LOG_SIZE do table.remove(log) end
 end
 
+local function has(name)
+    return Tasks.owned(name)
+end
+
+---------------------------------------------------------------------------
+-- Late game: the chalice plan and the haki colours
+---------------------------------------------------------------------------
+
+-- "rip" or "dough" and what it is for, or nil.
+function Engine.chalicePlan(level)
+    if level < Engine.LATE_LEVEL then return nil end
+    local colours = #Summons.missingColours() == 0
+    if colours and not has("Tushita") and not Config.skipped("Tushita") then return "rip", "Tushita" end
+    if Common.itemCount("Mirror Fractal") == 0 and not Config.skipped("MirrorFractal") then
+        return "dough", "Mirror Fractal"
+    end
+    if colours and not has("Valkyrie Helm") and not Config.skipped("ValkyrieHelm") then
+        return "rip", "Valkyrie Helm"
+    end
+    return nil
+end
+
+-- Whether rip_indra is wanted but a legendary colour is missing.
+function Engine.needsColours(level)
+    return Tasks.needsColours(level, Engine.LATE_LEVEL)
+end
+
+-- The legendary colour the dealer sells on this server, if it is missing.
+function Engine.dealerColour()
+    local reply = Common.invoke("ColorsDealer", "1")
+    if type(reply) ~= "string" then return nil end
+    for _, colour in ipairs(Summons.missingColours()) do
+        if reply:find(colour, 1, true) then return colour end
+    end
+    return nil
+end
+
 ---------------------------------------------------------------------------
 -- Layers
 ---------------------------------------------------------------------------
 
--- Helpers and the stack events of the current sea.
-function Engine.background(sea, level)
+-- Helpers and the stack events of the current sea. `anchored`: something
+-- is being done in this sea on purpose (a task of this sea, the melee chain
+-- at a teacher), so the quests that send the player to the next sea (New
+-- World, Third World) wait: they would take the player away mid-job.
+function Engine.background(sea, level, anchored)
     local keys = {
         AutoStats = true,
         StatTargets = Config.get("Stats"),
         FruitStore = Config.get("StoreFruits") == true,
+        FruitRandom = level >= 1100 and (Player.data("Beli") or 0) >= Engine.ROLL_BELI,
         AutoKen = true,
         AutoV3 = true,
         BringMob = true,
@@ -94,31 +164,41 @@ function Engine.background(sea, level)
         keys.WebhookStoreFruit = true
     end
     if sea == 1 then
-        keys.StackNewWorld = level >= Engine.SEA_LEVEL[2]
+        keys.StackNewWorld = level >= Engine.SEA_LEVEL[2] and not anchored
     elseif sea == 2 then
-        keys.StackThirdWorld = level >= Engine.SEA_LEVEL[3]
+        keys.StackThirdWorld = level >= Engine.SEA_LEVEL[3] and not anchored
         keys.StackFactory = true
         keys.StackDarkbeard = true
         keys.StackSummonDarkbeard = true
+        keys.StackChests = true
     elseif sea == 3 then
         keys.StackEliteHunter = true
         keys.StackPirateRaid = true
-        keys.StackRipIndra = true
-        keys.StackSummonRipIndra = true
-        keys.StackHakiPads = true
-        keys.StackSoulReaper = true
-        keys.StackSummonSoulReaper = true
-        keys.StackDoughKing = true
-        keys.StackSummonDoughKing = true
+        keys.StackChests = true
+        -- rip_indra, Dough King and Soul Reaper are far above the level farm
+        -- before the late game. And while Tushita is missing rip_indra must stay alive:
+        -- its torches are lit while it is up (Teddy: Tushita before Rip Indra).
+        local late = level >= Engine.LATE_LEVEL
+        keys.StackRipIndra = late and (has("Tushita") or Config.skipped("Tushita"))
+        keys.StackDoughKing = late
+        keys.StackSoulReaper = late
+        keys.StackSummonSoulReaper = late
+        -- The summons only as the chalice plan says; the pads only with a
+        -- chalice in hand (otherwise they mean a trip to the Boat Castle
+        -- every few minutes for nothing).
+        local plan = Engine.chalicePlan(level)
+        local chalice = Common.has("God's Chalice")
+        keys.StackHakiPads = plan == "rip" and chalice
+        keys.StackSummonRipIndra = plan == "rip" and chalice
+        keys.StackSummonDoughKing = plan == "dough"
     end
     return keys
 end
 
 -- Teddy's fn22: levels first, then in Sea 3 bones while Dragon Talon is
 -- locked (its Fire Essence comes from the bone gacha), then Katakuri. The
--- idle mode stays
--- on under the task (it is last in Farm.MODES), so a task with nothing to
--- do falls back to it at once.
+-- idle mode stays on under the task (it is last in Farm.MODES), so a task
+-- with nothing to do falls back to it at once.
 function Engine.idle(sea, level)
     local keys = { Weapon = Engine.weapon() }
     if level < Engine.MAX_LEVEL or sea ~= 3 then
@@ -133,7 +213,7 @@ function Engine.idle(sea, level)
     return keys, "Katakuri"
 end
 
--- The weapon for the farms (the melee manager takes over in batch 2).
+-- The farms' weapon: the melee chain does the mastery through it.
 function Engine.weapon()
     return "Melee"
 end
@@ -166,7 +246,13 @@ function Engine.blocked(task, sea, level)
     if not inSea(task, sea) then return "other sea" end
     if task.minLevel and level < task.minLevel then return "level " .. task.minLevel end
     local resting = rest[task.name]
-    if resting and now() < resting.untilAt then return "resting" end
+    if resting and now() < resting.untilAt then
+        -- Something the task waited for turned up (rip_indra for Tushita).
+        local woke = task.wake and select(2, pcall(task.wake)) == true
+        if not woke then return "resting" end
+        resting.untilAt = 0
+        note(task.name .. ": back early")
+    end
     if Engine.isDone(task) then return "done" end
     if task.ready then
         local ok, ready = pcall(task.ready)
@@ -196,19 +282,29 @@ local function taskKeysOff(wanted, list)
     end
 end
 
+-- Keys only some seas or layers set: off when they do not.
+Engine.LAYER_KEYS = {
+    "StackNewWorld", "StackThirdWorld", "StackFactory", "StackDarkbeard", "StackSummonDarkbeard",
+    "StackChests", "StackEliteHunter", "StackPirateRaid", "StackRipIndra", "StackSummonRipIndra",
+    "StackHakiPads", "StackSoulReaper", "StackSummonSoulReaper", "StackDoughKing", "StackSummonDoughKing",
+    "AutoFarmLevel", "AutoKatakuri", "AutoBone",
+}
+
+-- Whether the player should stay in this sea for now.
+function Engine.anchored(sea, task)
+    if task and inSea(task, sea) then return true end
+    return Farm.current() == Melee.mode
+end
+
 function Engine.desired(sea, level, list)
-    local wanted = Engine.background(sea, level)
+    local task = Engine.pick(sea, level, list)
+    local wanted = Engine.background(sea, level, Engine.anchored(sea, task))
     local idleKeys, name = Engine.idle(sea, level)
     for key, value in pairs(idleKeys) do wanted[key] = value end
-    local task = Engine.pick(sea, level, list)
     if task then
         for key, value in pairs(Tasks.keysOf(task)) do wanted[key] = value end
     end
-    -- Keys that only one layer sets go back to off when that layer stops.
-    for _, key in ipairs({ "StackNewWorld", "StackThirdWorld", "StackFactory", "StackDarkbeard",
-        "StackSummonDarkbeard", "StackEliteHunter", "StackPirateRaid", "StackRipIndra",
-        "StackSummonRipIndra", "StackHakiPads", "StackSoulReaper", "StackSummonSoulReaper",
-        "StackDoughKing", "StackSummonDoughKing", "AutoFarmLevel", "AutoKatakuri", "AutoBone" }) do
+    for _, key in ipairs(Engine.LAYER_KEYS) do
         if wanted[key] == nil then wanted[key] = false end
     end
     taskKeysOff(wanted, list)
@@ -229,51 +325,52 @@ end
 ---------------------------------------------------------------------------
 
 function Engine.rest(task, seconds, why)
-    rest[task.name] = { untilAt = now() + seconds, why = why }
+    local previous = rest[task.name]
+    local count = (previous and previous.count or 0) + 1
+    seconds = math.min(seconds * 2 ^ (count - 1), Engine.REST_MAX)
+    rest[task.name] = { untilAt = now() + seconds, why = why, count = count }
     note(task.name .. " rests " .. math.floor(seconds / 60) .. " min: " .. why)
 end
 
+-- Returns true while the task's mode is working.
 local function watch(task)
     local t = now()
+    taskHop, taskHopAfter = nil, nil
     if task ~= current then
         if current then note("done with " .. current.name) end
         current, startedAt, idleSince, lastStatus, statusSince = task, t, nil, nil, t
-        hopNote = nil
         if task then note("task: " .. task.name) end
     end
-    if not task then return end
+    if not task then return false end
+
+    if Config.get("Hop") == true and task.hop then
+        local ok, reason = pcall(task.hop)
+        if ok and type(reason) == "string" then
+            -- Waiting for a hop is not being stuck.
+            taskHop, taskHopAfter = reason, task.hopAfter
+            idleSince, statusSince = nil, t
+            return false
+        end
+    end
 
     local mode = task.mode
     if mode then
         local ok, enabled = pcall(mode.enabled)
         if not (ok and enabled) then
-            local reason
-            if Config.get("Hop") == true and task.hop then
-                local okHop, why = pcall(task.hop)
-                reason = okHop and why or nil
-            end
-            if type(reason) == "string" then
-                -- Common.hop waits until the reason has held a while.
-                idleSince = nil
-                hopNote = reason
-                if Common.hop(reason) then note("hop: " .. reason) end
-                return
-            end
             idleSince = idleSince or t
             if t - idleSince >= Engine.IDLE_LIMIT then
                 Engine.rest(task, Engine.IDLE_PAUSE, "nothing to do (" .. tostring(mode.status) .. ")")
                 current = nil
             end
-            return
+            return false
         end
         idleSince = nil
-        hopNote = nil
     end
 
     if t - startedAt >= (task.maxTime or Engine.DEFAULT_MAX_TIME) then
         Engine.rest(task, Engine.STUCK_PAUSE, "took too long")
         current = nil
-        return
+        return false
     end
     -- Only the task's own status counts: a stack event in between is not
     -- the task being stuck.
@@ -284,9 +381,81 @@ local function watch(task)
         elseif t - statusSince >= Engine.STUCK_LIMIT then
             Engine.rest(task, Engine.STUCK_PAUSE, "stuck on \"" .. status .. "\"")
             current = nil
+            return false
         end
     else
         statusSince = t
+    end
+    return true
+end
+
+---------------------------------------------------------------------------
+-- Late game hops and purchases
+---------------------------------------------------------------------------
+
+-- A reason to change server, or nil (Teddy's Swan Door / haki colour /
+-- Mirror Fractal / Valkyrie Helm hops).
+function Engine.lateHop(sea, level)
+    if sea == 2 and level >= Engine.SEA_LEVEL[3] and StackWorld.needsTrevorFruit() then
+        -- A fruit worth 1M is bought (purchases) once the money is there;
+        -- far from it, a fruit on the ground of another server is quicker.
+        local _, price = StackWorld.cheapestTrevorFruit()
+        if not price or (Player.data("Beli") or 0) < price / 2 then return "Swan door: no fruit worth 1M" end
+    end
+    -- Hopping instead of levelling would slow everything else down: the
+    -- late game hops wait for the max level, as in Teddy.
+    if sea ~= 3 or level < Engine.MAX_LEVEL then return nil end
+    if Engine.needsColours(level) and (Player.data("Fragments") or 0) >= Engine.COLOUR_FRAGMENTS
+        and not Engine.dealerColour() then
+        return "haki colour dealer"
+    end
+    local plan, goal = Engine.chalicePlan(level)
+    if not plan then return nil end
+    if Common.has("God's Chalice") or Common.has("Sweet Chalice") or EliteHunter.find() then return nil end
+    if plan == "dough" then
+        if Common.itemCount("Conjured Cocoa") < Engine.COCOA or Enemies.findBoss("Dough King") then return nil end
+        return goal .. ": no elite for a chalice"
+    end
+    if Enemies.findBoss("rip_indra True Form") then return nil end
+    return goal .. ": no elite for a chalice"
+end
+
+-- Purchases that unblock a step: Trevor's fruit, a legendary haki colour.
+local function purchases(sea, level)
+    local t = now()
+    if t - lastBuy < Engine.BUY_EVERY then return end
+    if sea == 2 and level >= Engine.SEA_LEVEL[3] and StackWorld.needsTrevorFruit() then
+        local fruit, price = StackWorld.cheapestTrevorFruit()
+        if fruit and (Player.data("Beli") or 0) >= price then
+            lastBuy = t
+            Services.invoke("PurchaseRawFruit", fruit)
+            Common.forget()
+            note("bought " .. fruit .. " for Trevor")
+        end
+        return
+    end
+    if sea >= 2 and Engine.needsColours(level) then
+        local colour = Engine.dealerColour()
+        if colour and (Player.data("Fragments") or 0) >= Engine.COLOUR_FRAGMENTS then
+            lastBuy = t
+            Services.invoke("ColorsDealer", "2")
+            Common.forget()
+            note("bought the haki colour " .. colour)
+        end
+    end
+end
+
+local function hopFor(reason, after)
+    hopNote = reason
+    if not reason then
+        hopReason, hopSince = nil, nil
+        return
+    end
+    local t = now()
+    if reason ~= hopReason then hopReason, hopSince = reason, t end
+    if t - hopSince >= (after or Engine.HOP_AFTER) and Common.hop(reason, true) then
+        note("hop: " .. reason)
+        hopSince = t
     end
 end
 
@@ -304,7 +473,7 @@ end
 
 local function travel(sea, level, task)
     local target = Engine.wantedSea(level)
-    if sea >= target or (task and inSea(task, sea)) then return end
+    if sea >= target or Engine.anchored(sea, task) then return end
     local t = now()
     if t - lastTravel < Engine.TRAVEL_EVERY then return end
     lastTravel = t
@@ -320,7 +489,15 @@ function Engine.tick()
     local wanted, task, name = Engine.desired(sea, level)
     idleName = name
     Engine.apply(wanted)
-    watch(task)
+    local working = watch(task)
+    pcall(purchases, sea, level)
+
+    local reason, after = taskHop, taskHopAfter
+    if not reason and not working and Config.get("Hop") == true and Farm.current() ~= StackFarm then
+        local ok, late = pcall(Engine.lateHop, sea, level)
+        reason = ok and late or nil
+    end
+    hopFor(reason, after)
     travel(sea, level, task)
 end
 
@@ -355,9 +532,9 @@ end
 function Engine.reset()
     current, startedAt, idleSince, lastStatus, statusSince = nil, nil, nil, nil, nil
     rest, doneCache, applied, log = {}, {}, {}, {}
-    lastTravel = -math.huge
+    lastTravel, lastBuy = -math.huge, -math.huge
     idleName = "Idle"
-    hopNote = nil
+    taskHop, taskHopAfter, hopReason, hopSince, hopNote = nil, nil, nil, nil, nil
 end
 
 return Engine

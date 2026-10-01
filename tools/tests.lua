@@ -3182,7 +3182,9 @@ do
     eq("sea 2: no elite hunter", sea2.StackEliteHunter, nil)
     local sea3 = KEngine.background(3, 2000)
     eq("sea 3: elite hunter", sea3.StackEliteHunter, true)
-    eq("sea 3: dough king", sea3.StackDoughKing, true)
+    eq("sea 3 before the late game: no Dough King", sea3.StackDoughKing, false)
+    eq("sea 3 before the late game: no rip_indra", sea3.StackRipIndra, false)
+    eq("sea 3 late: Dough King", KEngine.background(3, 2500).StackDoughKing, true)
     eq("sea 3: no New World", sea3.StackNewWorld, nil)
     eq("helpers on", sea3.AutoStats, true)
     eq("no webhook without a url", sea3.WebhookUrl, nil)
@@ -3386,7 +3388,7 @@ meleeSetup(7449423635, 2000, {
     { Name = "Fish Tail", Type = "Material", Count = 20 }, { Name = "Magma Ore", Type = "Material", Count = 3 },
 }, { BuyGodhuman = 2 }, 6000000, 6000)
 do
-    eq("godhuman: first missing material", Melee.missingMaterial(), "Magma Ore")
+    eq("godhuman: first missing material", Melee.missingMaterial(), "Dragon Scale")
     eq("godhuman: waits on the materials", Melee.missing(Melee.step("Godhuman")), "unlock")
 end
 
@@ -3406,7 +3408,11 @@ do
     Settings.set("ItemDragonTalon", true)
     check("fire essence: rolls with 50+ bones", Melee.dragonTalon.enabled())
     Melee.dragonTalon.tick()
-    eq("fire essence: bone gacha", #calls(world.commF, "Bones"), 1)
+    local buys = 0
+    for _, call in ipairs(calls(world.commF, "Bones")) do
+        if call[2] == "Buy" then buys = buys + 1 end
+    end
+    eq("fire essence: bone gacha", buys, 1)
 end
 
 -- Electric: the Lightning Bolt quest.
@@ -3477,6 +3483,8 @@ do
         hop = function() return "no Tide Keeper" end } }
     local limit = KEngine.IDLE_LIMIT
     KEngine.IDLE_LIMIT = 0
+    local hopAfter = KEngine.HOP_AFTER
+    KEngine.HOP_AFTER = 0
     KEngine.tick()
     eq("hop: asked for the missing boss", hops, 1)
     eq("hop: not rested instead", KEngine.blocked(KTasks.LIST[1], 2, 1200), nil)
@@ -3490,6 +3498,7 @@ do
     eq("hop off: rested", KEngine.blocked(KTasks.LIST[1], 2, 1200), "resting")
 
     KEngine.IDLE_LIMIT = limit
+    KEngine.HOP_AFTER = hopAfter
     CommonModule.HOP_AFTER = afterHop
     Server.hop = realHop
     KTasks.LIST = saved
@@ -3508,6 +3517,239 @@ do
     eq("serialized config: skip", env.StrawberryKaitun.Skip.CDK, true)
     eq("serialized config: quotes kept", env.StrawberryKaitun.WebhookUrl, 'a"b')
     KConfig.reset()
+end
+
+---------------------------------------------------------------------------
+-- Kaitun late game: chalice plan, Valkyrie Helm / Mirror Fractal / Swan /
+-- haki colour hops, anchoring, rests, wake
+---------------------------------------------------------------------------
+
+local KSummons = require("Features.Stack.Summons")
+
+local function colours(unlocked)
+    return function()
+        return {
+            { HiddenName = "Winter Sky", Unlocked = unlocked },
+            { HiddenName = "Pure Red", Unlocked = unlocked },
+            { HiddenName = "Snow White", Unlocked = unlocked },
+        }
+    end
+end
+
+local function lateSetup(inventory, answers, fragments)
+    meleeSetup(7449423635, 2500, inventory, answers, 0, fragments or 0)
+    KConfig.reset()
+    KEngine.reset()
+    KSummons.reset()
+end
+
+local function tool(name)
+    local t = newInstance("Tool", name, world.player.Backpack)
+    return t
+end
+
+lateSetup({}, { getColors = colours(false) })
+do
+    eq("plan: colours missing, no Mirror Fractal -> Dough King", (KEngine.chalicePlan(2500)), "dough")
+    eq("plan: nothing before the late game", KEngine.chalicePlan(2000), nil)
+    check("colours needed", KEngine.needsColours(2500))
+    local keys = KEngine.background(3, 2500, false)
+    eq("dough plan: Dough King summon on", keys.StackSummonDoughKing, true)
+    eq("dough plan: no pads", keys.StackHakiPads, false)
+    eq("Tushita missing: rip_indra left alive", keys.StackRipIndra, false)
+end
+
+lateSetup({}, { getColors = colours(true) })
+do
+    local plan, goal = KEngine.chalicePlan(2500)
+    eq("plan: colours in, no Tushita -> rip_indra", plan, "rip")
+    eq("plan: for Tushita", goal, "Tushita")
+    eq("rip plan without a chalice: no pads", KEngine.background(3, 2500, false).StackHakiPads, false)
+    tool("God's Chalice")
+    local keys = KEngine.background(3, 2500, false)
+    eq("rip plan with a chalice: pads", keys.StackHakiPads, true)
+    eq("rip plan with a chalice: summon", keys.StackSummonRipIndra, true)
+end
+
+lateSetup({ { Name = "Tushita", Type = "Sword", Count = 1 }, { Name = "Mirror Fractal", Type = "Material", Count = 1 } },
+    { getColors = colours(true) })
+do
+    local plan, goal = KEngine.chalicePlan(2500)
+    eq("plan: Tushita and Mirror Fractal in -> rip_indra", plan, "rip")
+    eq("plan: for the Valkyrie Helm", goal, "Valkyrie Helm")
+    eq("Tushita owned: rip_indra fought", KEngine.background(3, 2500, false).StackRipIndra, true)
+    eq("helm hop: no elite, no rip_indra", KEngine.lateHop(3, 2800), "Valkyrie Helm: no elite for a chalice")
+    eq("late hops wait for the max level", KEngine.lateHop(3, 2500), nil)
+    mob("Diablo", Vector3.new(0, 0, 50))
+    eq("helm hop: an elite here -> stay", KEngine.lateHop(3, 2800), nil)
+end
+
+lateSetup({ { Name = "Conjured Cocoa", Type = "Material", Count = 10 } }, { getColors = colours(true) })
+do
+    -- Tushita owned through the tool, no Mirror Fractal.
+    tool("Tushita")
+    eq("mirror hop: cocoa in, no chalice, no elite", KEngine.lateHop(3, 2800), "Mirror Fractal: no elite for a chalice")
+    tool("Sweet Chalice")
+    eq("mirror hop: Sweet Chalice held -> stay", KEngine.lateHop(3, 2800), nil)
+end
+
+lateSetup({ { Name = "Conjured Cocoa", Type = "Material", Count = 3 } }, { getColors = colours(true) })
+do
+    tool("Tushita")
+    eq("mirror: cocoa still to farm -> no hop", KEngine.lateHop(3, 2800), nil)
+end
+
+local dealer = "Pure Red"
+lateSetup({}, {
+    getColors = function()
+        return { { HiddenName = "Winter Sky", Unlocked = true }, { HiddenName = "Pure Red", Unlocked = true },
+            { HiddenName = "Snow White", Unlocked = false } }
+    end,
+    ColorsDealer = function(what) if what == "1" then return dealer end return 1 end,
+}, 8000)
+do
+    eq("colours: dealer without the missing one -> hop", KEngine.lateHop(3, 2800), "haki colour dealer")
+    dealer = "Snow White"
+    require("Features.Stack.Common").forget()
+    eq("colours: dealer has it -> no hop", KEngine.lateHop(3, 2800), nil)
+    KEngine.tick()
+    local buys = 0
+    for _, call in ipairs(calls(world.commF, "ColorsDealer")) do
+        if call[2] == "2" then buys = buys + 1 end
+    end
+    eq("colours: bought", buys, 1)
+    eq("fragment goal covers a colour", KTasks.fragmentGoal(), 7500)
+end
+
+local fruitStock = { { Name = "Leopard-Leopard", Price = 5000000, OnSale = true },
+    { Name = "Buddha-Buddha", Price = 1200000, OnSale = true }, { Name = "Spin-Spin", Price = 7500, OnSale = true } }
+local function swanSetup(beli)
+    meleeSetup(4442272183, 1600, {}, {
+        BartiloQuestProgress = 3, TalkTrevor = 1, GetFruits = fruitStock,
+    }, beli)
+    KConfig.reset()
+    KEngine.reset()
+end
+swanSetup(100000)
+do
+    local World = require("Features.Stack.World")
+    check("swan: Trevor needs a fruit", World.needsTrevorFruit())
+    eq("swan: cheapest fruit worth 1M", (World.cheapestTrevorFruit()), "Buddha-Buddha")
+    eq("swan: far from the money -> hop", KEngine.lateHop(2, 1600), "Swan door: no fruit worth 1M")
+end
+swanSetup(700000)
+do
+    eq("swan: half the money there -> keep farming", KEngine.lateHop(2, 1600), nil)
+end
+swanSetup(2000000)
+do
+    KEngine.tick()
+    local bought = calls(world.commF, "PurchaseRawFruit")[1]
+    eq("swan: buys the cheapest fruit worth 1M", bought and bought[2], "Buddha-Buddha")
+end
+
+-- Anchoring: a Sea 1 task keeps the New World quest (which travels) off.
+kaitunSetup(2753915549, 800)
+do
+    local list = { { name = "Here", priority = 1, seas = { 1 }, keys = { ItemSaber = true } } }
+    local wanted = KEngine.desired(1, 800, list)
+    eq("anchored: New World waits", wanted.StackNewWorld, false)
+    wanted = KEngine.desired(1, 800, {})
+    eq("free: New World on", wanted.StackNewWorld, true)
+end
+
+-- Rests double, and wake() ends one early.
+kaitunSetup(7449423635, 2500)
+do
+    local task = { name = "Twice", priority = 1, seas = { 3 }, keys = {} }
+    KEngine.rest(task, 100, "test")
+    local first = tonumber(KEngine.status().resting[1]:match("(%d+)s"))
+    KEngine.rest(task, 100, "test")
+    local second = tonumber(KEngine.status().resting[1]:match("(%d+)s"))
+    check("second rest twice as long", second >= 199 and first <= 100, tostring(first) .. " / " .. tostring(second))
+    local boss = false
+    local sleeper = { name = "Sleeper", priority = 1, seas = { 3 }, keys = {}, wake = function() return boss end }
+    KEngine.rest(sleeper, 300, "waiting")
+    eq("resting until woken", KEngine.blocked(sleeper, 3, 2500), "resting")
+    boss = true
+    eq("woken early", KEngine.blocked(sleeper, 3, 2500), nil)
+end
+
+-- The pads give up on a pad that will not light.
+kaitunSetup(7449423635, 2500)
+do
+    local castle = folder("Boat Castle", folder("Map", workspace))
+    local summoner = folder("Summoner", castle)
+    local circle = folder("Circle", summoner)
+    local padPart = part("Pad", Vector3.new(0, 0, 0), circle)
+    local light = part("Part", Vector3.new(0, 0, 0), padPart)
+    light.BrickColor = BrickColor and BrickColor.new("Really red") or nil
+    Settings.set("StackHakiPads", true)
+    local giveUp = KSummons.PAD_GIVE_UP
+    KSummons.PAD_GIVE_UP = 0
+    local fake = { target = nil }
+    KSummons.run(fake, true, false)
+    local status = KSummons.run(fake, true, false)
+    check("pads: gave up", status:find("will not light", 1, true) ~= nil, status)
+    check("pads: resting afterwards", KSummons.resting())
+    check("pads: not wanted while resting", not KSummons.want())
+    KSummons.PAD_GIVE_UP = giveUp
+end
+
+-- Fruits taken out on purpose are not stored straight back.
+batchBSetup()
+do
+    local FruitsModule = require("Features.Fruits")
+    local fruitTool = newInstance("Tool", "Buddha Fruit", world.player.Backpack)
+    FruitsModule.keep("Buddha-Buddha", 60)
+    eq("kept fruit not stored", FruitsModule.storeNext(), nil)
+    FruitsModule.reset()
+    eq("without keep it is stored", FruitsModule.storeNext(), fruitTool)
+end
+
+-- The melee chain lets go of a style the server keeps refusing.
+meleeSetup(2753915549, 100, { style("Dark Step", 150) }, {}, 200000)
+do
+    Settings.set("ItemMeleeProgress", true)
+    local every = Melee.LOAD_EVERY
+    Melee.LOAD_EVERY = 0
+    for _ = 1, Melee.MAX_TRIES do Melee.mode.tick() end
+    check("melee: given up after the tries", Melee.givenUp("Black Leg"))
+    check("melee: mode lets the farm run", not Melee.mode.enabled())
+    Melee.LOAD_EVERY = every
+end
+
+-- Tushita and Yama to 350.
+itemsSetup(7449423635, 2500, { { Name = "Tushita", Type = "Sword", Mastery = 400 }, { Name = "Yama", Type = "Sword", Mastery = 120 } })
+do
+    eq("cdk mastery: the sword behind", Cdk.masteryTarget(), "Yama")
+end
+itemsSetup(7449423635, 2500, { { Name = "Tushita", Type = "Sword", Mastery = 400 }, { Name = "Yama", Type = "Sword", Mastery = 360 } })
+do
+    eq("cdk mastery: both at 350", Cdk.masteryTarget(), nil)
+end
+
+-- The Library Key from Sea 3, once Black Leg is at 400.
+meleeSetup(7449423635, 2500, { style("Dark Step", 400) }, { BuyDeathStep = 0 })
+do
+    check("library key: needed", Melee.libraryKey.needed())
+    Settings.set("ItemLibraryKey", true)
+    check("library key: wanted from Sea 3", Melee.libraryKey.enabled())
+    Melee.libraryKey.tick()
+    eq("library key: travels to Sea 2", Melee.libraryKey.status, "Travelling to Sea 2 for the Library Key")
+end
+meleeSetup(7449423635, 2500, { style("Dark Step", 200) }, { BuyDeathStep = 0 })
+do
+    check("library key: not needed yet", not Melee.libraryKey.needed())
+end
+
+-- Electric: no cloud in Sea 1 -> a hop reason for the Kaitun.
+meleeSetup(2753915549, 300, {}, { ElectroQuestState = 1 }, 600000)
+do
+    local electric
+    for _, task in ipairs(KTasks.LIST) do if task.name == "Electric" then electric = task end end
+    eq("electric: hop when no cloud", electric.hop(), "no charged storm cloud")
+    eq("electric: waits 3 minutes first", electric.hopAfter, 180)
 end
 
 ---------------------------------------------------------------------------

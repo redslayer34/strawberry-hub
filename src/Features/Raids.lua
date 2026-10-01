@@ -15,6 +15,7 @@
 local Common = require("Features.Stack.Common")
 local Enemies = require("Game.Enemies")
 local Events = require("Features.Stack.Events")
+local Fruits = require("Features.Fruits")
 local Mode = require("Features.Other.Mode")
 local Movement = require("Game.Movement")
 local Player = require("Core.Player")
@@ -163,6 +164,7 @@ function Raids.buyChip()
     if Player.level() < Raids.MIN_LEVEL then return nil end
     local cheap = Settings.get("RaidCheapFruit") and not holdsFruit() and Raids.cheapFruit()
     if cheap and Common.every("RaidLoadFruit", 3) then
+        Fruits.keep(cheap, 60)
         Services.invoke("LoadFruit", cheap)
         Common.forget()
     end

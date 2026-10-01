@@ -17,12 +17,15 @@
 --    done()     optional: finished for good (the screen's checklist)
 --    maxTime    optional: seconds before the watchdog gives it a rest
 --    hop()      optional: what this server lacks for the task (a reason
---               to change server), checked while its mode has nothing to do
+--               to change server); hopAfter: how long it must hold
+--    wake()     optional: ends a rest early (what the task waited for is
+--               here)
 --    group      optional: a second Skip key (Skip.Godhuman skips every
 --               step of the melee chain)
 --=============================================================================
 
 local Cdk = require("Features.Items.Cdk")
+local Enemies = require("Game.Enemies")
 local Common = require("Features.Stack.Common")
 local Config = require("Kaitun.Config")
 local Electric = require("Features.Items.Electric")
@@ -33,9 +36,12 @@ local Player = require("Core.Player")
 local RaceUpgrade = require("Features.Races.Upgrade")
 local Raids = require("Features.Raids")
 local Saber = require("Features.Items.Saber")
+local Summons = require("Features.Stack.Summons")
 local Swords = require("Features.Items.Swords")
 
 local Tasks = {}
+
+Tasks.MAX_LEVEL = 2800
 
 local function owned(name)
     return Common.has(name) or Common.itemCount(name) > 0
@@ -72,21 +78,67 @@ function Tasks.awakening()
     return can, any and all
 end
 
+Tasks.RAID_BELI = 1000000
+
+-- A raid chip held, or something to pay one with: a fruit under 1M in the
+-- storage (Raids loads it), or money.
+function Tasks.canPayRaid()
+    return Common.has("Special Microchip") or Raids.cheapFruit() ~= nil
+        or (Player.data("Beli") or 0) >= Tasks.RAID_BELI
+end
+
+Tasks.COLOUR_FRAGMENTS = 7500
+
+-- Whether rip_indra is wanted (Tushita, Valkyrie Helm) but one of the three
+-- legendary haki colours its pads need is missing.
+function Tasks.needsColours(level, lateLevel)
+    if (level or 0) < lateLevel or Config.skipped("HakiColours") then return false end
+    local wanted = (not owned("Tushita") and not Config.skipped("Tushita"))
+        or (not owned("Valkyrie Helm") and not Config.skipped("ValkyrieHelm"))
+    return wanted and #Summons.missingColours() > 0
+end
+
+-- The fragments the next step waits on: a style of the melee chain, the
+-- Soul Guitar, a legendary haki colour (late game).
+function Tasks.fragmentGoal(lateLevel)
+    local goal = 0
+    if Tasks.needsColours(Player.level(), lateLevel or 2200) then goal = Tasks.COLOUR_FRAGMENTS end
+    if not Config.skipped("Godhuman") then goal = math.max(goal, Melee.fragmentsNeeded()) end
+    if not Config.skipped("SoulGuitar") and not owned("Skull Guitar") and Guitar.missing() == nil
+        and (Player.level() or 0) >= 2300 then
+        goal = math.max(goal, Guitar.FRAGMENTS)
+    end
+    return goal
+end
+
 Tasks.LIST = {
     {
         name = "CDK", priority = 1, seas = { 3 }, mode = Cdk.mode,
         keys = { ItemCDK = true },
+        maxTime = 7200,
         ready = function() return Cdk.requirements() == nil end,
         done = function() return owned("Cursed Dual Katana") end,
     },
     {
+        -- Tushita and Yama to 350 for the CDK (Teddy's Items Farm Force).
+        name = "CdkMastery", group = "CDK", priority = 2, seas = { 3 }, mode = Cdk.mastery,
+        keys = { ItemCdkMastery = true },
+        ready = function() return Cdk.masteryTarget() ~= nil end,
+        done = function() return owned("Cursed Dual Katana") end,
+        maxTime = 7200,
+    },
+    {
+        -- Only possible while rip_indra True Form is alive: rests until then.
         name = "Tushita", priority = 1, seas = { 3 }, mode = Swords.tushita,
         keys = { ItemTushita = true },
         done = function() return owned("Tushita") end,
+        wake = function() return Enemies.findBoss({ "rip_indra True Form", "Longma" }) ~= nil end,
     },
     {
         name = "SoulGuitar", priority = 3, seas = { 2, 3 }, minLevel = 2300, mode = Guitar.mode,
         keys = function() return { ItemSoulGuitar = true, GuitarHopMoon = Config.get("Hop") == true } end,
+        -- Materials need no fragments; the rest does.
+        ready = function() return Guitar.missing() ~= nil or (Player.data("Fragments") or 0) >= Guitar.FRAGMENTS end,
         done = function() return owned("Skull Guitar") end,
         maxTime = 3600,
     },
@@ -103,15 +155,32 @@ Tasks.LIST = {
     },
     {
         name = "AwakenFruit", priority = 6, seas = { 2, 3 }, minLevel = Raids.MIN_LEVEL, mode = Raids.solo,
-        keys = function() return { RaidAuto = true, FruitAwaken = true, RaidName = Tasks.fruitRaid() or "Flame" } end,
+        keys = function()
+            return { RaidAuto = true, FruitAwaken = true, RaidCheapFruit = true, RaidName = Tasks.fruitRaid() or "Flame" }
+        end,
         ready = function()
-            if not Tasks.fruitRaid() then return false end
+            local raid = Tasks.fruitRaid()
+            -- Dough awakens differently (Teddy leaves it out too).
+            if not raid or raid == "Dough" or not Tasks.canPayRaid() then return false end
             local can = Tasks.awakening()
             return can
         end,
         done = function()
             local _, all = Tasks.awakening()
             return all
+        end,
+        maxTime = 1800,
+    },
+    {
+        -- Teddy's Minimum Fragment: raids while fragments hold a step back.
+        name = "Fragments", priority = 6, seas = { 2, 3 }, minLevel = Raids.MIN_LEVEL, mode = Raids.solo,
+        keys = function()
+            local raid = Tasks.fruitRaid()
+            if raid == "Dough" then raid = nil end
+            return { RaidAuto = true, RaidCheapFruit = true, FruitAwaken = true, RaidName = raid or "Flame" }
+        end,
+        ready = function()
+            return (Player.data("Fragments") or 0) < Tasks.fragmentGoal() and Tasks.canPayRaid()
         end,
         maxTime = 1800,
     },
@@ -135,26 +204,32 @@ Tasks.LIST = {
                 and Melee.mastery("Fishman Karate") >= Melee.SUPERHUMAN_NEEDS
         end,
         done = function() return Electric.owned() end,
-        maxTime = 1800,
+        -- The charged clouds are rare: after 3 minutes without one, another
+        -- server.
+        hop = function()
+            if Player.sea() ~= 1 then return nil end
+            local state = Electric.state()
+            if (state == 1 or state == 2) and not Electric.target() then return "no charged storm cloud" end
+            return nil
+        end,
+        hopAfter = 180,
+        maxTime = 3600,
     },
     {
-        name = "LibraryKey", group = "Godhuman", priority = 4, seas = { 2 }, mode = Melee.libraryKey,
+        -- Teddy's Library Key / Water Key and Sea 2 Key Hop: from Sea 3 only
+        -- once the key holds the style back; then hop for the boss.
+        name = "LibraryKey", group = "Godhuman", priority = 4, seas = { 2, 3 }, minLevel = 850, mode = Melee.libraryKey,
         keys = { ItemLibraryKey = true },
+        ready = function() return Player.sea() == 2 or Melee.libraryKey.needed() end,
         done = function() return Melee.unlocked("Death Step") end,
-        -- Teddy's Sea 2 Key Hop, once the key is what holds Death Step back.
-        hop = function()
-            if Melee.mastery("Black Leg") >= Melee.TARGET then return "no Awakened Ice Admiral" end
-            return nil
-        end,
+        hop = function() return Melee.libraryKey.needed() and Melee.libraryKey.missing() or nil end,
     },
     {
-        name = "WaterKey", group = "Godhuman", priority = 4, seas = { 2 }, mode = Melee.waterKey,
+        name = "WaterKey", group = "Godhuman", priority = 4, seas = { 2, 3 }, minLevel = 850, mode = Melee.waterKey,
         keys = { ItemWaterKey = true },
+        ready = function() return Player.sea() == 2 or Melee.waterKey.needed() end,
         done = function() return Melee.unlocked("Sharkman Karate") end,
-        hop = function()
-            if Melee.mastery("Fishman Karate") >= Melee.TARGET then return "no Tide Keeper" end
-            return nil
-        end,
+        hop = function() return Melee.waterKey.needed() and Melee.waterKey.missing() or nil end,
     },
     {
         name = "FireEssence", group = "Godhuman", priority = 6, seas = { 3 }, mode = Melee.dragonTalon,
@@ -175,7 +250,11 @@ Tasks.LIST = {
     },
     {
         name = "Yama", priority = 9, seas = { 3 }, mode = Swords.yama,
-        keys = function() return { ItemYama = true, StackHopElite = Config.get("Hop") == true } end,
+        -- Elite hops only at the max level: before, they would replace the
+        -- level farm (the task comes up whenever nothing else does).
+        keys = function()
+            return { ItemYama = true, StackHopElite = Config.get("Hop") == true and (Player.level() or 0) >= Tasks.MAX_LEVEL }
+        end,
         done = function() return owned("Yama") end,
     },
 }
@@ -188,6 +267,7 @@ Tasks.CHECKLIST = {
     { label = "CDK", item = "Cursed Dual Katana" },
     { label = "Soul Guitar", item = "Skull Guitar" },
     { label = "Godhuman", item = "Godhuman" },
+    { label = "Helm", item = "Valkyrie Helm" },
 }
 
 function Tasks.keysOf(task)
