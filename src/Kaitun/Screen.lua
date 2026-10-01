@@ -13,6 +13,7 @@
 
 local Engine = require("Kaitun.Engine")
 local Farm = require("Features.Farm")
+local Logo = require("UI.Logo")
 local Loop = require("Core.Loop")
 local Melee = require("Features.Items.Melee")
 local Player = require("Core.Player")
@@ -184,15 +185,31 @@ function Screen.build()
     logo.Parent = center
     corner(logo, UDim.new(1, 0))
     stroke(logo, RED, 3)
-    local berry = Instance.new("TextLabel")
-    berry.Name = "Berry"
-    berry.Size = UDim2.new(1, 0, 0.7, 0)
-    berry.BackgroundTransparency = 1
-    berry.Text = "🍓"
-    berry.TextSize = 54
-    berry.Font = Enum.Font.GothamBold
-    berry.TextColor3 = RED
-    berry.Parent = logo
+    -- The pixel strawberry when the executor can show a local image, the
+    -- emoji otherwise.
+    local image = Logo.asset()
+    if image then
+        local berry = Instance.new("ImageLabel")
+        berry.Name = "Berry"
+        berry.AnchorPoint = Vector2.new(0.5, 0)
+        berry.Position = UDim2.new(0.5, 0, 0.08, 0)
+        berry.Size = UDim2.new(0.56, 0, 0.56, 0)
+        berry.BackgroundTransparency = 1
+        berry.Image = image
+        berry.ScaleType = Enum.ScaleType.Fit
+        pcall(function() berry.ResampleMode = Enum.ResamplerMode.Pixelated end)
+        berry.Parent = logo
+    else
+        local berry = Instance.new("TextLabel")
+        berry.Name = "Berry"
+        berry.Size = UDim2.new(1, 0, 0.7, 0)
+        berry.BackgroundTransparency = 1
+        berry.Text = "🍓"
+        berry.TextSize = 54
+        berry.Font = Enum.Font.GothamBold
+        berry.TextColor3 = RED
+        berry.Parent = logo
+    end
     local small = Instance.new("TextLabel")
     small.Name = "LogoName"
     small.Position = UDim2.new(0, 0, 0.66, 0)
@@ -268,31 +285,53 @@ local function short(number)
     return tostring(math.floor(number))
 end
 
+-- Each line on its own: one that fails shows "?" and the error goes in the
+-- last line, instead of every line staying empty.
+local screenError
+local function safe(fn)
+    local ok, value = pcall(fn)
+    if ok then return tostring(value) end
+    screenError = screenError or tostring(value)
+    return "?"
+end
+
 -- The text of every line, separate from the Instances so tests can read it.
 function Screen.lines()
-    local status = Engine.status()
-    local items = {}
-    for _, entry in ipairs(Tasks.CHECKLIST) do
-        local ok, has = pcall(Tasks.owned, entry.item)
-        items[#items + 1] = ((ok and has) and "✔ " or "✘ ") .. entry.label
-    end
+    screenError = nil
+    local status = select(2, pcall(Engine.status))
+    if type(status) ~= "table" then status = { log = {}, resting = {} } end
     local session = os.clock() - startedAt
-    local task = status.task or ("idle: " .. tostring(status.idle))
-    return {
+    local lines = {
         Running = "Kaitun Running" .. string.rep(".", tick % 3 + 1),
         Time = "Time: " .. clock(session) .. "  •  Total: " .. clock(totalBefore + session),
-        Task = "Task: " .. task .. (status.hop and ("  (hop soon: " .. status.hop .. ")") or ""),
-        Status = tostring(Farm.status()),
-        Level = "Level: " .. tostring(Player.level()),
-        Fragments = "Fragments: " .. short(Player.data("Fragments")),
-        Beli = "Beli: " .. short(Player.data("Beli")),
-        Money = "Beli " .. short(Player.data("Beli")) .. "  ·  Fragments " .. short(Player.data("Fragments")),
-        Melee = "Melee: " .. Melee.describe(),
-        Sea = "Sea: " .. tostring(Player.sea()),
-        Items = table.concat(items, "   "),
-        Resting = #status.resting > 0 and ("Resting: " .. table.concat(status.resting, ", ")) or "",
-        Last = status.log[1] or "",
+        Task = safe(function()
+            local task = status.task or ("idle: " .. tostring(status.idle))
+            return "Task: " .. task .. (status.hop and ("  (hop soon: " .. status.hop .. ")") or "")
+        end),
+        Status = safe(Farm.status),
+        Level = "Level: " .. safe(Player.level),
+        Fragments = "Fragments: " .. safe(function() return short(Player.data("Fragments")) end),
+        Beli = "Beli: " .. safe(function() return short(Player.data("Beli")) end),
+        Money = safe(function()
+            return "Beli " .. short(Player.data("Beli")) .. "  ·  Fragments " .. short(Player.data("Fragments"))
+        end),
+        Melee = "Melee: " .. safe(Melee.describe),
+        Sea = "Sea: " .. safe(Player.sea),
+        Items = safe(function()
+            local items = {}
+            for _, entry in ipairs(Tasks.CHECKLIST) do
+                local ok, has = pcall(Tasks.owned, entry.item)
+                items[#items + 1] = ((ok and has) and "✔ " or "✘ ") .. entry.label
+            end
+            return table.concat(items, "   ")
+        end),
+        Resting = safe(function()
+            return #status.resting > 0 and ("Resting: " .. table.concat(status.resting, ", ")) or ""
+        end),
+        Last = safe(function() return status.log[1] or "" end),
     }
+    if screenError then lines.Last = "screen error: " .. screenError end
+    return lines
 end
 
 function Screen.update()

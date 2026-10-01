@@ -196,22 +196,33 @@ local function press(button)
     guiService.SelectedObject = nil
 end
 
--- Picks a team if the team screen is up. Returns true once no team screen is
--- showing (already chosen, or chosen now).
+-- Joins `team` on execute. The game's own call first, as the Teddy Kaitun,
+-- Banana and Vxeze do (CommF_ "SetTeam", every second until the player has
+-- a team); the team screen's button as a fallback. Returns true once the
+-- player has a team.
+Player.TEAM_RETRY = 1
+
+function Player.hasTeam()
+    local player = Services.player()
+    return player ~= nil and player.Team ~= nil
+end
+
 function Player.chooseTeam(team, timeout)
     team = team == "Marines" and "Marines" or "Pirates"
     local deadline = os.clock() + (timeout or 30)
     while os.clock() < deadline do
+        if Player.hasTeam() then return true end
+        Services.invoke("SetTeam", team)
+        if Player.hasTeam() then return true end
         local gui = mainGui()
         local screen = gui and gui:FindFirstChild("ChooseTeam")
-        if screen then
-            if not screen.Visible then return true end
+        if screen and screen.Visible then
             local button = Services.find(screen, "Container." .. team .. ".Frame.TextButton")
             if button then pcall(press, button) end
         end
-        task.wait(1)
+        task.wait(Player.TEAM_RETRY)
     end
-    return false
+    return Player.hasTeam()
 end
 
 return Player

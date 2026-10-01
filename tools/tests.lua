@@ -64,7 +64,7 @@ local MODULES = {
     "Features.Races.V4", "Game.Boat", "Features.Sea.Events", "Features.Sea.Islands", "Features.Sea.Volcano",
     "Features.TyrantFarm", "Features.Helpers", "Features.SafeSpot", "Features.Scout",
     "Kaitun.Config", "Kaitun.Tasks", "Kaitun.Engine", "Kaitun.Screen",
-    "Features.Items.Melee", "Features.Items.Electric", "Features.SkipLevel", "Features.Codes",
+    "Features.Items.Melee", "Features.Items.Electric", "Features.SkipLevel", "Features.Codes", "UI.Logo",
 }
 for _, name in ipairs(MODULES) do
     local ok, err = pcall(require, name)
@@ -3872,6 +3872,59 @@ do
     check("codes: no duplicate in the list", not duplicate)
     Codes.EVERY = every
     isfile, readfile, writefile = saved[1], saved[2], saved[3]
+end
+
+---------------------------------------------------------------------------
+-- Team on execute, logo image
+---------------------------------------------------------------------------
+
+setup()
+do
+    world.player.Team = nil
+    local asked = {}
+    world.commF.OnInvoke = function(action, team)
+        if action == "SetTeam" then
+            asked[#asked + 1] = team
+            if #asked >= 2 then world.player.Team = { Name = team } end
+        end
+    end
+    local done
+    local co = coroutine.create(function() done = Player.chooseTeam("Marines", 30) end)
+    coroutine.resume(co)
+    for _ = 1, 5 do
+        if coroutine.status(co) == "dead" then break end
+        stepTasks()
+        if coroutine.status(co) == "suspended" then coroutine.resume(co) end
+    end
+    check("team: joined through SetTeam", done == true)
+    eq("team: the configured team", asked[1], "Marines")
+    eq("team: retried until it took", #asked, 2)
+    eq("team: already in one -> nothing sent", (function()
+        asked = {}
+        Player.chooseTeam("Pirates", 30)
+        return #asked
+    end)(), 0)
+end
+
+do
+    local Logo = require("UI.Logo")
+    Logo.reset()
+    local saved = { getcustomasset, writefile, isfile, makefolder, isfolder }
+    local files = {}
+    getcustomasset = function(path) return "rbxasset://" .. path end
+    writefile = function(path, data) files[path] = data end
+    isfile = function(path) return files[path] ~= nil end
+    makefolder, isfolder = function() end, function() return true end
+    local realGet = game.HttpGet
+    game.HttpGet = function() return "\137PNG fake" end
+    eq("logo: downloaded and handed to getcustomasset", Logo.asset(), "rbxasset://StrawberryHub/strawberry.png")
+    check("logo: saved in the workspace", files["StrawberryHub/strawberry.png"] ~= nil)
+    Logo.reset()
+    getcustomasset = nil
+    eq("logo: no getcustomasset -> text fallback", Logo.asset(), nil)
+    game.HttpGet = realGet
+    getcustomasset, writefile, isfile, makefolder, isfolder = saved[1], saved[2], saved[3], saved[4], saved[5]
+    Logo.reset()
 end
 
 ---------------------------------------------------------------------------

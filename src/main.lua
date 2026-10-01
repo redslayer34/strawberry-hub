@@ -81,13 +81,14 @@ end
 
 local connections = {}
 
-guard("waiting for the game", Player.waitUntilLoaded, 60)
-
--- Team selection runs aside: it waits on a screen that may never show up
--- (the team is already chosen when the script is re-run).
+-- The team first, as the Teddy Kaitun does: until the player has one the
+-- game does not finish loading. It runs aside (SetTeam every second) while
+-- the main thread waits for the game.
 task.spawn(function()
-    guard("team selection", Player.chooseTeam, env.StrawberryTeam, 30)
+    guard("team selection", Player.chooseTeam, env.StrawberryTeam, 60)
 end)
+
+guard("waiting for the game", Player.waitUntilLoaded, 60)
 
 local afk = guard("anti-AFK", Player.antiAfk)
 if afk then connections[#connections + 1] = afk end

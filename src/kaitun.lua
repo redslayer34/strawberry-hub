@@ -63,10 +63,12 @@ end
 
 local connections = {}
 
-guard("waiting for the game", Player.waitUntilLoaded, 60)
+-- The team first (SetTeam every second, aside): the game finishes loading
+-- once the player has one.
 task.spawn(function()
-    guard("team selection", Player.chooseTeam, config.Team, 30)
+    guard("team selection", Player.chooseTeam, config.Team, 60)
 end)
+guard("waiting for the game", Player.waitUntilLoaded, 60)
 local afk = guard("anti-AFK", Player.antiAfk)
 if afk then connections[#connections + 1] = afk end
 
