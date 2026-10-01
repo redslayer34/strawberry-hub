@@ -4009,6 +4009,15 @@ do
     end
     CommonModule.forget()
     eq("getInventoryWeapons says Saber", CommonModule.ownedBy("Saber"), "getInventoryWeapons")
+    -- The inventory window's controller is never required: requiring it can
+    -- block forever (it froze the Kaitun's engine and screen in game).
+    local controllers = folder("Controllers", rs)
+    local ui = folder("UI", controllers)
+    local inventoryWindow = moduleScript("Inventory", ui, nil)
+    inventoryWindow.ModuleError = "would block"
+    WARNINGS = {}
+    eq("ownership never requires the inventory window", CommonModule.ownedBy("Yama"), nil)
+    eq("no warning from it", #WARNINGS, 0)
 end
 
 ---------------------------------------------------------------------------

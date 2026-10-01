@@ -140,14 +140,14 @@ function Common.item(name)
     return nil
 end
 
--- Whether `name` is really owned, and who says so: a tool held, the
+-- Whether `name` is really owned, and who says so: a tool held, or the
 -- server's own lists (getInventory, getInventoryWeapons, as the Teddy
--- Kaitun's CheckInvItem), or the game's inventory window (its tiles, Teddy's
--- melee reader). Returns the source, or nil. The item replication list that
+-- Kaitun's CheckInvItem). Returns the source, or nil. (The inventory
+-- window's controller is not required: requiring it can block forever,
+-- which froze the whole Kaitun.) The item replication list that
 -- Common.inventory reads first is left out on purpose: it listed a Saber
 -- and the Electric style on an account that had neither, so the Kaitun took
 -- both quests for done. `kind` ("Melee") keeps only that kind of entry.
-local tilesModule, configModule
 function Common.ownedBy(name, kind)
     local tool = Common.tool(name)
     if tool and (not kind or tool.ToolTip == kind) then return "held" end
@@ -172,23 +172,6 @@ function Common.ownedBy(name, kind)
         end
     end
 
-    local ok, found = pcall(function()
-        tilesModule = tilesModule or Services.module("Controllers.UI.Inventory")
-        configModule = configModule or Services.module("ItemConfig")
-        if type(tilesModule) ~= "table" or type(configModule) ~= "table" then return false end
-        if tilesModule.GetIfInitialized and not tilesModule:GetIfInitialized() then return false end
-        for _, tile in ipairs(tilesModule:GetTiles() or {}) do
-            local okInfo, info = pcall(function() return configModule.match(tile.ItemId):asNullable() end)
-            if okInfo and type(info) == "table" then
-                local key = info.Index and info.Index.StorageKey
-                local display = info.Display and info.Display.Name
-                local style = info.Moveset and info.Moveset.Type == "FightingStyle"
-                if (key == name or display == name) and (kind ~= "Melee" or style) then return true end
-            end
-        end
-        return false
-    end)
-    if ok and found then return "inventory window" end
     return nil
 end
 
@@ -356,7 +339,6 @@ end
 -- Test hook.
 function Common.reset()
     cache, hopSince, lastHop, cooldowns = {}, {}, nil, {}
-    tilesModule, configModule = nil, nil
     inventoryCache = nil
 end
 

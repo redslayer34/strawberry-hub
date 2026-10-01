@@ -79,6 +79,7 @@ Engine.BUY_EVERY = 5
 
 local current, startedAt
 local currentWorking = false
+local planCache = { at = -math.huge, list = {} }
 local idleSince, lastStatus, statusSince
 local rest = {}        -- [task name] = { untilAt, why, count }
 local doneCache = {}   -- [task name] = { done, at }
@@ -514,6 +515,7 @@ function Engine.tick()
     end
     hopFor(reason, after)
     travel(sea, level, task)
+    pcall(Engine.plan)
 end
 
 function Engine.start()
@@ -540,13 +542,14 @@ function Engine.status()
         hop = hopNote,
         log = log,
         resting = resting,
-        plan = Engine.plan(),
+        plan = planCache.list,
     }
 end
 
 -- Why each task of this sea is or is not running, for the screen:
 -- { "Electric: done", "Saber: next", ... } (the "other sea" ones left out).
-local planCache = { at = -math.huge, list = {} }
+-- Computed by the engine loop (Engine.tick); the screen only reads the
+-- result, so nothing slow ever runs in the screen's loop.
 function Engine.plan()
     if now() - planCache.at < 5 then return planCache.list end
     local list = {}

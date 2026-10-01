@@ -269,7 +269,6 @@ function Screen.build()
     end)
 
     gui.Parent = Services.guiParent()
-    Screen.update()
     return gui
 end
 

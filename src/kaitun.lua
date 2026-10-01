@@ -91,7 +91,8 @@ if config.RedeemCodes ~= false and (Player.level() or 0) < Engine.MAX_LEVEL then
     task.spawn(function() guard("codes", Codes.redeemAll) end)
 end
 guard("kaitun engine", Engine.start)
-if config.ShowScreen ~= false then guard("kaitun screen", KaitunScreen.start) end
+-- Aside: nothing the screen does may hold up the rest.
+if config.ShowScreen ~= false then task.spawn(function() guard("kaitun screen", KaitunScreen.start) end) end
 
 local unloaded = false
 
