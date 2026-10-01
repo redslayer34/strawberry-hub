@@ -14,7 +14,8 @@
 --    mode       the hub mode it drives (the watchdog asks it enabled())
 --    keys       settings switched on while it runs (a function may build them)
 --    ready()    optional: extra condition to start
---    done()     optional: finished for good (the screen's checklist)
+--    done()     optional: finished for good (the screen's checklist);
+--               doneBy(): who says so, shown on the screen
 --    maxTime    optional: seconds before the watchdog gives it a rest
 --    hop()      optional: what this server lacks for the task (a reason
 --               to change server); hopAfter: how long it must hold
@@ -43,8 +44,10 @@ local Tasks = {}
 
 Tasks.MAX_LEVEL = 2800
 
+-- Really owned (a tool held, the server's lists, the inventory window):
+-- see Common.ownedBy.
 local function owned(name)
-    return Common.has(name) or Common.itemCount(name) > 0
+    return Common.owns(name)
 end
 Tasks.owned = owned
 
@@ -146,6 +149,7 @@ Tasks.LIST = {
         name = "Saber", priority = 4, seas = { 1 }, minLevel = Saber.MIN_LEVEL, mode = Saber.mode,
         keys = { ItemSaber = true },
         done = function() return owned("Saber") end,
+        doneBy = function() return Common.ownedBy("Saber") end,
     },
     {
         name = "Race", priority = 5, seas = { 2, 3 }, mode = RaceUpgrade.v2v3,
@@ -209,6 +213,7 @@ Tasks.LIST = {
                 and Melee.mastery("Fishman Karate") >= Melee.SUPERHUMAN_NEEDS
         end,
         done = function() return Electric.owned() end,
+        doneBy = function() return Melee.ownedBy("Electro") end,
         -- The charged clouds are rare: after 3 minutes without one, another
         -- server.
         hop = function()

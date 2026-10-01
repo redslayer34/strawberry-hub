@@ -41,7 +41,7 @@ local search = Fight.newSearch()
 local raidMissingSince, dealerIndex = nil, 1
 
 local function owns(name)
-    return Common.has(name) or Common.itemCount(name) > 0
+    return Common.owns(name)
 end
 
 function Cdk.progress()

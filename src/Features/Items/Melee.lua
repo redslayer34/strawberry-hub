@@ -120,12 +120,19 @@ function Melee.entry(name)
 end
 
 function Melee.owned(name)
-    if Melee.entry(name) then return true end
     for _, alias in ipairs(aliases(name)) do
-        local tool = Common.tool(alias)
-        if tool and tool.ToolTip == "Melee" then return true end
+        if Common.owns(alias, "Melee") then return true end
     end
     return false
+end
+
+-- Who says the style is owned (for the screen), or nil.
+function Melee.ownedBy(name)
+    for _, alias in ipairs(aliases(name)) do
+        local source = Common.ownedBy(alias, "Melee")
+        if source then return source .. " (" .. alias .. ")" end
+    end
+    return nil
 end
 
 function Melee.mastery(name)

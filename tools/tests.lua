@@ -3983,6 +3983,34 @@ for _, beli in ipairs({ 504694, 200000 }) do
     check("plan says Electric runs ($" .. beli .. ")", plan:find("Electric: running", 1, true) ~= nil, plan)
 end
 
+-- The item replication list once claimed a Saber and the Electric style
+-- the account did not have: ownership only trusts the server's lists.
+itemsSetup(2753915549, 320, {}, {})
+do
+    local CommonModule = require("Features.Stack.Common")
+    CommonModule.reset()
+    moduleScript("ItemReplicationService", rs, {
+        KEYS = { QUANTITY = "q", MASTERY = "m" },
+        GetItems = function() return { { ItemId = 1, Value = 1 }, { ItemId = 2, Value = 1 } } end,
+        ReadItem = function() return 0 end,
+    })
+    moduleScript("ItemConfig", rs, {
+        match = function(id)
+            local info = id == 1 and { Display = { Name = "Saber", Category = "Sword" } }
+                or { Display = { Name = "Electric", Category = "Melee" } }
+            return { unwrap = function() return info end }
+        end,
+    })
+    eq("replication list read", CommonModule.itemCount("Saber"), 1)
+    check("but Saber is not owned for it", not KTasks.owned("Saber"))
+    check("nor Electric", not Melee.owned("Electro"))
+    world.commF.OnInvoke = function(action)
+        if action == "getInventoryWeapons" then return { { Name = "Saber" } } end
+    end
+    CommonModule.forget()
+    eq("getInventoryWeapons says Saber", CommonModule.ownedBy("Saber"), "getInventoryWeapons")
+end
+
 ---------------------------------------------------------------------------
 -- Report
 ---------------------------------------------------------------------------

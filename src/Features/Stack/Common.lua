@@ -140,6 +140,62 @@ function Common.item(name)
     return nil
 end
 
+-- Whether `name` is really owned, and who says so: a tool held, the
+-- server's own lists (getInventory, getInventoryWeapons, as the Teddy
+-- Kaitun's CheckInvItem), or the game's inventory window (its tiles, Teddy's
+-- melee reader). Returns the source, or nil. The item replication list that
+-- Common.inventory reads first is left out on purpose: it listed a Saber
+-- and the Electric style on an account that had neither, so the Kaitun took
+-- both quests for done. `kind` ("Melee") keeps only that kind of entry.
+local tilesModule, configModule
+function Common.ownedBy(name, kind)
+    local tool = Common.tool(name)
+    if tool and (not kind or tool.ToolTip == kind) then return "held" end
+
+    local list = Common.invoke("getInventory")
+    for _, item in ipairs(type(list) == "table" and list or {}) do
+        if type(item) == "table" and item.Name == name then
+            local melee = item.Type == "Melee" or item.Type == "Fighting Style" or item.Type == "Fighting style"
+            if not kind or (kind == "Melee" and melee) or item.Type == kind then return "getInventory" end
+        end
+    end
+
+    if kind ~= "Melee" then
+        local weapons = Common.invoke("getInventoryWeapons")
+        for _, entry in pairs(type(weapons) == "table" and weapons or {}) do
+            if entry == name then return "getInventoryWeapons" end
+            if type(entry) == "table" then
+                for _, value in pairs(entry) do
+                    if value == name then return "getInventoryWeapons" end
+                end
+            end
+        end
+    end
+
+    local ok, found = pcall(function()
+        tilesModule = tilesModule or Services.module("Controllers.UI.Inventory")
+        configModule = configModule or Services.module("ItemConfig")
+        if type(tilesModule) ~= "table" or type(configModule) ~= "table" then return false end
+        if tilesModule.GetIfInitialized and not tilesModule:GetIfInitialized() then return false end
+        for _, tile in ipairs(tilesModule:GetTiles() or {}) do
+            local okInfo, info = pcall(function() return configModule.match(tile.ItemId):asNullable() end)
+            if okInfo and type(info) == "table" then
+                local key = info.Index and info.Index.StorageKey
+                local display = info.Display and info.Display.Name
+                local style = info.Moveset and info.Moveset.Type == "FightingStyle"
+                if (key == name or display == name) and (kind ~= "Melee" or style) then return true end
+            end
+        end
+        return false
+    end)
+    if ok and found then return "inventory window" end
+    return nil
+end
+
+function Common.owns(name, kind)
+    return Common.ownedBy(name, kind) ~= nil
+end
+
 -- Mastery of an owned weapon: the tool's Level when held, else the
 -- inventory's record.
 function Common.masteryOf(name)
@@ -300,6 +356,7 @@ end
 -- Test hook.
 function Common.reset()
     cache, hopSince, lastHop, cooldowns = {}, {}, nil, {}
+    tilesModule, configModule = nil, nil
     inventoryCache = nil
 end
 

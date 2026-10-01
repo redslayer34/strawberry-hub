@@ -90,7 +90,7 @@ Swords.yama = Mode({
     key = "ItemYama",
     sea = 3,
     want = function()
-        if Common.has("Yama") or Common.itemCount("Yama") > 0 then return false end
+        if Common.owns("Yama") then return false end
         local progress = tonumber(Common.invoke("EliteHunter", "Progress")) or 0
         return progress >= Swords.YAMA_ELITES or EliteHunter.find() ~= nil
     end,
@@ -140,7 +140,7 @@ Swords.tushita = Mode({
     key = "ItemTushita",
     sea = 3,
     want = function()
-        if Common.has("Tushita") or Common.itemCount("Tushita") > 0 then return false end
+        if Common.owns("Tushita") then return false end
         if tushitaProgress().OpenedDoor then return Enemies.findBoss("Longma") ~= nil end
         local hitbox = tushitaHitbox()
         return not hitbox or hitbox:FindFirstChild("TouchInterest") ~= nil or Common.has("Holy Torch")
@@ -228,7 +228,7 @@ Swords.yoru = Mode({
     name = "Yoru Mini",
     key = "ItemYoru",
     sea = 3,
-    want = function() return Common.itemCount("Dark Dagger") == 0 and not Common.has("Dark Dagger") end,
+    want = function() return not Common.owns("Dark Dagger") end,
     idleStatus = "Owned",
     tick = function(mode)
         local indra, inWorld = Enemies.findBoss("rip_indra True Form")

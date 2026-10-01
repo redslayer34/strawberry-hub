@@ -555,6 +555,11 @@ function Engine.plan()
         local ok, why = pcall(Engine.blocked, task, sea, level)
         why = ok and why or "error"
         if why ~= "other sea" then
+            -- "done" says who said so, to catch a false "owned".
+            if why == "done" and task.doneBy then
+                local okBy, by = pcall(task.doneBy)
+                if okBy and by then why = "done, " .. tostring(by) end
+            end
             list[#list + 1] = task.name .. ": " .. (task == current and "running" or why or "ready")
         end
     end

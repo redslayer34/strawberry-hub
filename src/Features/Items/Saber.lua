@@ -112,7 +112,7 @@ Saber.mode = Mode({
     key = "ItemSaber",
     sea = 1,
     want = function()
-        return Player.level() >= Saber.MIN_LEVEL and not Common.has("Saber") and Common.itemCount("Saber") == 0
+        return Player.level() >= Saber.MIN_LEVEL and not Common.owns("Saber")
     end,
     idleStatus = "Owned, or level 200 needed",
     tick = function(mode)
