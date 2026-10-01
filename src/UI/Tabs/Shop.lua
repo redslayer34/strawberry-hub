@@ -3,6 +3,7 @@
 --=============================================================================
 
 local Bind = require("UI.Bind")
+local Codes = require("Features.Codes")
 local Data = require("Game.Data")
 local Services = require("Core.Services")
 local Settings = require("Core.Settings")
@@ -87,14 +88,11 @@ return function(Window, ui)
             buy("Reset stats", "BlackbeardReward", "Refund", "2")
         end)
     end })
-    misc:AddButton({ Title = "Redeem all codes", Callback = function()
-        local remote = Services.find(Services.replicated(), "Remotes.Redeem")
-        if not remote then return notify("Redeem remote not found") end
+    misc:AddButton({ Title = "Redeem all codes", Description = "Most give 2x experience for a while.", Callback = function()
         task.spawn(function()
-            for _, code in ipairs(Data.CODES) do
-                pcall(remote.InvokeServer, remote, code)
-            end
-            notify("Codes", #Data.CODES .. " codes tried")
+            local sent = Codes.redeemAll(true)
+            if sent == nil then return notify("Codes", "Already running, or the Redeem remote is missing") end
+            notify("Codes", sent .. " codes tried")
         end)
     end })
 

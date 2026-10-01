@@ -13,6 +13,7 @@
 --=============================================================================
 
 local AimHook = require("Game.AimHook")
+local Codes = require("Features.Codes")
 local Config = require("Kaitun.Config")
 local Engine = require("Kaitun.Engine")
 local Farm = require("Features.Farm")
@@ -82,6 +83,11 @@ guard("items", Items.start)
 guard("race v4", RaceV4.start)
 guard("screen", Screen.start)
 guard("webhook", Webhook.start)
+-- The 2x experience codes, as the Teddy Kaitun does at start: only while
+-- there are levels to gain (the boost runs on a timer once redeemed).
+if config.RedeemCodes ~= false and (Player.level() or 0) < Engine.MAX_LEVEL then
+    task.spawn(function() guard("codes", Codes.redeemAll) end)
+end
 guard("kaitun engine", Engine.start)
 if config.ShowScreen ~= false then guard("kaitun screen", KaitunScreen.start) end
 

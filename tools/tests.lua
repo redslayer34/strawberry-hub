@@ -64,7 +64,7 @@ local MODULES = {
     "Features.Races.V4", "Game.Boat", "Features.Sea.Events", "Features.Sea.Islands", "Features.Sea.Volcano",
     "Features.TyrantFarm", "Features.Helpers", "Features.SafeSpot", "Features.Scout",
     "Kaitun.Config", "Kaitun.Tasks", "Kaitun.Engine", "Kaitun.Screen",
-    "Features.Items.Melee", "Features.Items.Electric", "Features.SkipLevel",
+    "Features.Items.Melee", "Features.Items.Electric", "Features.SkipLevel", "Features.Codes",
 }
 for _, name in ipairs(MODULES) do
     local ok, err = pcall(require, name)
@@ -3830,6 +3830,48 @@ do
     KConfig.load({ SkipLevel = false })
     eq("kaitun: skip can be turned off", KEngine.idle(1, 50).AutoSkipLevel, nil)
     KConfig.reset()
+end
+
+---------------------------------------------------------------------------
+-- Codes (2x experience)
+---------------------------------------------------------------------------
+
+local Codes = require("Features.Codes")
+
+setup()
+do
+    Codes.reset()
+    local files = {}
+    local saved = { isfile, readfile, writefile }
+    isfile = function(path) return files[path] ~= nil end
+    readfile = function(path) return files[path] end
+    writefile = function(path, text) files[path] = text end
+    local http = game:GetService("HttpService")
+    function http:JSONEncode(value) return value end
+    function http:JSONDecode(value) return value end
+    local remote = newInstance("RemoteFunction", "Redeem", rs.Remotes)
+    local every = Codes.EVERY
+    Codes.EVERY = 0
+    local sent
+    local co = coroutine.create(function() sent = Codes.redeemAll() end)
+    coroutine.resume(co)
+    for _ = 1, #Data.CODES + 5 do
+        if coroutine.status(co) == "dead" then break end
+        stepTasks()
+        if coroutine.status(co) == "suspended" then coroutine.resume(co) end
+    end
+    eq("codes: every code sent once", sent, #Data.CODES)
+    eq("codes: through Remotes.Redeem", remote.Invoked and #remote.Invoked, #Data.CODES)
+    local again = Codes.redeemAll()
+    eq("codes: already tried on this account -> none again", again, 0)
+    local seen, duplicate = {}, false
+    for _, code in ipairs(Data.CODES) do
+        if seen[code:lower()] then duplicate = true end
+        seen[code:lower()] = true
+    end
+    check("codes: no duplicate in the list", not duplicate)
+    Codes.EVERY = every
+    isfile, readfile, writefile = saved[1], saved[2], saved[3]
 end
 
 ---------------------------------------------------------------------------

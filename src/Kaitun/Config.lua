@@ -19,7 +19,8 @@ Config.DEFAULTS = {
     Team = "Pirates",
     Hop = true,              -- allow server hops (Soul Guitar full moon, later the targeted hops)
     Speed = 300,             -- flying speed (studs/s)
-    SkipLevel = true,        -- Teddy's skip under level 150 (Sky Bandits, God's Guards)
+    SkipLevel = true,
+    RedeemCodes = true,      -- every code once per account, while levelling (2x experience)        -- Teddy's skip under level 150 (Sky Bandits, God's Guards)
     Stats = { Melee = true, Defense = true },
     Skip = {
         CDK = false,

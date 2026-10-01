@@ -179,16 +179,18 @@ Data.ELITE_HUNTERS = { "Deandre", "Urban", "Diablo" }
 Data.MOON_FULL = "http://www.roblox.com/asset/?id=9709149431"
 Data.MOON_NEXT = "http://www.roblox.com/asset/?id=9709149052"
 
+-- Codes (most give 2x experience for a while): Banana's list and the Teddy
+-- Kaitun's, without duplicates. Expired ones are only refused.
 Data.CODES = {
-    "EASTEREXP", "BANEXPLOIT", "NOMOREHACKS", "WildDares",
-    "BossBuild", "GetPranked", "EARN_FRUITS", "Sub2UncleKizaru",
-    "FIGHT4FRUIT", "kittgaming", "TRIPLEABUSE", "Sub2CaptainMaui",
-    "Sub2Fer999", "Enyu_is_Pro", "Magicbus", "JCWK",
-    "Starcodeheo", "Bluxxy", "SUB2GAMERROBOT_EXP1", "Sub2NoobMaster123",
-    "Sub2Daigrock", "Axiore", "TantaiGaming", "StrawHatMaine",
-    "Sub2OfficialNoobie", "TheGreatAce", "SEATROLLIN", "24NOADMIN",
-    "ADMIN_TROLL", "NEWTROLL", "SECRET_ADMIN", "staffbattle",
-    "NOEXPLOIT", "NOOB2ADMIN", "CODESLIDE", "fruitconcepts",
+    "EASTEREXP", "BANEXPLOIT", "NOMOREHACKS", "WildDares", "BossBuild", "GetPranked", "EARN_FRUITS",
+    "Sub2UncleKizaru", "FIGHT4FRUIT", "kittgaming", "TRIPLEABUSE", "Sub2CaptainMaui", "Sub2Fer999",
+    "Enyu_is_Pro", "Magicbus", "JCWK", "Starcodeheo", "Bluxxy", "SUB2GAMERROBOT_EXP1",
+    "Sub2NoobMaster123", "Sub2Daigrock", "Axiore", "TantaiGaming", "StrawHatMaine",
+    "Sub2OfficialNoobie", "TheGreatAce", "SEATROLLIN", "24NOADMIN", "ADMIN_TROLL", "NEWTROLL",
+    "SECRET_ADMIN", "staffbattle", "NOEXPLOIT", "NOOB2ADMIN", "CODESLIDE", "fruitconcepts",
+    "GAMERROBOT_YT", "FUDD10", "fudd10_v2", "BIGNEWS", "UPD16", "3BVISITS", "ADMINGIVEAWAY",
+    "GAMER_ROBOT_1M", "15B_BESTBROTHERS", "DEVSCOOKING", "krazydares", "KITT_RESET",
+    "SUB2GAMERROBOT_RESET1", "NOMOREHACK", "GIFTING_HOURS",
 }
 
 return Data
