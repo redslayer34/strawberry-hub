@@ -16,6 +16,8 @@
 --    ready()    optional: extra condition to start
 --    done()     optional: finished for good (the screen's checklist)
 --    maxTime    optional: seconds before the watchdog gives it a rest
+--    hop()      optional: what this server lacks for the task (a reason
+--               to change server), checked while its mode has nothing to do
 --    group      optional: a second Skip key (Skip.Godhuman skips every
 --               step of the melee chain)
 --=============================================================================
@@ -139,11 +141,20 @@ Tasks.LIST = {
         name = "LibraryKey", group = "Godhuman", priority = 4, seas = { 2 }, mode = Melee.libraryKey,
         keys = { ItemLibraryKey = true },
         done = function() return Melee.unlocked("Death Step") end,
+        -- Teddy's Sea 2 Key Hop, once the key is what holds Death Step back.
+        hop = function()
+            if Melee.mastery("Black Leg") >= Melee.TARGET then return "no Awakened Ice Admiral" end
+            return nil
+        end,
     },
     {
         name = "WaterKey", group = "Godhuman", priority = 4, seas = { 2 }, mode = Melee.waterKey,
         keys = { ItemWaterKey = true },
         done = function() return Melee.unlocked("Sharkman Karate") end,
+        hop = function()
+            if Melee.mastery("Fishman Karate") >= Melee.TARGET then return "no Tide Keeper" end
+            return nil
+        end,
     },
     {
         name = "FireEssence", group = "Godhuman", priority = 6, seas = { 3 }, mode = Melee.dragonTalon,
@@ -164,7 +175,7 @@ Tasks.LIST = {
     },
     {
         name = "Yama", priority = 9, seas = { 3 }, mode = Swords.yama,
-        keys = { ItemYama = true },
+        keys = function() return { ItemYama = true, StackHopElite = Config.get("Hop") == true } end,
         done = function() return owned("Yama") end,
     },
 }

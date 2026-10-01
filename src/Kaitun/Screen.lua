@@ -139,7 +139,8 @@ function Screen.lines()
         items[#items + 1] = ((ok and has) and "✔ " or "✘ ") .. entry.label
     end
     return {
-        Task = "Task: " .. (status.task or ("idle -- " .. tostring(status.idle))),
+        Task = "Task: " .. (status.task or ("idle -- " .. tostring(status.idle)))
+            .. (status.hop and (" (hop soon: " .. status.hop .. ")") or ""),
         Status = "Now: " .. tostring(Farm.status()),
         Level = string.format("Level %s  ·  Sea %s  ·  up %s", tostring(Player.level()), tostring(Player.sea()), uptime()),
         Money = string.format("Beli %s  ·  Fragments %s", short(Player.data("Beli")), short(Player.data("Fragments"))),

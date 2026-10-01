@@ -14,11 +14,16 @@
 --    idle        Teddy's fn22: level farm until the max level, then
 --                Katakuri in Sea 3
 --
+--  Targeted hops (Teddy's "Sea 2 Key Hop"...): a task whose mode has
+--  nothing to do may name what this server lacks (task.hop); with Hop on
+--  the Kaitun changes server for it instead of giving the task a rest.
+--
 --  Watchdog, so one job can never hold the Kaitun forever:
 --    its mode says "nothing to do" for IDLE_LIMIT s   -> rests IDLE_PAUSE s
 --    the same status for STUCK_LIMIT s, or maxTime    -> rests STUCK_PAUSE s
 --=============================================================================
 
+local Common = require("Features.Stack.Common")
 local Config = require("Kaitun.Config")
 local Data = require("Game.Data")
 local Farm = require("Features.Farm")
@@ -51,6 +56,7 @@ local applied = {}     -- keys the Kaitun has set
 local log = {}
 local lastTravel = -math.huge
 local idleName = "Idle"
+local hopNote
 
 local function now() return os.clock() end
 
@@ -232,6 +238,7 @@ local function watch(task)
     if task ~= current then
         if current then note("done with " .. current.name) end
         current, startedAt, idleSince, lastStatus, statusSince = task, t, nil, nil, t
+        hopNote = nil
         if task then note("task: " .. task.name) end
     end
     if not task then return end
@@ -240,6 +247,18 @@ local function watch(task)
     if mode then
         local ok, enabled = pcall(mode.enabled)
         if not (ok and enabled) then
+            local reason
+            if Config.get("Hop") == true and task.hop then
+                local okHop, why = pcall(task.hop)
+                reason = okHop and why or nil
+            end
+            if type(reason) == "string" then
+                -- Common.hop waits until the reason has held a while.
+                idleSince = nil
+                hopNote = reason
+                if Common.hop(reason) then note("hop: " .. reason) end
+                return
+            end
             idleSince = idleSince or t
             if t - idleSince >= Engine.IDLE_LIMIT then
                 Engine.rest(task, Engine.IDLE_PAUSE, "nothing to do (" .. tostring(mode.status) .. ")")
@@ -248,6 +267,7 @@ local function watch(task)
             return
         end
         idleSince = nil
+        hopNote = nil
     end
 
     if t - startedAt >= (task.maxTime or Engine.DEFAULT_MAX_TIME) then
@@ -325,6 +345,7 @@ function Engine.status()
     return {
         task = current and current.name or nil,
         idle = idleName,
+        hop = hopNote,
         log = log,
         resting = resting,
     }
@@ -336,6 +357,7 @@ function Engine.reset()
     rest, doneCache, applied, log = {}, {}, {}, {}
     lastTravel = -math.huge
     idleName = "Idle"
+    hopNote = nil
 end
 
 return Engine

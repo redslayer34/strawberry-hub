@@ -28,6 +28,7 @@ local Player = require("Core.Player")
 local PlayerTweaks = require("Features.PlayerTweaks")
 local RaceV4 = require("Features.Races.V4")
 local Screen = require("Features.Screen")
+local Server = require("Game.Server")
 local Settings = require("Core.Settings")
 local Stats = require("Features.Stats")
 local Webhook = require("Features.Webhook")
@@ -42,6 +43,9 @@ for _, name in ipairs({ "StrawberryKaitunHub", "StrawberryHub" }) do
 end
 
 local config = Config.load(env.StrawberryKaitun)
+-- A server hop starts the Kaitun again (not the hub), with this config.
+local hubLoader = Server.LOADER
+Server.LOADER = Config.loader()
 local kaitun = { Version = VERSION, Settings = Settings, Config = config, Engine = Engine }
 env.StrawberryKaitunHub = kaitun
 
@@ -86,6 +90,7 @@ local unloaded = false
 function kaitun.Unload()
     if unloaded then return end
     unloaded = true
+    Server.LOADER = hubLoader
     pcall(Engine.stop)
     pcall(KaitunScreen.destroy)
     pcall(Farm.stop)

@@ -3458,6 +3458,59 @@ do
 end
 
 ---------------------------------------------------------------------------
+-- Kaitun: targeted hops, config carried over a hop
+---------------------------------------------------------------------------
+
+kaitunSetup(4442272183, 1200)
+do
+    local saved = KTasks.LIST
+    local hops = 0
+    local Server = require("Game.Server")
+    local realHop = Server.hop
+    Server.hop = function() hops = hops + 1; return true end
+    local CommonModule = require("Features.Stack.Common")
+    CommonModule.reset()
+    local afterHop = CommonModule.HOP_AFTER
+    CommonModule.HOP_AFTER = 0
+    local idleMode = { name = "Key", status = "Waiting", enabled = function() return false end }
+    KTasks.LIST = { { name = "Key", priority = 1, seas = { 2 }, mode = idleMode, keys = { ItemWaterKey = true },
+        hop = function() return "no Tide Keeper" end } }
+    local limit = KEngine.IDLE_LIMIT
+    KEngine.IDLE_LIMIT = 0
+    KEngine.tick()
+    eq("hop: asked for the missing boss", hops, 1)
+    eq("hop: not rested instead", KEngine.blocked(KTasks.LIST[1], 2, 1200), nil)
+    eq("hop: shown", KEngine.status().hop, "no Tide Keeper")
+
+    KEngine.reset()
+    CommonModule.reset()
+    KConfig.load({ Hop = false })
+    KEngine.tick()
+    eq("hop off: no hop", hops, 1)
+    eq("hop off: rested", KEngine.blocked(KTasks.LIST[1], 2, 1200), "resting")
+
+    KEngine.IDLE_LIMIT = limit
+    CommonModule.HOP_AFTER = afterHop
+    Server.hop = realHop
+    KTasks.LIST = saved
+    KConfig.reset()
+end
+
+do
+    KConfig.load({ Team = "Marines", Skip = { CDK = true }, WebhookUrl = 'a"b' })
+    local loader = KConfig.loader()
+    check("loader sets the config", loader:find("getgenv().StrawberryKaitun = {", 1, true) == 1)
+    check("loader loads the Kaitun", loader:find("StrawberryKaitun.lua", 1, true) ~= nil)
+    local chunk = (loadstring or load)("local getgenv = ...; " .. loader:gsub("\nloadstring.*$", ""))
+    local env = {}
+    chunk(function() return env end)
+    eq("serialized config: team", env.StrawberryKaitun.Team, "Marines")
+    eq("serialized config: skip", env.StrawberryKaitun.Skip.CDK, true)
+    eq("serialized config: quotes kept", env.StrawberryKaitun.WebhookUrl, 'a"b')
+    KConfig.reset()
+end
+
+---------------------------------------------------------------------------
 -- Report
 ---------------------------------------------------------------------------
 

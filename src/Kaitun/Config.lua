@@ -77,6 +77,36 @@ function Config.skipped(task)
     return current.Skip ~= nil and current.Skip[task] == true
 end
 
+-- A Lua literal of `value` (strings, numbers, booleans, tables of those),
+-- for the loader queued before a server hop: getgenv() does not survive the
+-- teleport, so the config travels inside the queued script.
+function Config.serialize(value)
+    local kind = type(value)
+    if kind == "string" then return string.format("%q", value) end
+    if kind == "number" or kind == "boolean" then return tostring(value) end
+    if kind ~= "table" then return "nil" end
+    local keys = {}
+    for key in pairs(value) do
+        if type(key) == "string" or type(key) == "number" then keys[#keys + 1] = key end
+    end
+    table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+    local parts = {}
+    for _, key in ipairs(keys) do
+        local name = type(key) == "string" and key:match("^[%a_][%w_]*$") and key
+            or "[" .. Config.serialize(key) .. "]"
+        parts[#parts + 1] = name .. " = " .. Config.serialize(value[key])
+    end
+    return "{ " .. table.concat(parts, ", ") .. " }"
+end
+
+Config.URL = "https://raw.githubusercontent.com/redslayer34/strawberry-hub/claude/repo-exploration-ez26bn/StrawberryKaitun.lua"
+
+-- The script queued with queue_on_teleport: the config, then the loader.
+function Config.loader()
+    return "getgenv().StrawberryKaitun = " .. Config.serialize(current)
+        .. "\nloadstring(game:HttpGet(\"" .. Config.URL .. "\"))()"
+end
+
 -- Test hook.
 function Config.reset()
     current = copy(Config.DEFAULTS)
