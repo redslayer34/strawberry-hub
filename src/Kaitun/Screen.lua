@@ -163,7 +163,7 @@ function Screen.build()
     center.Name = "Center"
     center.AnchorPoint = Vector2.new(0.5, 0.5)
     center.Position = UDim2.new(0.5, 0, 0.5, 0)
-    center.Size = UDim2.new(0, 660, 0, 450)
+    center.Size = UDim2.new(0, 660, 0, 470)
     center.BackgroundTransparency = 1
     center.Parent = tint
     -- Smaller screens (phones): the block shrinks to fit.
@@ -259,8 +259,8 @@ function Screen.build()
     box(center, "Sea", 214, 342, 200)
 
     text(center, "Items", 386, 18, 13, SOFT, Enum.Font.Gotham)
-    text(center, "Resting", 406, 16, 12, MUTED, Enum.Font.Gotham)
-    text(center, "Last", 424, 16, 12, MUTED, Enum.Font.Gotham)
+    text(center, "Resting", 404, 30, 12, MUTED, Enum.Font.Gotham)
+    text(center, "Last", 438, 16, 12, MUTED, Enum.Font.Gotham)
 
     local input = Services.get("UserInputService")
     connections[#connections + 1] = input.InputBegan:Connect(function(event, processed)
@@ -321,12 +321,18 @@ function Screen.lines()
             local items = {}
             for _, entry in ipairs(Tasks.CHECKLIST) do
                 local ok, has = pcall(Tasks.owned, entry.item)
-                items[#items + 1] = ((ok and has) and "✔ " or "✘ ") .. entry.label
+                items[#items + 1] = ((ok and has) and "[x] " or "[ ] ") .. entry.label
             end
             return table.concat(items, "   ")
         end),
         Resting = safe(function()
-            return #status.resting > 0 and ("Resting: " .. table.concat(status.resting, ", ")) or ""
+            -- Every task of this sea and why it runs or not (done, resting,
+            -- not ready...), the rests with their time left.
+            local parts = {}
+            for _, entry in ipairs(status.plan or {}) do parts[#parts + 1] = entry end
+            local text = table.concat(parts, "  ·  ")
+            if #status.resting > 0 then text = text .. "   |   rest: " .. table.concat(status.resting, ", ") end
+            return text
         end),
         Last = safe(function() return status.log[1] or "" end),
     }

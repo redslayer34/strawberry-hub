@@ -102,10 +102,19 @@ local function aliases(name)
 end
 
 -- The inventory entry of a style under any of its names, or nil.
+-- Only a fighting style counts: "Electric" or "Dragon Breath" could also be
+-- the name of something else in the inventory (a material, an accessory).
+local MELEE_TYPES = { Melee = true, ["Fighting Style"] = true, ["Fighting style"] = true }
+
+local function isStyle(item)
+    return item.type == nil or item.type == "" or MELEE_TYPES[item.type] == true
+end
+
 function Melee.entry(name)
     for _, alias in ipairs(aliases(name)) do
-        local item = Common.item(alias)
-        if item then return item end
+        for _, item in ipairs(Common.inventory()) do
+            if item.name == alias and isStyle(item) then return item end
+        end
     end
     return nil
 end
@@ -113,7 +122,8 @@ end
 function Melee.owned(name)
     if Melee.entry(name) then return true end
     for _, alias in ipairs(aliases(name)) do
-        if Common.has(alias) then return true end
+        local tool = Common.tool(alias)
+        if tool and tool.ToolTip == "Melee" then return true end
     end
     return false
 end

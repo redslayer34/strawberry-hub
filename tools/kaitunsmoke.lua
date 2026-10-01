@@ -69,6 +69,7 @@ check("panel text filled", KaitunScreen.lines().Level:find("Level", 1, true) ~= 
 local panel = KaitunScreen.gui()
 check("panel covers the whole screen", panel.IgnoreGuiInset == true and panel.Tint ~= nil)
 eq("panel lets clicks through", panel.Tint.Active, false)
+check("panel lists the tasks and why", KaitunScreen.lines().Resting:find(":", 1, true) ~= nil, KaitunScreen.lines().Resting)
 check("panel shows the total time", KaitunScreen.lines().Time:find("Total", 1, true) ~= nil)
 check("panel title", panel.Tint.Center.Title.Text:find("Strawberry Kaitun", 1, true) ~= nil)
 

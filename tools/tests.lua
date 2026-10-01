@@ -3745,6 +3745,16 @@ do
     Melee.LOAD_EVERY = every
 end
 
+-- Something else called "Electric" in the inventory is not the style.
+meleeSetup(2753915549, 320, { { Name = "Electric", Type = "Material", Count = 1 } }, {}, 600000)
+do
+    check("electric: a material named Electric is not the style", not Melee.owned("Electro"))
+end
+meleeSetup(2753915549, 320, { style("Electric", 0) }, {}, 600000)
+do
+    check("electric: the style itself counts", Melee.owned("Electro"))
+end
+
 -- Tushita and Yama to 350.
 itemsSetup(7449423635, 2500, { { Name = "Tushita", Type = "Sword", Mastery = 400 }, { Name = "Yama", Type = "Sword", Mastery = 120 } })
 do
@@ -3969,6 +3979,8 @@ for _, beli in ipairs({ 504694, 200000 }) do
     end
     eq("electric before saber ($" .. beli .. ")", KEngine.status().task, "Electric")
     eq("electric is the running farm mode ($" .. beli .. ")", active, "Electric")
+    local plan = table.concat(KEngine.plan(), " | ")
+    check("plan says Electric runs ($" .. beli .. ")", plan:find("Electric: running", 1, true) ~= nil, plan)
 end
 
 ---------------------------------------------------------------------------

@@ -540,13 +540,33 @@ function Engine.status()
         hop = hopNote,
         log = log,
         resting = resting,
+        plan = Engine.plan(),
     }
+end
+
+-- Why each task of this sea is or is not running, for the screen:
+-- { "Electric: done", "Saber: next", ... } (the "other sea" ones left out).
+local planCache = { at = -math.huge, list = {} }
+function Engine.plan()
+    if now() - planCache.at < 5 then return planCache.list end
+    local list = {}
+    local sea, level = Player.sea() or 1, Player.level() or 1
+    for _, task in ipairs(Tasks.ordered()) do
+        local ok, why = pcall(Engine.blocked, task, sea, level)
+        why = ok and why or "error"
+        if why ~= "other sea" then
+            list[#list + 1] = task.name .. ": " .. (task == current and "running" or why or "ready")
+        end
+    end
+    planCache = { at = now(), list = list }
+    return list
 end
 
 -- Test hook.
 function Engine.reset()
     current, startedAt, idleSince, lastStatus, statusSince = nil, nil, nil, nil, nil
     currentWorking = false
+    planCache = { at = -math.huge, list = {} }
     rest, doneCache, applied, log = {}, {}, {}, {}
     lastTravel, lastBuy = -math.huge, -math.huge
     idleName = "Idle"
