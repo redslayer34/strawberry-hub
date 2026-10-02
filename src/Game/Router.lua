@@ -115,14 +115,21 @@ Router.ENTRANCES = {
     { name = "Underwater City exit", dest = v(3864.6885, 6.7369504, -1926.2141), lift = 15, arrived = 2000,
         to = function(goal) return goal.X <= 55000 and (goal - UNDERWATER).Magnitude >= 4000 end,
         inside = function(here) return not underwater(here) end },
-    { name = "Upper Sky entrance", dest = v(-6023.5767, 5469.7197, 2203.3083), lift = 0, arrived = 3000,
-        to = function(goal) return goal.Y >= 4000 and (goal - v(-6023.5767, 5469.7197, 2203.3083)).Magnitude < 3500 end },
+    -- Nothing else in Sea 1 is that high: above 4000 is the Upper Skylands.
+    { name = "Upper Sky entrance", dest = v(-6023.5767, 5469.7197, 2203.3083), lift = 0,
+        to = function(goal) return goal.Y >= 4000 end,
+        inside = function(here) return here.Y >= 4000 end },
     { name = "Sky entrance", dest = v(-4166.61, 1093.698, -347.16226), lift = 0, arrived = 3000,
         to = function(goal) return goal.Y >= 200 and goal.Y < 4000
-            and (goal - v(-4166.61, 1093.698, -347.16226)).Magnitude < 3000 end },
+            and (goal - v(-4166.61, 1093.698, -347.16226)).Magnitude < 3000 end,
+        inside = function(here) return here.Y >= 200
+            and (here - v(-4166.61, 1093.698, -347.16226)).Magnitude <= 3000 end },
 }
 Router.ENTRANCE_TRIES = 4
 Router.ENTRANCE_EVERY = 0.15
+Router.ENTRANCE_CONFIRM = 1.5   -- seconds the server has to put the character back
+Router.ENTRANCE_PAUSE = 300     -- a failed (or looping) entrance is left alone this long
+Router.ENTRANCE_LOOP = 60       -- the same entrance again within this time: it did not hold
 
 -- Sea 3 Temple of Time (reference): leaving it means standing on its exit
 -- point and asking the game to send you back.
@@ -160,11 +167,14 @@ local function xyz(position)
 end
 
 -- Adds one event, timed from the start of the trip.
+Router.listener = nil   -- function(text): the Kaitun shows the events
+
 function Router.log(text)
     local now = os.clock()
     tripAt = tripAt or now
     events[#events + 1] = string.format("+%.1fs %s", now - tripAt, text)
     while #events > Router.LOG_SIZE do table.remove(events, 1) end
+    if Router.listener and not text:find("^plan:") then pcall(Router.listener, text) end
 end
 
 -- Starts timing a new trip in the log.
@@ -411,7 +421,7 @@ local function entrancePlan(here, goal)
         local inside
         if entrance.inside then inside = entrance.inside(here)
         else inside = (here - entrance.dest).Magnitude <= entrance.arrived end
-        if not inside and entrance.to(goal) and usable(entrance.name) then
+        if not inside and entrance.to(goal) and usable(entrance.name) and not padPaused(entrance.name) then
             return { kind = "entrance", name = entrance.name, entrance = entrance }
         end
     end
@@ -622,27 +632,49 @@ end
 
 -- Teddy's way: call the entrance and stand on its far side, a few times,
 -- until the server keeps the character there.
+local entranceUsed = {}   -- [name] = os.clock() of the last arrival
+
+local function insideOf(entrance)
+    local here = Player.position()
+    if not here then return false end
+    if entrance.inside then return entrance.inside(here) end
+    return (here - entrance.dest).Magnitude <= entrance.arrived
+end
+
 function actions.entrance(plan)
     local entrance = plan.entrance
-    local arrived = false
+    -- Taken again soon after an arrival: it did not hold (the server put
+    -- the character back later), so fly instead for a while.
+    local last = entranceUsed[plan.name]
+    if last and os.clock() - last < Router.ENTRANCE_LOOP then
+        entranceUsed[plan.name] = nil
+        pausePad(plan.name, Router.ENTRANCE_PAUSE, "taken again " .. math.floor(os.clock() - last)
+            .. " s after arriving: it does not hold, flying instead")
+        lastTrip = plan.name .. " does not hold"
+        return
+    end
     for _ = 1, Router.ENTRANCE_TRIES do
         task.wait(Router.ENTRANCE_EVERY)
         pcall(Services.invoke, "requestEntrance", entrance.dest)
         local hrp = Player.hrp()
         if not hrp then break end
+        if insideOf(entrance) then break end
         pcall(function()
             hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
             hrp.CFrame = CFrame.new(entrance.dest + Vector3.new(0, entrance.lift, 0))
         end)
-        if near(entrance.dest, entrance.arrived) then
-            arrived = true
-            break
-        end
     end
-    -- The server may put the character back a moment later.
-    task.wait(Router.ENTRANCE_EVERY * 2)
-    arrived = arrived and near(entrance.dest, entrance.arrived)
-    recordResult(plan.name, arrived, arrived and "arrived" or "put back")
+    -- Placing the character there proves nothing: only still being there
+    -- once the server had time to put it back does.
+    task.wait(Router.ENTRANCE_CONFIRM)
+    local arrived = insideOf(entrance)
+    if arrived then
+        entranceUsed[plan.name] = os.clock()
+        recordResult(plan.name, true, "arrived")
+    else
+        pausePad(plan.name, Router.ENTRANCE_PAUSE, "put back by the server, flying instead")
+    end
+    lastTrip = plan.name .. (arrived and "" or " put back")
     Router.log(string.format("%s: %s, now at %s", plan.name, arrived and "arrived" or "put back",
         xyz(Player.position())))
 end
@@ -913,6 +945,7 @@ end
 
 -- Test hook.
 function Router.reset()
+    entranceUsed = {}
     route, note, lastTrip = nil, nil, nil
     events, tripAt, lastLogged = {}, nil, nil
     busy, justJumped = false, false

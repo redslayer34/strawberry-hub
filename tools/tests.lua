@@ -1610,6 +1610,21 @@ do
     check("entrance taken at once", Router.update(town, city))
     stepTasks()
     check("requestEntrance called with the city", asked ~= nil and (asked - Router.ENTRANCES[1].dest).Magnitude < 1)
+    for _ = 1, 8 do stepTasks() end
+    eq("placed and kept there: arrived", Router.lastTrip(), "Underwater City entrance")
+
+    -- The server puts the character back every time: paused, fly instead.
+    Router.reset()
+    world.hrp.Position = town
+    Router.update(town, Vector3.new(-7894, 5545, -380))
+    for _ = 1, 8 do
+        stepTasks()
+        world.hrp.Position = town
+    end
+    eq("put back: says so", Router.lastTrip(), "Upper Sky entrance put back")
+    check("put back: not tried again", Router.plan(town, Vector3.new(-7894, 5545, -380)).kind ~= "entrance")
+    eq("already on the Upper Skylands: fly", Router.plan(Vector3.new(-7800, 5550, -300), Vector3.new(-7894, 5545, -380)).kind,
+        "direct")
 end
 
 -- Leaving the Temple of Time uses the game's way back.

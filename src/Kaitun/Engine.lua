@@ -585,6 +585,10 @@ function Engine.tick()
 end
 
 function Engine.start()
+    -- The travel events (entrances, doors, resets) on the screen's Last row.
+    pcall(function()
+        require("Game.Router").listener = function(text) note("travel: " .. text) end
+    end)
     -- Skip = { X = true } turns a task OFF: say it up front, it is easy to
     -- read the other way round.
     local skipped = {}
