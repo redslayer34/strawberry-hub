@@ -8,9 +8,9 @@
 --    templeIn    Sea 3: into the temple, through the "Mysterious Force" NPC
 --                (race V4 progress Begin / Teleport), as Vxeze Hub does
 --    submarine   Sea 3: the only way to and from the Submerged Island
---    entrance    Sea 1 (Teddy Kaitun): into and out of the Underwater City,
---                up to the Sky and the Upper Sky, from wherever the
---                character is: requestEntrance(dest) while standing on dest
+--    entrance    Sea 1 (Banana Cat Hub): into and out of the Underwater
+--                City, up to the Sky and the Upper Sky, from wherever the
+--                character is: requestEntrance(dest), the server moves it
 --
 --  Then every way that fits is given an estimated time and the one that
 --  arrives first is taken; flying is a way too:
@@ -100,33 +100,37 @@ Router.WORKER = Vector3.new(-16269.4082, 23.9799957, 1371.66235)
 Router.DOCK = Vector3.new(11427.9189, -2156.36401, 9726.24023)
 Router.TIKI = Vector3.new(-16456.5, 530.3, 436.2)
 
--- Sea 1 entrances (Teddy Kaitun's DoTween2): `dest` is called and the
--- character put there a few times; `to(goal)` says whether the goal is
--- behind it, `inside(here)` whether the character already is.
+-- Sea 1 entrances. The destinations are Banana Cat Hub's (3nn): the game
+-- sends the character there when requestEntrance(dest) is asked, from
+-- anywhere. Teddy's Upper Sky point (-6023, 5469, 2203) is out of date
+-- (the user stayed stuck with it) and placing the character there by hand
+-- got it put back: the server moves it, nothing else. `to(goal)` says
+-- whether the goal is behind it, `inside(here)` whether the character
+-- already is.
 local function v(x, y, z) return Vector3.new(x, y, z) end
-local UNDERWATER = v(61163.85, 11.6796875, 1819.7842)
+local UNDERWATER = v(61163.8515625, 11.759522438049316, 1819.7841796875)
 local function underwater(position)
     return position.X > 55000 or (position - UNDERWATER).Magnitude < 3000
 end
+local UPPER_SKY = v(-7894.6201171875, 5545.49169921875, -380.2467346191406)
+local SKY = v(-4607.82275390625, 872.5422973632812, -1667.556884765625)
 Router.ENTRANCES = {
-    { name = "Underwater City entrance", dest = UNDERWATER, lift = 1.5, arrived = 2000,
+    { name = "Underwater City entrance", dest = UNDERWATER, arrived = 2000,
         to = function(goal) return goal.X > 55000 or (goal - UNDERWATER).Magnitude < 4000 end,
         inside = underwater },
-    { name = "Underwater City exit", dest = v(3864.6885, 6.7369504, -1926.2141), lift = 15, arrived = 2000,
+    { name = "Underwater City exit", dest = v(3876.280517578125, 35.10614013671875, -1939.3201904296875), arrived = 2000,
         to = function(goal) return goal.X <= 55000 and (goal - UNDERWATER).Magnitude >= 4000 end,
         inside = function(here) return not underwater(here) end },
     -- Nothing else in Sea 1 is that high: above 4000 is the Upper Skylands.
-    { name = "Upper Sky entrance", dest = v(-6023.5767, 5469.7197, 2203.3083), lift = 0,
+    { name = "Upper Sky entrance", dest = UPPER_SKY,
         to = function(goal) return goal.Y >= 4000 end,
         inside = function(here) return here.Y >= 4000 end },
-    { name = "Sky entrance", dest = v(-4166.61, 1093.698, -347.16226), lift = 0, arrived = 3000,
-        to = function(goal) return goal.Y >= 200 and goal.Y < 4000
-            and (goal - v(-4166.61, 1093.698, -347.16226)).Magnitude < 3000 end,
-        inside = function(here) return here.Y >= 200
-            and (here - v(-4166.61, 1093.698, -347.16226)).Magnitude <= 3000 end },
+    { name = "Sky entrance", dest = SKY, arrived = 3000,
+        to = function(goal) return goal.Y >= 200 and goal.Y < 4000 and (goal - SKY).Magnitude < 3000 end,
+        inside = function(here) return here.Y >= 200 and (here - SKY).Magnitude <= 3000 end },
 }
-Router.ENTRANCE_TRIES = 4
-Router.ENTRANCE_EVERY = 0.15
+Router.ENTRANCE_TRIES = 3
+Router.ENTRANCE_EVERY = 0.5     -- seconds between two asks, watching for the move
 Router.ENTRANCE_CONFIRM = 1.5   -- seconds the server has to put the character back
 Router.ENTRANCE_PAUSE = 300     -- a failed (or looping) entrance is left alone this long
 Router.ENTRANCE_LOOP = 60       -- the same entrance again within this time: it did not hold
@@ -654,15 +658,12 @@ function actions.entrance(plan)
         return
     end
     for _ = 1, Router.ENTRANCE_TRIES do
-        task.wait(Router.ENTRANCE_EVERY)
-        pcall(Services.invoke, "requestEntrance", entrance.dest)
         local hrp = Player.hrp()
         if not hrp then break end
+        pcall(function() hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0) end)
+        pcall(Services.invoke, "requestEntrance", entrance.dest)
+        task.wait(Router.ENTRANCE_EVERY)
         if insideOf(entrance) then break end
-        pcall(function()
-            hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-            hrp.CFrame = CFrame.new(entrance.dest + Vector3.new(0, entrance.lift, 0))
-        end)
     end
     -- Placing the character there proves nothing: only still being there
     -- once the server had time to put it back does.

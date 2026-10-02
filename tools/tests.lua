@@ -1604,16 +1604,20 @@ do
 
     local asked
     world.commF.OnInvoke = function(name, dest)
-        if name == "requestEntrance" then asked = dest end
+        if name == "requestEntrance" then
+            asked = dest
+            world.hrp.Position = dest   -- the server moves the character
+        end
         return true
     end
     check("entrance taken at once", Router.update(town, city))
     stepTasks()
     check("requestEntrance called with the city", asked ~= nil and (asked - Router.ENTRANCES[1].dest).Magnitude < 1)
     for _ = 1, 8 do stepTasks() end
-    eq("placed and kept there: arrived", Router.lastTrip(), "Underwater City entrance")
+    eq("moved by the server and kept there: arrived", Router.lastTrip(), "Underwater City entrance")
 
-    -- The server puts the character back every time: paused, fly instead.
+    -- The server does not move the character: paused, fly instead.
+    world.commF.OnInvoke = function() return nil end
     Router.reset()
     world.hrp.Position = town
     Router.update(town, Vector3.new(-7894, 5545, -380))
@@ -1622,6 +1626,7 @@ do
         world.hrp.Position = town
     end
     eq("put back: says so", Router.lastTrip(), "Upper Sky entrance put back")
+    check("upper sky: Banana's destination", (Router.ENTRANCES[3].dest - Vector3.new(-7894.62, 5545.49, -380.25)).Magnitude < 1)
     check("put back: not tried again", Router.plan(town, Vector3.new(-7894, 5545, -380)).kind ~= "entrance")
     eq("already on the Upper Skylands: fly", Router.plan(Vector3.new(-7800, 5550, -300), Vector3.new(-7894, 5545, -380)).kind,
         "direct")
