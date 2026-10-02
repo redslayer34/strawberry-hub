@@ -1507,6 +1507,31 @@ do
     near("leaves from the dock", plan.dock, Router.DOCK)
 end
 
+-- Sea 1 entrances, Teddy's way: called from anywhere, no door to reach.
+setup()
+do
+    game.PlaceId = 2753915549
+    local town = Vector3.new(-655, 7, 1436)
+    local city = Vector3.new(61100, 12, 1800)
+    eq("to the Underwater City: entrance", Router.plan(town, city).name, "Underwater City entrance")
+    eq("out of the Underwater City: exit", Router.plan(city, town).name, "Underwater City exit")
+    eq("inside the city: fly", Router.plan(city, city + Vector3.new(0, 0, 1000)).kind, "direct")
+    eq("to the Upper Sky: entrance", Router.plan(town, Vector3.new(-7894, 5545, -380)).name, "Upper Sky entrance")
+    eq("to the Sky: entrance", Router.plan(town, Vector3.new(-4607, 872, -1667)).name, "Sky entrance")
+    eq("on the ground: no entrance", Router.plan(town, Vector3.new(-1100, 10, 3800)).kind ~= "entrance", true)
+    eq("already in the Sky: fly", Router.plan(Vector3.new(-4970, 717, -2622), Vector3.new(-4607, 872, -1667)).kind,
+        "direct")
+
+    local asked
+    world.commF.OnInvoke = function(name, dest)
+        if name == "requestEntrance" then asked = dest end
+        return true
+    end
+    check("entrance taken at once", Router.update(town, city))
+    stepTasks()
+    check("requestEntrance called with the city", asked ~= nil and (asked - Router.ENTRANCES[1].dest).Magnitude < 1)
+end
+
 -- Leaving the Temple of Time uses the game's way back.
 setup()
 do

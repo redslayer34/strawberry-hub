@@ -8,6 +8,9 @@
 --    templeIn    Sea 3: into the temple, through the "Mysterious Force" NPC
 --                (race V4 progress Begin / Teleport), as Vxeze Hub does
 --    submarine   Sea 3: the only way to and from the Submerged Island
+--    entrance    Sea 1 (Teddy Kaitun): into and out of the Underwater City,
+--                up to the Sky and the Upper Sky, from wherever the
+--                character is: requestEntrance(dest) while standing on dest
 --
 --  Then every way that fits is given an estimated time and the one that
 --  arrives first is taken; flying is a way too:
@@ -96,6 +99,30 @@ Router.ISLAND_RADIUS = 3000
 Router.WORKER = Vector3.new(-16269.4082, 23.9799957, 1371.66235)
 Router.DOCK = Vector3.new(11427.9189, -2156.36401, 9726.24023)
 Router.TIKI = Vector3.new(-16456.5, 530.3, 436.2)
+
+-- Sea 1 entrances (Teddy Kaitun's DoTween2): `dest` is called and the
+-- character put there a few times; `to(goal)` says whether the goal is
+-- behind it, `inside(here)` whether the character already is.
+local function v(x, y, z) return Vector3.new(x, y, z) end
+local UNDERWATER = v(61163.85, 11.6796875, 1819.7842)
+local function underwater(position)
+    return position.X > 55000 or (position - UNDERWATER).Magnitude < 3000
+end
+Router.ENTRANCES = {
+    { name = "Underwater City entrance", dest = UNDERWATER, lift = 1.5, arrived = 2000,
+        to = function(goal) return goal.X > 55000 or (goal - UNDERWATER).Magnitude < 4000 end,
+        inside = underwater },
+    { name = "Underwater City exit", dest = v(3864.6885, 6.7369504, -1926.2141), lift = 15, arrived = 2000,
+        to = function(goal) return goal.X <= 55000 and (goal - UNDERWATER).Magnitude >= 4000 end,
+        inside = function(here) return not underwater(here) end },
+    { name = "Upper Sky entrance", dest = v(-6023.5767, 5469.7197, 2203.3083), lift = 0, arrived = 3000,
+        to = function(goal) return goal.Y >= 4000 and (goal - v(-6023.5767, 5469.7197, 2203.3083)).Magnitude < 3500 end },
+    { name = "Sky entrance", dest = v(-4166.61, 1093.698, -347.16226), lift = 0, arrived = 3000,
+        to = function(goal) return goal.Y >= 200 and goal.Y < 4000
+            and (goal - v(-4166.61, 1093.698, -347.16226)).Magnitude < 3000 end },
+}
+Router.ENTRANCE_TRIES = 4
+Router.ENTRANCE_EVERY = 0.15
 
 -- Sea 3 Temple of Time (reference): leaving it means standing on its exit
 -- point and asking the game to send you back.
@@ -379,9 +406,22 @@ function Router.templeProgress()
     return templeProgress.value
 end
 
+local function entrancePlan(here, goal)
+    for _, entrance in ipairs(Router.ENTRANCES) do
+        local inside
+        if entrance.inside then inside = entrance.inside(here)
+        else inside = (here - entrance.dest).Magnitude <= entrance.arrived end
+        if not inside and entrance.to(goal) and usable(entrance.name) then
+            return { kind = "entrance", name = entrance.name, entrance = entrance }
+        end
+    end
+    return nil
+end
+
 -- The ways that are taken whenever they apply. Also a reason when the
 -- temple cannot be entered.
 local function mandatoryPlan(here, goal)
+    if Player.sea() == 1 then return entrancePlan(here, goal) end
     if Player.sea() ~= 3 then return nil end
     local inTemple = within(here, Router.TEMPLE, Router.TEMPLE_RADIUS)
     local toTemple = within(goal, Router.TEMPLE, Router.TEMPLE_RADIUS)
@@ -578,6 +618,33 @@ function actions.pad(plan)
     end
     pausePad(pad.name, Router.PAD_PAUSE, string.format("did not open after %d calls, answer %s", calls, tostring(answer)))
     lastTrip = pad.name .. " did not open"
+end
+
+-- Teddy's way: call the entrance and stand on its far side, a few times,
+-- until the server keeps the character there.
+function actions.entrance(plan)
+    local entrance = plan.entrance
+    local arrived = false
+    for _ = 1, Router.ENTRANCE_TRIES do
+        task.wait(Router.ENTRANCE_EVERY)
+        pcall(Services.invoke, "requestEntrance", entrance.dest)
+        local hrp = Player.hrp()
+        if not hrp then break end
+        pcall(function()
+            hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            hrp.CFrame = CFrame.new(entrance.dest + Vector3.new(0, entrance.lift, 0))
+        end)
+        if near(entrance.dest, entrance.arrived) then
+            arrived = true
+            break
+        end
+    end
+    -- The server may put the character back a moment later.
+    task.wait(Router.ENTRANCE_EVERY * 2)
+    arrived = arrived and near(entrance.dest, entrance.arrived)
+    recordResult(plan.name, arrived, arrived and "arrived" or "put back")
+    Router.log(string.format("%s: %s, now at %s", plan.name, arrived and "arrived" or "put back",
+        xyz(Player.position())))
 end
 
 function actions.gateway(plan)
