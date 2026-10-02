@@ -64,12 +64,19 @@ local function v2(mode)
         return "V2 needs 500k Beli"
     end
     local step = Common.invoke("Alchemist", "1")
-    if step == 0 then
-        Movement.stop()
-        if Common.every("Alchemist2", 3) then Services.invoke("Alchemist", "2"); Common.forget() end
-        return "Taking the Alchemist's quest"
+    local allFlowers = Common.has("Flower 1") and Common.has("Flower 2") and Common.has("Flower 3")
+    -- Teddy: 1 is the quest under way, -2 done; anything else (0, nil, a
+    -- new answer) means the quest still has to be taken, at the Alchemist.
+    if step ~= 1 and step ~= 2 and not allFlowers then
+        local where = World.npcPosition("Alchemist") or Upgrade.ALCHEMIST_TURN_IN
+        Common.goTo(CFrame.new(where + Vector3.new(0, 0, 4)))
+        if Common.near(where, 12) and Common.every("Alchemist2", 3) then
+            Services.invoke("Alchemist", "2")
+            Common.forget()
+        end
+        return "Taking the Alchemist's quest (answer " .. tostring(step) .. ")"
     end
-    if step == 1 then
+    if step == 1 and not allFlowers then
         -- A flower that is not out (Transparency 1: flower 1 only shows at
         -- night) is left for later instead of standing on it (Teddy).
         local waiting
@@ -90,7 +97,7 @@ local function v2(mode)
         end
         return "Flower 3: " .. Common.farm(mode, { "Swan Pirate" }, search)
     end
-    if step == 2 then
+    if step == 2 or allFlowers then
         Common.goTo(Upgrade.ALCHEMIST_TURN_IN)
         if Common.near(Upgrade.ALCHEMIST_TURN_IN, 8) and Common.every("Alchemist3", 3) then
             Services.invoke("Alchemist", "3")

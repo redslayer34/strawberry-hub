@@ -2704,6 +2704,10 @@ do
     Settings.set("RaceV2V3", true)
     check("v2v3 on", RaceUpgrade.v2v3.enabled())
     RaceUpgrade.v2v3.tick()
+    check("goes to the Alchemist first", RaceUpgrade.v2v3.status:find("Alchemist's quest", 1, true) ~= nil,
+        RaceUpgrade.v2v3.status)
+    world.hrp.Position = RaceUpgrade.ALCHEMIST_TURN_IN
+    RaceUpgrade.v2v3.tick()
     local asked = false
     for _, call in ipairs(calls(world.commF, "Alchemist")) do
         if call[2] == "2" then asked = true end
