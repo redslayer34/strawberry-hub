@@ -93,10 +93,14 @@ end
 local fruit = { name = "Fruit" }
 Events.fruit = fruit
 
+Events.FRUIT_GIVE_UP = 60      -- seconds on one fruit that cannot be picked up
+local ignoredFruits = setmetatable({}, { __mode = "k" })
+local chasing, chasingSince
+
 function Events.groundFruit()
     for _, child in ipairs(workspace:GetChildren()) do
         if (child:IsA("Tool") or child:IsA("Model")) and child.Name:find("Fruit", 1, true)
-            and child:FindFirstChild("Handle") then
+            and child:FindFirstChild("Handle") and not ignoredFruits[child] then
             return child
         end
     end
@@ -115,6 +119,14 @@ function fruit.tick(mode)
     mode.target = nil
     local found = Events.groundFruit()
     if not found then return "No fruit" end
+    -- A fruit that never comes (out of reach, someone else's): left alone,
+    -- since this event runs above every farm.
+    if found ~= chasing then chasing, chasingSince = found, os.clock() end
+    if os.clock() - chasingSince > Events.FRUIT_GIVE_UP then
+        ignoredFruits[found] = true
+        chasing = nil
+        return "Leaving " .. found.Name .. " (cannot pick it up)"
+    end
     local handle = found.Handle
     Common.goTo(handle.CFrame)
     if Common.near(handle.Position, 5) then

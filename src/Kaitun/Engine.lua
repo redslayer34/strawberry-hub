@@ -462,6 +462,37 @@ function Engine.lateHop(sea, level)
 end
 
 -- Purchases that unblock a step: Trevor's fruit, a legendary haki colour.
+-- The haki abilities (Teddy's Items.Abilities), bought from anywhere when
+-- the character does not carry their tag yet. Geppo and Buso at once (cheap,
+-- Buso makes Auto Buso work); Soru and Ken once Electric is owned or Sea 2
+-- is reached, as Teddy keeps the money for the styles first.
+Engine.ABILITIES = {
+    { name = "Geppo", call = { "BuyHaki", "Geppo" }, beli = 10000 },
+    { name = "Buso", call = { "BuyHaki", "Buso" }, beli = 25000 },
+    { name = "Soru", call = { "BuyHaki", "Soru" }, beli = 100000, late = true },
+    { name = "Ken", call = { "KenTalk", "Buy" }, beli = 150000, late = true },
+}
+
+local function hasAbility(name)
+    local character = Player.character()
+    if not character then return true end
+    local ok, tagged = pcall(function()
+        return Services.get("CollectionService"):HasTag(character, name)
+    end)
+    return not ok or tagged == true
+end
+
+function Engine.nextAbility(sea)
+    local beli = Player.data("Beli") or 0
+    local late = sea >= 2 or Melee.owned("Electro")
+    for _, ability in ipairs(Engine.ABILITIES) do
+        if (late or not ability.late) and beli >= ability.beli and not hasAbility(ability.name) then
+            return ability
+        end
+    end
+    return nil
+end
+
 local function purchases(sea, level)
     local t = now()
     if t - lastBuy < Engine.BUY_EVERY then return end
@@ -484,6 +515,13 @@ local function purchases(sea, level)
             Common.forget()
             note("bought the haki colour " .. colour)
         end
+    end
+    -- Abilities last: Trevor's fruit and a haki colour unblock more.
+    local ability = Engine.nextAbility(sea)
+    if ability and Common.every("Ability" .. ability.name, 30) then
+        lastBuy = t
+        Services.invoke((table.unpack or unpack)(ability.call))
+        note("bought " .. ability.name)
     end
 end
 

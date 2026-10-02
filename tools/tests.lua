@@ -4169,6 +4169,20 @@ do
     eq("raid chip: cheapest fruit on sale", (Raids.cheapestOnSale()), "Kilo-Kilo")
 end
 
+-- Haki abilities bought like Teddy: Geppo / Buso at once, Soru / Ken later.
+meleeSetup(2753915549, 100, {}, {}, 60000)
+do
+    KConfig.reset(); KEngine.reset()
+    eq("abilities: Geppo first", KEngine.nextAbility(1).name, "Geppo")
+    game:GetService("CollectionService"):AddTag(world.character, "Geppo")
+    eq("abilities: then Buso", KEngine.nextAbility(1).name, "Buso")
+    game:GetService("CollectionService"):AddTag(world.character, "Buso")
+    world.player.Data.Beli.Value = 400000
+    eq("abilities: Soru waits for Electric / Sea 2", KEngine.nextAbility(1), nil)
+    eq("abilities: Soru in Sea 2", KEngine.nextAbility(2).name, "Soru")
+    KEngine.tick()
+end
+
 ---------------------------------------------------------------------------
 -- Report
 ---------------------------------------------------------------------------
