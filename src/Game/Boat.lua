@@ -221,6 +221,10 @@ function Boat.start()
     connection = Services.get("RunService").Heartbeat:Connect(Boat.step)
 end
 
+function Boat.running()
+    return connection ~= nil
+end
+
 function Boat.destroy()
     if connection then
         connection:Disconnect()

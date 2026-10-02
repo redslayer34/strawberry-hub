@@ -48,7 +48,7 @@ check("hops keep the config", require("Game.Server").LOADER:find('Team = "Marine
 check("screen loop running", Loop.isRunning("KaitunScreen"))
 check("panel built", KaitunScreen.gui() ~= nil)
 eq("panel in CoreGui", KaitunScreen.gui() and KaitunScreen.gui().Parent, game:GetService("CoreGui"))
-eq("movement on Heartbeat", heartbeat:Count(), 1)
+eq("movement and boat on Heartbeat", heartbeat:Count(), 2)
 
 -- A character, so the engine has something to drive.
 local character = newInstance("Model", "Tester", workspace.Characters)
@@ -67,6 +67,7 @@ eq("engine switched the level farm on", Settings.get("AutoFarmLevel"), true)
 eq("engine set the speed", Settings.get("TweenSpeed"), 250)
 check("panel text filled", KaitunScreen.lines().Level:find("Level", 1, true) ~= nil)
 check("next spin line", KaitunScreen.lines().Spin:find("Next fruit spin", 1, true) ~= nil)
+check("boat driver running", require("Game.Boat").running())
 local panel = KaitunScreen.gui()
 check("panel covers the whole screen", panel.IgnoreGuiInset == true and panel.Tint ~= nil)
 eq("panel lets clicks through", panel.Tint.Active, false)

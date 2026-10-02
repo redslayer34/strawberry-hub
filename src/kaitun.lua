@@ -13,6 +13,7 @@
 --=============================================================================
 
 local AimHook = require("Game.AimHook")
+local Boat = require("Game.Boat")
 local Codes = require("Features.Codes")
 local Config = require("Kaitun.Config")
 local Engine = require("Kaitun.Engine")
@@ -28,6 +29,7 @@ local Movement = require("Game.Movement")
 local Player = require("Core.Player")
 local PlayerTweaks = require("Features.PlayerTweaks")
 local RaceV4 = require("Features.Races.V4")
+local SeaEvents = require("Features.Sea.Events")
 local Screen = require("Features.Screen")
 local Server = require("Game.Server")
 local Settings = require("Core.Settings")
@@ -83,6 +85,11 @@ guard("lightning bolt clouds", Electric.start)
 guard("fruits", Fruits.start)
 guard("items", Items.start)
 guard("race v4", RaceV4.start)
+-- The boat driver: the Fishman V3 sea beast and the sea events sail with it
+-- (without it the boat was bought, boarded, and never moved).
+guard("boat", Boat.start)
+local stopDrives = guard("sea drives", SeaEvents.start)
+if stopDrives then connections[#connections + 1] = { Disconnect = stopDrives } end
 guard("screen", Screen.start)
 guard("webhook", Webhook.start)
 -- The 2x experience codes, as the Teddy Kaitun does at start: only while
@@ -107,6 +114,7 @@ function kaitun.Unload()
     pcall(AimHook.disable)
     pcall(Loop.stopAll)
     pcall(Movement.destroy)
+    pcall(Boat.destroy)
     pcall(IslandLoader.destroy)
     pcall(Helpers.destroy)
     pcall(require("Game.TeleportTag").clear)
