@@ -221,6 +221,11 @@ function Electric.step(mode)
             Movement.stop()
             return "Holding the Lightning Bolt until $500,000"
         end
+        local turn, before = Melee.turnOf("Electro")
+        if not turn then
+            Movement.stop()
+            return "Holding the Lightning Bolt until " .. before .. " " .. Melee.TARGET
+        end
         if not atScientist() then return "Taking the Lightning Bolt to the Mad Scientist" end
         if Common.every("ElectricDeliver", 2) then
             if Services.invoke("DeliverLightningBolt") ~= 1 then Services.invoke("BuyElectro") end
@@ -277,6 +282,8 @@ Electric.mode = Mode({
     -- so with the bolt in hand and less money the farms go on meanwhile.
     want = function()
         if Electric.owned() or Electric.givenUp() then return false end
+        -- The previous style at 400 first (one style at a time).
+        if not Melee.turnOf("Electro") then return false end
         return not Electric.hasBolt() or (Player.data("Beli") or 0) >= Electric.PRICE
     end,
     idleStatus = "Owned, or holding the bolt until $500,000",

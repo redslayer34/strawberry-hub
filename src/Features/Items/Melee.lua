@@ -250,6 +250,20 @@ function Melee.useful(entry)
     return false
 end
 
+-- Whether `name` may be bought now as far as the chain goes: every style
+-- before it that is owned (and still useful) is at 400 first. The user's
+-- rule for Godhuman: one style at a time, each taken to 400 before the
+-- next. Returns ok, and the style still under 400.
+function Melee.turnOf(name)
+    for _, entry in ipairs(Melee.CHAIN) do
+        if entry.name == name then return true end
+        if not entry.final and Melee.useful(entry) and Melee.owned(entry.name) and not finished(entry) then
+            return false, entry.name
+        end
+    end
+    return true
+end
+
 -- The style to work on: the first useful one in the chain that is owned and
 -- under 400 (farm it) or can be bought. Otherwise the best owned one.
 -- Returns name, "owned" | "buy".

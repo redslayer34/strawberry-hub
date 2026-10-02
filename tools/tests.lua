@@ -4024,7 +4024,7 @@ do
     check("$504k: plan says Electric runs", table.concat(KEngine.plan(), " | "):find("Electric: running", 1, true) ~= nil)
 end
 
--- $504k with Black Leg held: the Electric quest is what runs.
+-- Black Leg held under 400: one style at a time, Electric waits for it.
 meleeSetup(2753915549, 369, { style("Dark Step", 197) }, {}, 704630)
 do
     newInstance("Tool", "Dark Step", world.player.Backpack).ToolTip = "Melee"
@@ -4032,8 +4032,22 @@ do
     KEngine.reset()
     KEngine.tick()
     KEngine.tick()
-    eq("$704k + Black Leg: Electric is the task", KEngine.status().task, "Electric")
-    eq("$704k + Black Leg: the Electric quest runs", runningMode(), "Electric")
+    check("$704k + Black Leg 197: not Electric", KEngine.status().task ~= "Electric")
+    check("$704k + Black Leg 197: plan says Black Leg first",
+        table.concat(KEngine.plan(), " | "):find("Black Leg to 400 first", 1, true) ~= nil, table.concat(KEngine.plan(), " | "))
+    check("$704k + Black Leg 197: the hub mode waits too", not Electric.mode.enabled())
+end
+
+-- Black Leg at 400: the Electric quest is what runs.
+meleeSetup(2753915549, 369, { style("Dark Step", 400) }, {}, 704630)
+do
+    newInstance("Tool", "Dark Step", world.player.Backpack).ToolTip = "Melee"
+    KConfig.reset()
+    KEngine.reset()
+    KEngine.tick()
+    KEngine.tick()
+    eq("$704k + Black Leg 400: Electric is the task", KEngine.status().task, "Electric")
+    eq("$704k + Black Leg 400: the Electric quest runs", runningMode(), "Electric")
 end
 
 -- $200k: the quest waits for the money (no cloud announced), Saber runs.

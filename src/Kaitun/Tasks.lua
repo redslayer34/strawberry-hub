@@ -237,6 +237,8 @@ Tasks.LIST = {
         ready = function()
             local beli = Player.data("Beli") or 0
             if Electric.givenUp() then return false end
+            -- One style at a time: Black Leg at 400 first.
+            if not Melee.turnOf("Electro") then return false end
             local sea, level = Player.sea(), Player.level() or 0
             -- A charged cloud already announced while the quest is on: take
             -- it whatever the money (the bolt costs nothing).
@@ -265,6 +267,8 @@ Tasks.LIST = {
         hopAfter = 180,
         -- Given up: the screen says the Mad Scientist's last answers.
         why = function()
+            local turn, before = Melee.turnOf("Electro")
+            if not turn then return before .. " to " .. Melee.TARGET .. " first" end
             if Electric.givenUp() then return "Mad Scientist gave the same answer: " .. tostring(Electric.answers) end
         end,
         maxTime = 3600,
