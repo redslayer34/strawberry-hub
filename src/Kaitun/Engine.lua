@@ -519,6 +519,16 @@ function Engine.tick()
 end
 
 function Engine.start()
+    -- Skip = { X = true } turns a task OFF: say it up front, it is easy to
+    -- read the other way round.
+    local skipped = {}
+    for key, value in pairs(Config.get("Skip") or {}) do
+        if value == true then skipped[#skipped + 1] = key end
+    end
+    table.sort(skipped)
+    if #skipped > 0 then
+        note("your config turns OFF: " .. table.concat(skipped, ", ") .. " (Skip = true means skip)")
+    end
     Loop.start("Kaitun", Engine.EVERY, Engine.tick)
 end
 
@@ -559,6 +569,10 @@ function Engine.plan()
         why = ok and why or "error"
         if why ~= "other sea" then
             -- "done" says who said so, to catch a false "owned".
+            if why == "skipped" then
+                local key = Config.skipped(task.name) and task.name or task.group
+                why = "skipped by your config (Skip." .. tostring(key) .. " = true)"
+            end
             if why == "done" and task.doneBy then
                 local okBy, by = pcall(task.doneBy)
                 if okBy and by then why = "done, " .. tostring(by) end
