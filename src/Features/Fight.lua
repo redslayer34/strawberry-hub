@@ -22,7 +22,35 @@ Fight.SPAWN_REACHED = 100    -- studs: close enough, mobs stream in
 -- Engages `mob` for `mode` (sets mode.target, which the attack loop hits).
 -- Returns hasWeapon: false when the chosen weapon is not in the inventory.
 -- `weapon` (a ToolTip) replaces the Weapon setting when given.
+-- A mob hit this long with its health never going down is left alone for
+-- a while (Enemies.ignore): a secret quest's mob, a shielded one...
+Fight.NO_DAMAGE_AFTER = 20
+local watched = { mob = nil, since = 0, health = 0 }
+
+local function watchDamage(mob)
+    local humanoid = mob:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    local now = os.clock()
+    -- Only the time spent next to it counts (not the flight there).
+    local root = mob:FindFirstChild("HumanoidRootPart")
+    if not root or Player.distanceTo(root.Position) > 40 then
+        watched.mob = nil
+        return
+    end
+    if watched.mob ~= mob then
+        watched.mob, watched.since, watched.health = mob, now, humanoid.Health
+        return
+    end
+    if humanoid.Health < watched.health then
+        watched.since, watched.health = now, humanoid.Health
+    elseif now - watched.since > Fight.NO_DAMAGE_AFTER then
+        Enemies.ignore(mob, 120)
+        watched.mob = nil
+    end
+end
+
 function Fight.engage(mode, mob, weapon)
+    watchDamage(mob)
     local root = mob.HumanoidRootPart
     Movement.to(root.CFrame * CFrame.new(7, Settings.get("FarmHeight"), 0))
     if Settings.get("BringMob") then

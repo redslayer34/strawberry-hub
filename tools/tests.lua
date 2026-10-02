@@ -4183,6 +4183,23 @@ do
     KEngine.tick()
 end
 
+-- Secret quest mobs (LocalEnemy) and mobs that take no damage are not farmed.
+setup()
+do
+    local normal = mob("Prisoner", Vector3.new(0, 0, 30))
+    local secret = mob("Prisoner", Vector3.new(0, 0, 5))
+    secret:SetAttribute("LocalEnemy", "Tester")
+    eq("secret quest mob skipped (the nearer one)", Enemies.nearest("Prisoner"), normal)
+    local Fight = require("Features.Fight")
+    local after = Fight.NO_DAMAGE_AFTER
+    Fight.NO_DAMAGE_AFTER = -1
+    local fake = {}
+    Fight.engage(fake, normal)
+    Fight.engage(fake, normal)
+    eq("no damage at all: left alone", Enemies.nearest("Prisoner"), nil)
+    Fight.NO_DAMAGE_AFTER = after
+end
+
 ---------------------------------------------------------------------------
 -- Report
 ---------------------------------------------------------------------------

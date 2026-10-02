@@ -38,6 +38,33 @@ local function folder()
     return workspace:FindFirstChild("Enemies")
 end
 
+-- Mobs that are not for the farms, even with the right name:
+--   * a secret quest's mob (the game marks it with a LocalEnemy attribute:
+--     the escaping Prisoner "Confront the prisoner before attacking!", the
+--     Monkeys of a hidden event...), whoever it belongs to;
+--   * a boss another player has engaged;
+--   * a mob the farm hit for a while without its health moving (set by
+--     Enemies.ignore: it cannot be damaged this way).
+local ignoredUntil = setmetatable({}, { __mode = "k" })
+
+function Enemies.ignore(model, seconds)
+    ignoredUntil[model] = os.clock() + (seconds or 120)
+end
+
+function Enemies.farmable(model)
+    local untilAt = ignoredUntil[model]
+    if untilAt and os.clock() < untilAt then return false end
+    local ok, localEnemy, engaged = pcall(function()
+        return model:GetAttribute("LocalEnemy"), model:GetAttribute("BossEngagedWith")
+    end)
+    if not ok then return true end
+    if localEnemy ~= nil then return false end
+    local player = game:GetService("Players").LocalPlayer
+    local mine = player and player.UserId
+    if engaged ~= nil and tonumber(engaged) ~= mine then return false end
+    return true
+end
+
 -- Every alive mob whose name is `wanted` (a name or a list of names).
 function Enemies.all(wanted, ignore)
     local out = {}
@@ -45,7 +72,8 @@ function Enemies.all(wanted, ignore)
     if not enemies then return out end
     local set = toSet(wanted)
     for _, model in ipairs(enemies:GetChildren()) do
-        if set[model.Name] and not (ignore and ignore[model]) and Enemies.isAlive(model) then
+        if set[model.Name] and not (ignore and ignore[model]) and Enemies.isAlive(model)
+            and Enemies.farmable(model) then
             out[#out + 1] = model
         end
     end
