@@ -3039,6 +3039,37 @@ do
     Movement.stop()
 end
 
+-- Dark Step's Overheat (V) is used as soon as it is ready, next to the mob.
+setup()
+do
+    local pressed = {}
+    local vim = game:GetService("VirtualInputManager")
+    function vim:SendKeyEvent(down, key) if down then pressed[#pressed + 1] = key end end
+    local tool = newInstance("Tool", "Dark Step", world.player.Backpack)
+    tool.ToolTip = "Melee"
+    local skills = newInstance("Frame", "Skills", world.player.PlayerGui.Main)
+    local bar = newInstance("Frame", "Dark Step", skills)
+    local frame = newInstance("Frame", "V", bar)
+    newInstance("TextLabel", "Title", frame).TextColor3 = Color3.new(1, 1, 1)
+    local cooldown = newInstance("Frame", "Cooldown", frame)
+    cooldown.Size = UDim2.new(0.5, 0, 1, -1)
+    local target = mob("Zombie", Vector3.new(0, 0, 0))
+    local Fight = require("Features.Fight")
+    Mastery.reset()
+    Fight.engage({}, target)
+    eq("overheat on cooldown: not pressed", #pressed, 0)
+    cooldown.Size = UDim2.new(0, 0, 1, -1)
+    Mastery.reset()
+    Fight.engage({}, target)
+    eq("overheat ready: V pressed", pressed[1], "V")
+    Settings.set("MeleeBuff", false)
+    Mastery.reset()
+    pressed = {}
+    Fight.engage({}, target)
+    eq("buffs off: not pressed", #pressed, 0)
+    Settings.set("MeleeBuff", true)
+end
+
 -- Skills per weapon type.
 batchFSetup()
 do

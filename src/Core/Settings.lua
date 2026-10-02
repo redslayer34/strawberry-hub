@@ -57,6 +57,7 @@ Settings.DEFAULTS = {
     SkillHoldGun = 0.5,
     SkillHoldFruit = 0.5,
     SkillFast = false,
+    MeleeBuff = true,
 
     -- Stack farming: tasks that interrupt the main farm
     StackNewWorld = false,

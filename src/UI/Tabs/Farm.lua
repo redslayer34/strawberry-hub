@@ -121,6 +121,8 @@ return function(Window)
     Bind.slider(combat, "SkillHoldGun", "Gun Hold Time", 0, 5, 1)
     Bind.slider(combat, "SkillHoldFruit", "Blox Fruit Hold Time", 0, 5, 1)
     Bind.toggle(combat, "SkillFast", "Use Skills Fast", "Taps the keys instead of holding them.")
+    Bind.toggle(combat, "MeleeBuff", "Use Melee Buffs",
+        "Uses a style's buff skill as soon as it is ready while fighting (Dark Step V: +22% M1 damage).")
 
     local status = tab:AddSection("Status")
     local panel = status:AddParagraph({ Title = "Status", Content = statusText() })

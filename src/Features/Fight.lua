@@ -110,7 +110,10 @@ function Fight.engage(mode, mob, weapon)
     mode.target = mob
     PlayerTweaks.ensureBuso()
     if Mastery.step(mob) then return true end
-    return Player.equip(weapon or Settings.get("Weapon")) ~= nil
+    local tool = Player.equip(weapon or Settings.get("Weapon"))
+    -- Close enough to hit: the style's buff first (Dark Step's Overheat).
+    if tool and Player.distanceTo(root.Position) <= 40 then pcall(Mastery.buff, tool) end
+    return tool ~= nil
 end
 
 -- "Fighting X" plus a warning when the weapon is missing.

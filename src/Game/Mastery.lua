@@ -127,6 +127,27 @@ function Mastery.step(mob)
 end
 
 ---------------------------------------------------------------------------
+-- Buffs: a style's skill that strengthens the M1 hits
+---------------------------------------------------------------------------
+
+-- [tool name] = the buff's key. Dark Step's V (Overheat): +22% M1 damage.
+Mastery.BUFFS = { ["Dark Step"] = "V", ["Black Leg"] = "V" }
+
+-- Uses the buff of `tool` (the equipped weapon) as soon as it is ready
+-- (once its mastery unlocks it, the key shows on the skill bar). Returns
+-- the key pressed, or nil.
+function Mastery.buff(tool)
+    if not Settings.get("MeleeBuff") or not tool then return nil end
+    local key = Mastery.BUFFS[tool.Name]
+    if not key or tool.Parent ~= Player.character() then return nil end
+    local now = os.clock()
+    if now < nextPress then return nil end
+    if Mastery.readySkill(tool, { [key] = true }) ~= key then return nil end
+    press(key, Mastery.FAST_HOLD, now)
+    return key
+end
+
+---------------------------------------------------------------------------
 -- Skills at a point (trees, sea events): every weapon in turn
 ---------------------------------------------------------------------------
 
