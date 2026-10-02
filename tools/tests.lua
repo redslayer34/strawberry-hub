@@ -4041,6 +4041,26 @@ do
     check("library key: not needed yet", not Melee.libraryKey.needed())
 end
 
+-- The library already open (OpenLibrary answers true): Death Step counts as
+-- unlocked even without the fragments, the key is not used forever.
+meleeSetup(4442272183, 1074, { style("Dark Step", 347) }, { BuyDeathStep = 0, OpenLibrary = true })
+do
+    check("library open: Death Step unlocked", Melee.unlocked("Death Step"))
+    check("library open: no key job", not Melee.libraryKey.enabled())
+end
+-- The key used again and again, still in the inventory: open already.
+meleeSetup(4442272183, 1074, { style("Dark Step", 347) }, { BuyDeathStep = 0, OpenLibrary = 0 })
+do
+    newInstance("Tool", "Library Key", world.player.Backpack)
+    Settings.set("ItemLibraryKey", true)
+    local ask = require("Features.Stack.Common")
+    for _ = 1, Melee.KEY_TRIES do
+        ask.reset()
+        Melee.libraryKey.tick()
+    end
+    check("key kept after tries: unlocked", Melee.unlocked("Death Step"))
+end
+
 -- Electric: no cloud in Sea 1 -> a hop reason for the Kaitun.
 meleeSetup(2753915549, 300, {}, { ElectroQuestState = 1 }, 600000)
 do

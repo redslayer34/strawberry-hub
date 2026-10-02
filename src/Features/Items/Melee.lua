@@ -239,9 +239,12 @@ end
 ---------------------------------------------------------------------------
 
 local UNLOCK_CHECKS = {
+    -- Teddy: the library already open (OpenLibrary answers true) counts,
+    -- not only the purchase check (which wants the fragments too).
     ["Death Step"] = function()
         local answer = Services.invoke("BuyDeathStep", true)
-        return answer == 1 or answer == 2
+        if answer == 1 or answer == 2 then return true end
+        return Services.invoke("OpenLibrary") == true
     end,
     ["Sharkman Karate"] = function()
         local answer = Services.invoke("BuySharkmanKarate", true)
@@ -262,8 +265,15 @@ local UNLOCK_CHECKS = {
     end,
 }
 
+-- Unlocks found once are kept with the styles (per account file).
+function Melee.markUnlocked(name)
+    remember("unlock:" .. name, 1)
+    unlockCache[name] = { value = true, at = os.clock() }
+end
+
 function Melee.unlocked(name)
     if Melee.owned(name) then return true end
+    if remembered()["unlock:" .. name] then return true end
     local check = UNLOCK_CHECKS[name]
     if not check then return true end
     local cached = unlockCache[name]
@@ -486,7 +496,10 @@ end
 -- Key" and "Water Key"). The boss lives in Sea 2; from another sea the mode
 -- only goes back once the key is what holds the style back (`needs` at
 -- 400), otherwise it waits for the boss to show up while passing by.
+Melee.KEY_TRIES = 5
+
 local function keyMode(spec)
+    local uses = 0
     local function holding()
         return Common.has(spec.item) or Common.itemCount(spec.item) > 0
     end
@@ -504,9 +517,16 @@ local function keyMode(spec)
             if holding() then
                 Movement.stop()
                 if Common.every(spec.key, 2) then
-                    Services.invoke((table.unpack or unpack)(spec.use))
+                    local answer = Services.invoke((table.unpack or unpack)(spec.use))
                     Common.forget()
                     Melee.forget(spec.style)
+                    uses = uses + 1
+                    -- The door answers yes, or the key was used again and
+                    -- again and is still there: the door is open already.
+                    if answer == true or uses >= Melee.KEY_TRIES then
+                        uses = 0
+                        Melee.markUnlocked(spec.style)
+                    end
                 end
                 return "Using the " .. spec.item
             end
