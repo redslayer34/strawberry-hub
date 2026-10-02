@@ -4754,6 +4754,40 @@ do
     Fight.MOB_MAX_NEAR = maxNear
 end
 
+-- No damage for a few seconds: a real click (the user's own click unstuck
+-- the Lava Pirates).
+setup()
+do
+    local Fight = require("Features.Fight")
+    local tool = newInstance("Tool", "Fishman Karate", world.character)
+    tool.ToolTip = "Melee"
+    local activated = 0
+    tool.Activate = function() activated = activated + 1 end
+    local user = game:GetService("VirtualUser")
+    local clicks = 0
+    user.CaptureController = function() end
+    user.Button1Down = function() clicks = clicks + 1 end
+    user.Button1Up = function() end
+    local nudge = Fight.NUDGE_AFTER
+    Fight.NUDGE_AFTER = -1
+    local pirate = mob("Lava Pirate", Vector3.new(0, 0, 10))
+    local fake = {}
+    Fight.engage(fake, pirate)
+    Fight.engage(fake, pirate)
+    check("no damage: the tool is used", activated >= 1)
+    check("no damage: a mouse click", clicks >= 1)
+    Fight.lastIgnored = nil
+    local said = Fight.status(pirate, true)
+    check("status says it", said:find("clicking to unstick", 1, true) ~= nil or said:find("resync", 1, true) ~= nil, said)
+    Fight.NUDGE_AFTER = nudge
+    local hurt = mob("Lava Pirate", Vector3.new(0, 0, 12))
+    activated = 0
+    Fight.engage(fake, hurt)
+    hurt.Humanoid.Health = 10
+    Fight.engage(fake, hurt)
+    eq("health going down: no click", activated, 0)
+end
+
 -- The farm-level watchdog: the kill count frozen while fighting.
 setup()
 do

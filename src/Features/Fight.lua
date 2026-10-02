@@ -13,6 +13,7 @@ local Mastery = require("Game.Mastery")
 local Movement = require("Game.Movement")
 local Player = require("Core.Player")
 local PlayerTweaks = require("Features.PlayerTweaks")
+local Services = require("Core.Services")
 local Settings = require("Core.Settings")
 
 local Fight = {}
@@ -39,6 +40,13 @@ Fight.STRIKE_WINDOW = 180
 Fight.RESYNC_TIME = 4
 Fight.MOB_MAX_NEAR = 60       -- a normal mob still up after this long next to it: bugged
 Fight.REAL_DROP = 0.01         -- a health drop counts from 1 % of MaxHealth
+-- The attack loop only sends the network hits. Some mobs (the Lava
+-- Pirates, for the user) take no damage until a real click: the user's
+-- own click unstuck them. So a real click is made while a mob does not
+-- lose health.
+Fight.NUDGE_AFTER = 4
+Fight.NUDGE_EVERY = 3
+Fight.nudging = false
 -- One record per mob (weak keys): switching between copies of a bugged mob
 -- no longer starts the count again.
 local records = setmetatable({}, { __mode = "k" })
@@ -64,12 +72,27 @@ local function strike(mob, seconds)
     end
 end
 
+-- What a player's click does: the tool used, and a mouse click.
+function Fight.realClick()
+    pcall(function()
+        local tool = Player.equippedTool()
+        if tool then tool:Activate() end
+    end)
+    pcall(function()
+        local user = Services.get("VirtualUser")
+        user:CaptureController()
+        user:Button1Down(Vector2.new(0, 0))
+        user:Button1Up(Vector2.new(0, 0))
+    end)
+end
+
 -- Whether the character is holding still to resync with the server.
 function Fight.resyncing()
     return os.clock() < resyncUntil
 end
 
 local function watchDamage(mob)
+    Fight.nudging = false
     local humanoid = mob:FindFirstChildOfClass("Humanoid")
     local root = mob:FindFirstChild("HumanoidRootPart")
     if not humanoid or not root then return end
@@ -96,6 +119,14 @@ local function watchDamage(mob)
     end
     record.closerAt = now
     record.near = record.near + dt
+    -- No drop for a while: a real click, as the player would.
+    if now - record.lowerAt >= Fight.NUDGE_AFTER and not Mastery.active(mob) then
+        Fight.nudging = true
+        if not record.nudgedAt or now - record.nudgedAt >= Fight.NUDGE_EVERY then
+            record.nudgedAt = now
+            Fight.realClick()
+        end
+    end
     local maxHealth = (humanoid.MaxHealth and humanoid.MaxHealth > 0) and humanoid.MaxHealth or 100
     if humanoid.Health <= record.low - maxHealth * Fight.REAL_DROP then
         record.low, record.lowerAt = humanoid.Health, now
@@ -150,7 +181,7 @@ function Fight.status(mob, hasWeapon, suffix, weapon)
     if ignored and os.clock() - ignored.at < 4 then
         return ignored.name .. " cannot be damaged: left alone 2 min"
     end
-    local text = "Fighting " .. mob.Name .. (suffix or "")
+    local text = "Fighting " .. mob.Name .. (suffix or "") .. (Fight.nudging and " (clicking to unstick)" or "")
     if not hasWeapon then
         text = text .. " -- no " .. (weapon or Settings.get("Weapon")) .. " in your inventory"
     end
