@@ -37,6 +37,10 @@ World.FRUIT_PRICE = 1000000
 local newWorld = { name = "New World" }
 World.newWorld = newWorld
 
+-- Teddy's spots: the Ice Admiral's room, and the door when not loaded.
+World.ADMIRAL_ROOM = Vector3.new(1212.38342, 21.3974915, -1429.6394)
+World.ICE_DOOR = Vector3.new(1288.73328, 35.8959961, -1361.06274)
+
 function newWorld.enabled()
     return Settings.get("StackNewWorld") == true and Player.sea() == 1 and Player.level() >= 700
 end
@@ -45,53 +49,96 @@ local function iceDoor()
     return Services.find(workspace, "Map.Ice.Door")
 end
 
--- Waiting for the Ice Admiral is not a job: the farm goes on, and with a
--- hop allowed the server is changed (Teddy: "Hop Find Ice Admiral").
-local function waitingForAdmiral()
-    if Common.invoke("DressrosaQuestProgress", "Dressrosa") == 0 then return false end
+-- The quest's progress, Teddy's way: DressrosaQuestProgress with no
+-- argument answers a table (UsedKey, KilledIceBoss...). Older servers
+-- answered a number to ("Dressrosa"), 0 once the Ice Admiral was dead:
+-- read as { KilledIceBoss = true }. Always a table.
+function newWorld.progress()
+    local answer = Common.invoke("DressrosaQuestProgress")
+    local progress = {}
+    if type(answer) == "table" then
+        for key, value in pairs(answer) do progress[key] = value end
+    elseif Common.invoke("DressrosaQuestProgress", "Dressrosa") == 0 then
+        progress.KilledIceBoss = true
+    end
     local door = iceDoor()
-    if not door or door.CanCollide then return false end   -- not loaded, or still closed
-    return Enemies.findBoss("Ice Admiral") == nil
+    if door and (not door.CanCollide or door.Transparency == 1) then progress.UsedKey = true end
+    return progress
 end
 
+-- At the Ice Admiral's room and no admiral: waiting is not a job, the farm
+-- goes on (and with a hop allowed, another server: "Hop Find Ice Admiral").
+-- Found empty, the room is looked at again only after ADMIRAL_RECHECK
+-- seconds (no flying back and forth between the farm and the room).
+World.ADMIRAL_RECHECK = 120
+local emptyUntil = nil
+
+local function waitingForAdmiral(progress)
+    if progress.KilledIceBoss or not progress.UsedKey then return false end
+    if Enemies.findBoss("Ice Admiral") then
+        emptyUntil = nil
+        return false
+    end
+    if emptyUntil and os.clock() < emptyUntil then return true end
+    if Player.distanceTo(World.ADMIRAL_ROOM) <= 300 then
+        emptyUntil = os.clock() + World.ADMIRAL_RECHECK
+        return true
+    end
+    return false
+end
+
+-- Test hook.
+function World.resetNewWorld() emptyUntil = nil end
+
 function newWorld.want()
-    if Common.invoke("DressrosaQuestProgress", "Dressrosa") == nil then return false end
-    return not waitingForAdmiral()
+    return not waitingForAdmiral(newWorld.progress())
 end
 
 function newWorld.hop()
-    if newWorld.enabled() and waitingForAdmiral() then return "no Ice Admiral" end
+    if newWorld.enabled() and waitingForAdmiral(newWorld.progress()) then return "no Ice Admiral" end
     return nil
 end
 
 function newWorld.tick(mode)
     mode.target = nil
-    local progress = Common.invoke("DressrosaQuestProgress", "Dressrosa")
-    if progress == 0 then
+    local progress = newWorld.progress()
+    if progress.KilledIceBoss then
         Movement.stop()
-        if Common.every("TravelDressrosa", 10) then Services.invoke("TravelDressrosa") end
+        if Common.every("TravelDressrosa", 10) then
+            Services.invoke("DressrosaQuestProgress", "Detective")
+            Services.invoke("TravelDressrosa")
+            Common.forget()
+        end
         return "Travelling to Sea 2"
     end
 
-    local door = iceDoor()
-    if door and door.CanCollide then
+    if not progress.UsedKey then
         if not Common.has("Key") then
             Common.goTo(World.DETECTIVE)
-            if Common.near(World.DETECTIVE) and Common.every("Detective", 2) then
+            if Common.every("Detective", 2) then
+                -- Teddy asks from anywhere first, then at the detective.
                 Services.invoke("DressrosaQuestProgress", "Detective")
                 Common.forget()
             end
             return "Getting the key from the detective"
         end
-        Common.equip("Key")
-        Common.goTo(door.CFrame)
+        local door = iceDoor()
+        local where = door and door.Position or World.ICE_DOOR
+        local key = Common.equip("Key")
+        Common.goTo(CFrame.new(where))
+        if door and Common.near(where, 20) and Common.every("UseKey", 1) then
+            Common.touch(door, key)
+            Services.invoke("DressrosaQuestProgress", "UseKey")
+            Common.forget()
+        end
         return "Opening the Ice door"
     end
 
     local admiral, inWorld = Enemies.findBoss("Ice Admiral")
     if admiral then return Common.fight(mode, admiral, inWorld) end
-    Movement.stop()
-    return "Waiting for Ice Admiral"
+    -- Going to his room loads him.
+    Common.goTo(World.ADMIRAL_ROOM)
+    return "Moving to the Ice Admiral's room"
 end
 
 ---------------------------------------------------------------------------

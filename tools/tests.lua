@@ -1887,16 +1887,34 @@ end
 stackSetup(2753915549, 800)   -- Sea 1, level 800
 do
     Settings.set("StackNewWorld", true)
-    world.commF.OnInvoke = function(action) if action == "DressrosaQuestProgress" then return 1 end end
+    local progress = {}
+    world.commF.OnInvoke = function(action, arg)
+        if action == "DressrosaQuestProgress" and arg == nil then return progress end
+    end
     for _ = 1, 10 do StackFarm.enabled() end
     eq("quest progress asked once", #calls(world.commF, "DressrosaQuestProgress"), 1)
     StackFarm.tick()
-    check("no ice door loaded: waits for the admiral", StackFarm.status:find("Ice Admiral", 1, true) ~= nil, StackFarm.status)
+    check("no key yet: detective", StackFarm.status:find("detective", 1, true) ~= nil, StackFarm.status)
 
     local door = part("Door", Vector3.new(500, 0, 0), folder("Ice", folder("Map", workspace)))
-    door.CanCollide = true
+    door.CanCollide = false
+    require("Features.Stack.Common").forget()
     StackFarm.tick()
-    check("door shut, no key: detective", StackFarm.status:find("detective", 1, true) ~= nil, StackFarm.status)
+    check("door open: to the admiral's room", StackFarm.status:find("Ice Admiral", 1, true) ~= nil, StackFarm.status)
+
+    -- At the room, no admiral: the farm goes on, the room is not revisited at once.
+    local World = require("Features.Stack.World")
+    world.hrp.Position = World.ADMIRAL_ROOM
+    require("Features.Stack.Common").forget()
+    check("empty room: New World waits", not World.newWorld.want())
+    world.hrp.Position = Vector3.new(0, 0, 0)
+    check("empty room: still waits away from it", not World.newWorld.want())
+    World.resetNewWorld()
+
+    progress = { KilledIceBoss = true }
+    require("Features.Stack.Common").forget()
+    StackFarm.tick()
+    eq("admiral dead: travels to Sea 2", StackFarm.status, "New World: Travelling to Sea 2")
 end
 
 -- Third sea: the valuable fruit is taken out of the inventory for Trevor.
