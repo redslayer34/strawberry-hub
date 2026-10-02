@@ -122,9 +122,84 @@ function Melee.entry(name)
     return nil
 end
 
-function Melee.owned(name)
+-- The game keeps only the style in use in the inventory: once Electro is
+-- bought, Black Leg is gone from it, mastery and all. So, as the Teddy
+-- Kaitun does (DataSave.Melee), what was seen is remembered per account:
+-- the styles owned and the best mastery read on each.
+local memory               -- { [style] = mastery } (owned when present)
+local memorySaved = 0
+local memoryDirty = false
+
+local function memoryFile()
+    local player = Services.player()
+    return "StrawberryHub/melee_" .. tostring(player and player.UserId or 0) .. ".json"
+end
+
+local function remembered()
+    if memory then return memory end
+    memory = {}
+    pcall(function()
+        if not (isfile and readfile) or not isfile(memoryFile()) then return end
+        local data = Services.get("HttpService"):JSONDecode(readfile(memoryFile()))
+        if type(data) == "table" then
+            for name, value in pairs(data) do memory[name] = tonumber(value) or 0 end
+        end
+    end)
+    return memory
+end
+
+local function saveMemory()
+    if not memoryDirty or os.clock() - memorySaved < 5 then return end
+    memoryDirty, memorySaved = false, os.clock()
+    pcall(function()
+        if not writefile then return end
+        if makefolder and isfolder and not isfolder("StrawberryHub") then makefolder("StrawberryHub") end
+        writefile(memoryFile(), Services.get("HttpService"):JSONEncode(memory))
+    end)
+end
+
+local function remember(name, mastery)
+    local known = remembered()
+    mastery = tonumber(mastery) or 0
+    if known[name] == nil or mastery > known[name] then
+        known[name] = math.max(mastery, known[name] or 0)
+        memoryDirty = true
+    end
+    saveMemory()
+end
+Melee.remember = remember
+
+-- The basic styles answer "owned" to the purchase call with `true`
+-- (Teddy's detection: 1).
+local OWN_CHECKS = { ["Black Leg"] = "BuyBlackLeg", Electro = "BuyElectro", ["Fishman Karate"] = "BuyFishmanKarate" }
+local ownCache = {}
+
+-- In the inventory now (the style in use), as opposed to remembered.
+function Melee.held(name)
     for _, alias in ipairs(aliases(name)) do
         if Common.owns(alias, "Melee") then return true end
+    end
+    return false
+end
+
+function Melee.owned(name)
+    if Melee.held(name) then
+        remember(name, 0)
+        return true
+    end
+    if remembered()[name] ~= nil then return true end
+    local call = OWN_CHECKS[name]
+    if call then
+        local cached = ownCache[name]
+        if not cached or os.clock() - cached.at >= Melee.UNLOCK_CACHE then
+            local ok, answer = pcall(Services.invoke, call, true)
+            cached = { value = ok and answer == 1, at = os.clock() }
+            ownCache[name] = cached
+        end
+        if cached.value then
+            remember(name, 0)
+            return true
+        end
     end
     return false
 end
@@ -143,7 +218,8 @@ function Melee.mastery(name)
     for _, alias in ipairs(aliases(name)) do
         best = math.max(best, Common.masteryOf(alias))
     end
-    return best
+    if best > 0 then remember(name, best) end
+    return math.max(best, remembered()[name] or 0)
 end
 
 -- The style held as the Melee weapon right now (its shop name), or nil.
@@ -289,7 +365,12 @@ function Melee.action()
     local name, state = Melee.current()
     if not name or Melee.givenUp(name) then return nil, name end
     if state == "buy" then return "buy", name end
-    if Melee.equipped() ~= name then return "load", name end
+    if Melee.equipped() ~= name then
+        -- Not in the inventory any more (another style replaced it): back
+        -- from its teacher, which costs nothing once bought.
+        if not Melee.held(name) then return "buy", name end
+        return "load", name
+    end
     tries[name] = 0
     return nil, name
 end
@@ -534,6 +615,7 @@ Melee.dragonTalon = Mode({
 -- Test hook.
 function Melee.reset()
     unlockCache = {}
+    memory, memoryDirty, memorySaved, ownCache = nil, false, 0, {}
     lastLoad, lastBuy = -math.huge, -math.huge
     tries, givenUp, walkSince = {}, {}, {}
     rolls = { at = -math.huge }

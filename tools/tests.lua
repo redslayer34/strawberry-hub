@@ -40,6 +40,15 @@ local function calls(remote, action)
     return out
 end
 
+-- The real purchases: the calls with `true` only ask.
+local function buys(remote, action)
+    local out = {}
+    for _, call in ipairs(calls(remote, action)) do
+        if call[2] ~= true then out[#out + 1] = call end
+    end
+    return out
+end
+
 ---------------------------------------------------------------------------
 -- Modules load
 ---------------------------------------------------------------------------
@@ -3350,7 +3359,7 @@ do
     Settings.set("ItemMeleeProgress", true)
     check("melee mode on while something to buy", Melee.mode.enabled())
     Melee.mode.tick()
-    eq("melee: bought at the teacher", #calls(world.commF, "BuyBlackLeg"), 1)
+    eq("melee: bought at the teacher", #buys(world.commF, "BuyBlackLeg"), 1)
 end
 
 meleeSetup(2753915549, 100, { style("Dark Step", 150) }, {}, 200000)
@@ -3456,7 +3465,7 @@ do
     -- With the money, every visit also offers the bolt (the server's state
     -- after the cloud is not always 4), then the purchase.
     eq("electric: rich visit offers the bolt", #calls(world.commF, "DeliverLightningBolt"), 1)
-    eq("electric: then BuyElectro (and its check)", #calls(world.commF, "BuyElectro"), 2)
+    eq("electric: then BuyElectro", #buys(world.commF, "BuyElectro"), 1)
 
     require("Features.Stack.Common").forget()
     electricState = 1
@@ -3483,7 +3492,7 @@ do
     electricState = 4
     Electric.mode.tick()
     eq("electric: bolt delivered", #calls(world.commF, "DeliverLightningBolt"), 2)
-    eq("electric: delivery not 1 -> BuyElectro", #calls(world.commF, "BuyElectro"), 3)
+    eq("electric: delivery not 1 -> BuyElectro", #buys(world.commF, "BuyElectro"), 2)
 end
 
 meleeSetup(2753915549, 300, { style("Electric", 10) }, {}, 600000)
@@ -4036,6 +4045,25 @@ do
     check("$704k + Black Leg 197: plan says Black Leg first",
         table.concat(KEngine.plan(), " | "):find("Black Leg to 400 first", 1, true) ~= nil, table.concat(KEngine.plan(), " | "))
     check("$704k + Black Leg 197: the hub mode waits too", not Electric.mode.enabled())
+end
+
+-- Electro bought replaced Black Leg in the inventory: Black Leg is
+-- remembered (or answers "owned"), so it is taken back to 400 first.
+meleeSetup(2753915549, 340, { style("Electric", 53) }, {}, 20000)
+do
+    newInstance("Tool", "Electric", world.player.Backpack).ToolTip = "Melee"
+    world.commF.OnInvoke = function(action, ask)
+        if action == "BuyBlackLeg" and ask == true then return 1 end
+        return 0
+    end
+    Melee.reset()
+    eq("black leg remembered as owned", Melee.owned("Black Leg"), true)
+    eq("but not held", Melee.held("Black Leg"), false)
+    local action, name = Melee.action()
+    eq("back to Black Leg first", name, "Black Leg")
+    eq("from its teacher", action, "buy")
+    Melee.remember("Black Leg", 400)
+    eq("black leg at 400: Electro now", select(2, Melee.action()), "Electro")
 end
 
 -- Black Leg at 400: the Electric quest is what runs.
