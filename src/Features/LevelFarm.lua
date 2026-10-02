@@ -33,9 +33,17 @@ LevelFarm.BOSS_RETRY = 3         -- the same for a boss quest (its tries are cou
 LevelFarm.ABANDON_EVERY = 3      -- seconds between two AbandonQuest (boss quests)
 LevelFarm.BOSS_TRIES = 3         -- boss quest asks that give nothing...
 LevelFarm.BOSS_PAUSE = 120       -- ...then boss quests are left alone this long
+-- A boss quest held for a boss that is not really there (killed by
+-- someone else, fought by another player, a stale copy): dropped, and that
+-- boss is left alone this long.
+LevelFarm.BOSS_ABSENT = 180
+LevelFarm.BOSS_REACH = 60        -- seconds to reach the boss after taking its quest
+LevelFarm.BOSS_NEAR = 200        -- studs: at the boss
+LevelFarm.BOSS_STALE = 20        -- seconds at a parked copy without the boss loading
 
 local arrivedAt, lastStart, lastAbandon
 local bossTries, bossPausedUntil = 0, nil
+local bossHeldSince, staleSince
 
 -- Boss quests are wanted: the setting is on and the server did not keep
 -- refusing one.
@@ -137,19 +145,56 @@ end
 local function bossSwitch(quest)
     if not Settings.get("FarmBossQuests") then return false end
     bossTries = 0
-    if quest.count == 1 then
-        if not Enemies.findBoss(quest.mob) then
-            abandon("Boss " .. quest.mob .. " is gone: dropping its quest")
-            return true
-        end
-        return false
-    end
+    if quest.count == 1 then return false end
+    bossHeldSince, staleSince = nil, nil
     local boss = bossQuestsOn() and Quests.bossQuest(Player.level())
     if boss then
         abandon("Boss " .. boss.mob .. " is up: switching to its quest")
         return true
     end
     return false
+end
+
+local function giveUpBoss(name, why)
+    Enemies.markAbsent(name, LevelFarm.BOSS_ABSENT)
+    bossHeldSince, staleSince = nil, nil
+    abandon(string.format("Boss %s: not really there (%s), back to mob quests for %d min",
+        name, why, math.floor(LevelFarm.BOSS_ABSENT / 60)))
+end
+
+-- A boss quest is held (FarmBossQuests): fight the boss when it is really
+-- there, otherwise find out quickly and drop the quest.
+local function bossTick(quest, weapon)
+    local now = os.clock()
+    bossHeldSince = bossHeldSince or now
+    local boss = Enemies.bossUp(quest.mob)
+    if boss then
+        staleSince = nil
+        if Player.distanceTo(boss.HumanoidRootPart.Position) > LevelFarm.BOSS_NEAR
+            and now - bossHeldSince > LevelFarm.BOSS_REACH then
+            return giveUpBoss(quest.mob, "not reached in " .. LevelFarm.BOSS_REACH .. " s")
+        end
+        local hasWeapon = Fight.engage(LevelFarm, boss, weapon)
+        LevelFarm.status = Fight.status(boss, hasWeapon, " (boss quest)", weapon)
+        return
+    end
+    -- Out of streaming range the game parks the boss in ReplicatedStorage:
+    -- going there loads it, unless that copy is stale.
+    local copy, inWorld = Enemies.findBoss(quest.mob)
+    if copy and not inWorld then
+        local where = copy.HumanoidRootPart.Position
+        LevelFarm.target = nil
+        Movement.to(CFrame.new(where) * CFrame.new(0, Fight.SPAWN_HEIGHT, 0))
+        if Player.distanceTo(where) <= LevelFarm.BOSS_NEAR then
+            staleSince = staleSince or now
+            if now - staleSince > LevelFarm.BOSS_STALE then return giveUpBoss(quest.mob, "nothing loaded there") end
+        elseif now - bossHeldSince > LevelFarm.BOSS_REACH then
+            return giveUpBoss(quest.mob, "not reached in " .. LevelFarm.BOSS_REACH .. " s")
+        end
+        LevelFarm.status = "Boss quest: going to " .. quest.mob
+        return
+    end
+    return giveUpBoss(quest.mob, copy and "fought by someone else" or "gone")
 end
 
 -- `weapon` (optional) replaces the Weapon setting (mastery farms).
@@ -173,6 +218,7 @@ function LevelFarm.tick(weapon)
     end
 
     if bossSwitch(quest) then return end
+    if quest.count == 1 and Settings.get("FarmBossQuests") then return bossTick(quest, weapon) end
 
     local mob = Enemies.nearest(quest.mob)
     if not mob and quest.count == 1 then
@@ -202,6 +248,7 @@ function LevelFarm.stop()
     LevelFarm.status = "Idle"
     arrivedAt, lastStart, lastAbandon = nil, nil, nil
     bossTries, bossPausedUntil = 0, nil
+    bossHeldSince, staleSince = nil, nil
     search:reset()
 end
 

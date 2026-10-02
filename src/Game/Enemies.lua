@@ -130,6 +130,44 @@ function Enemies.findBoss(names)
     return nil
 end
 
+-- Boss names without the "[Lv. 25] [Boss]" decorations (Teddy's
+-- MobNameMatches): "The Gorilla King [Lv. 25] [Boss]" -> "The Gorilla King".
+local function bossName(name)
+    return Enemies.stripLevel((tostring(name):gsub("%s*%[Boss%]", "")))
+end
+
+-- Bosses found not really there (gone on arrival, a stale copy): left
+-- alone for a while. [name] = os.clock() until.
+local absentUntil = {}
+
+function Enemies.markAbsent(name, seconds)
+    absentUntil[bossName(name)] = os.clock() + (seconds or 180)
+end
+
+function Enemies.absent(name)
+    local untilAt = absentUntil[bossName(name)]
+    if untilAt and os.clock() < untilAt then return true end
+    absentUntil[bossName(name)] = nil
+    return false
+end
+
+-- The boss named `name` that can really be fought now, or nil: alive in
+-- workspace.Enemies (not the copy parked in ReplicatedStorage), not a
+-- secret quest's copy, not engaged by another player, not given up on by
+-- the damage watchdog, and not found absent a moment ago.
+function Enemies.bossUp(name)
+    if Enemies.absent(name) then return nil end
+    local enemies = folder()
+    if not enemies then return nil end
+    local wanted = bossName(name)
+    for _, model in ipairs(enemies:GetChildren()) do
+        if bossName(model.Name) == wanted and Enemies.isAlive(model) and Enemies.farmable(model) then
+            return model
+        end
+    end
+    return nil
+end
+
 -- Every mob name the world knows about right now (spawn points and live
 -- mobs), sorted, for the "Kill Mob" dropdown.
 function Enemies.knownNames()
@@ -215,6 +253,7 @@ end
 -- Test hook.
 function Enemies.reset()
     spawnCache, missCache = {}, {}
+    absentUntil = {}
 end
 
 return Enemies

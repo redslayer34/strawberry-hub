@@ -3985,6 +3985,70 @@ do
     eq("boss quests off: nothing dropped", #calls(world.commF, "AbandonQuest"), 1)
 end
 
+-- Boss really there: free to fight, decorated names, absent marks.
+setup()
+do
+    local boss = mob("Some Boss [Lv. 25] [Boss]", Vector3.new(0, 0, 30))
+    eq("bossUp: decorated name matches", Enemies.bossUp("Some Boss"), boss)
+    boss:SetAttribute("BossEngagedWith", 999)
+    eq("bossUp: fought by another player -> not up", Enemies.bossUp("Some Boss"), nil)
+    eq("boss quest: none for a boss someone else fights", Quests.bossQuest(960), nil)
+    boss:SetAttribute("BossEngagedWith", nil)
+    check("boss quest: taken when the boss is free", Quests.bossQuest(960) ~= nil)
+    boss:SetAttribute("LocalEnemy", "Tester")
+    eq("bossUp: a secret quest copy -> not up", Enemies.bossUp("Some Boss"), nil)
+    boss:SetAttribute("LocalEnemy", nil)
+    Enemies.ignore(boss, 60)
+    eq("bossUp: ignored by the watchdog -> not up", Enemies.bossUp("Some Boss"), nil)
+    local other = mob("Some Boss", Vector3.new(0, 0, 40))
+    eq("bossUp: another copy that can be fought", Enemies.bossUp("Some Boss"), other)
+    Enemies.markAbsent("Some Boss", 60)
+    eq("bossUp: marked absent -> not up", Enemies.bossUp("Some Boss"), nil)
+    Enemies.markAbsent("Some Boss", -1)
+    eq("bossUp: the mark wears off", Enemies.bossUp("Some Boss"), other)
+end
+
+-- Boss quest held, boss gone: dropped, and not retaken right after.
+setup()
+LevelFarm.stop()
+do
+    Settings.set("FarmBossQuests", true)
+    world.commF.OnInvoke = function() return true end
+    world.guide.Data.QuestData = { Task = { ["Some Boss"] = 1 } }
+    world.questPanel.Visible = true
+    LevelFarm.tick()
+    eq("boss gone: dropped", #calls(world.commF, "AbandonQuest"), 1)
+    check("boss gone: says so", LevelFarm.status:find("not really there", 1, true) ~= nil, LevelFarm.status)
+    -- A stale model shows up again: the boss stays left alone.
+    mob("Some Boss", Vector3.new(0, 0, 30))
+    eq("boss gone: no boss quest for a while", Quests.bossQuest(960), nil)
+    Settings.set("FarmBossQuests", false)
+end
+
+-- Boss quest held, the boss only parked in ReplicatedStorage and nothing
+-- loads at its spot: a stale copy, dropped.
+setup()
+LevelFarm.stop()
+do
+    Settings.set("FarmBossQuests", true)
+    world.commF.OnInvoke = function() return true end
+    world.guide.Data.QuestData = { Task = { ["Some Boss"] = 1 } }
+    world.questPanel.Visible = true
+    mob("Some Boss", Vector3.new(500, 0, 0), 100, rs)
+    LevelFarm.tick()
+    eq("parked boss: flies to it", LevelFarm.status, "Boss quest: going to Some Boss")
+    eq("parked boss: nothing dropped yet", #calls(world.commF, "AbandonQuest"), 0)
+    local stale = LevelFarm.BOSS_STALE
+    LevelFarm.BOSS_STALE = -1
+    world.hrp.Position = Vector3.new(500, 60, 0)
+    LevelFarm.tick()
+    LevelFarm.tick()
+    eq("stale copy: dropped", #calls(world.commF, "AbandonQuest"), 1)
+    check("stale copy: absent", Enemies.absent("Some Boss"))
+    LevelFarm.BOSS_STALE = stale
+    Settings.set("FarmBossQuests", false)
+end
+
 kaitunSetup(2753915549, 50)
 do
     local keys, name = KEngine.idle(1, 50)
