@@ -11,8 +11,11 @@ return function(Window, ui)
     local tab = Window:AddTab({ Title = "Player", Icon = "user" })
 
     local stats = tab:AddSection("Stats")
-    Bind.toggle(stats, "AutoStats", "Auto Stats", "Spends your points evenly on the chosen stats (max 2800).")
-    Bind.multiDropdown(stats, "StatTargets", "Stats", Data.STATS)
+    Bind.toggle(stats, "AutoStats", "Auto Stats", "Spends your stat points automatically (max 2800 per stat).")
+    Bind.dropdown(stats, "StatMode", "Stat Mode", { "Teddy", "Even" },
+        "Teddy: Melee first, Defense 15/100, then Melee and Defense to the max, Sword 600 and Demon Fruit "
+            .. "1950 from level 400. Even: split over the stats below.")
+    Bind.multiDropdown(stats, "StatTargets", "Stats (Even mode)", Data.STATS)
 
     local team = tab:AddSection("Team")
     Bind.dropdown(team, "Team", "Team", { "Pirates", "Marines" })

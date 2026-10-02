@@ -21,7 +21,8 @@ Config.DEFAULTS = {
     Speed = 300,             -- flying speed (studs/s)
     SkipLevel = true,
     RedeemCodes = true,      -- every code once per account, while levelling (2x experience)        -- Teddy's skip under level 150 (Sky Bandits, God's Guards)
-    Stats = { Melee = true, Defense = true },
+    StatMode = "Teddy",      -- "Teddy" (Melee first, Defense 15/100, ...) or "Even" (split over Stats)
+    Stats = { Melee = true, Defense = true },   -- only for StatMode = "Even"
     Skip = {
         CDK = false,
         Tushita = false,

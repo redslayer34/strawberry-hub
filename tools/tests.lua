@@ -1068,10 +1068,28 @@ do
     eq("odd points: first stat gets the extra", odd[1].points, 2)
 end
 
+-- Teddy's stat order, by level.
+do
+    local function plan(points, level, levels)
+        local out = {}
+        for _, step in ipairs(Stats.teddyPlan(points, level, levels or {})) do out[#out + 1] = step.stat .. "=" .. step.points end
+        return table.concat(out, ",")
+    end
+    eq("teddy: under 55 all into Melee", plan(30, 30), "Melee=30")
+    eq("teddy: from 55 Defense to 15 first", plan(30, 100), "Defense=15,Melee=15")
+    eq("teddy: from 300 Defense to 100", plan(300, 350, { Defense = 15 }), "Defense=85,Melee=215")
+    eq("teddy: Melee to the cap, then Defense", plan(20, 350, { Defense = 100, Melee = 2790 }), "Melee=10,Defense=10")
+    eq("teddy: from 400 Sword 600 then Demon Fruit 1950",
+        plan(700, 500, { Defense = 2800, Melee = 2800, Sword = 500 }), "Sword=100,Demon Fruit=600")
+    eq("teddy: all done", plan(50, 2800, { Defense = 2800, Melee = 2800, Sword = 600, ["Demon Fruit"] = 1950 }), "")
+    eq("teddy: no points", plan(0, 500), "")
+end
+
 setup()
 do
     Server.reset()
     Settings.set("AutoStats", true)
+    Settings.set("StatMode", "Even")
     Settings.set("StatTargets", { Sword = true })
     local points = newInstance("IntValue", "Points", world.player.Data)
     points.Value = 6
@@ -1081,6 +1099,17 @@ do
     eq("AddPoint action", call and call[1], "AddPoint")
     eq("AddPoint stat", call and call[2], "Sword")
     eq("AddPoint amount", call and call[3], 6)
+    Settings.set("StatMode", "Teddy")
+
+    -- Teddy's order (level 960 here): Defense to 100 first, then Melee.
+    world.commF.Invoked = nil
+    points.Value = 150
+    Stats.tick()
+    local sent = world.commF.Invoked or {}
+    eq("teddy: Defense first", sent[1] and sent[1][2], "Defense")
+    eq("teddy: to 100", sent[1] and sent[1][3], 100)
+    eq("teddy: then Melee", sent[2] and sent[2][2], "Melee")
+    eq("teddy: with the rest", sent[2] and sent[2][3], 50)
 
     local browser = newInstance("RemoteFunction", "__ServerBrowser", rs)
     browser.OnInvoke = function() return true end

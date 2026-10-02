@@ -299,6 +299,7 @@ Settings.DEFAULTS = {
 
     -- Player
     AutoStats = false,
+    StatMode = "Teddy",
     StatTargets = { Melee = true, Defense = true },
     Team = "Pirates",
     WalkSpeedOn = false,

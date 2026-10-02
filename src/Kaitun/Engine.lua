@@ -147,6 +147,7 @@ function Engine.background(sea, level, anchored)
     local keys = {
         AutoStats = true,
         StatTargets = Config.get("Stats"),
+        StatMode = Config.get("StatMode") == "Even" and "Even" or "Teddy",
         FruitStore = Config.get("StoreFruits") == true,
         -- The Cousin's gacha whenever the server allows it (every 2 h), as
         -- Teddy does (the user's choice).
