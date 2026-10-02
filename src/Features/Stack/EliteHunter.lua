@@ -25,17 +25,9 @@ function EliteHunter.find()
     return Enemies.findBoss(Data.ELITE_HUNTERS)
 end
 
-local function questTitle()
-    local player = Services.player()
-    local quest = player and Services.find(player, "PlayerGui.Main.Quest")
-    if not quest or not quest.Visible then return "" end
-    local title = Services.find(quest, "Container.QuestTitle.Title")
-    return title and tostring(title.Text) or ""
-end
-
 -- Takes the elite's quest if needed, then fights it. Returns the status.
 function EliteHunter.run(mode, elite, inWorld)
-    local hasQuest = questTitle():find(elite.Name, 1, true) ~= nil
+    local hasQuest = Common.questHas(Enemies.stripLevel(elite.Name))
     if not hasQuest and (asked[elite] or 0) < EliteHunter.MAX_ASKS then
         mode.target = nil
         if Common.every("EliteHunterQuest", EliteHunter.ASK_EVERY) then

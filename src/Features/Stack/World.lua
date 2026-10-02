@@ -238,16 +238,9 @@ function thirdWorld.want()
     return step ~= nil
 end
 
-local function questTitle()
-    local player = Services.player()
-    local title = player and Services.find(player, "PlayerGui.Main.Quest.Container.QuestTitle.Title")
-    return title and tostring(title.Text) or ""
-end
-
 local function bartilo(mode, progress)
     if progress == 0 then
-        local title = questTitle()
-        if title:find("Swan Pirates", 1, true) and title:find("50", 1, true) then
+        if Common.questHas("Swan Pirate", 50) then
             return "Bartilo: " .. Common.farm(mode, { "Swan Pirate" }, swanSearch)
         end
         mode.target = nil

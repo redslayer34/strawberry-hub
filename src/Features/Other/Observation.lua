@@ -163,13 +163,13 @@ Observation.v2 = Mode({
         local step = progress()
         local title = Common.questTitle()
         if step == 0 then
-            if title:find("Forest Pirate", 1, true) and title:find("50", 1, true) then
+            if Common.questHas("Forest Pirate", 50) then
                 return Common.farm(mode, { "Forest Pirate" }, forestSearch)
             end
             return takeQuest()
         end
         if step == 1 then
-            if title:find("Captain Elephant", 1, true) then
+            if Common.questHas("Captain Elephant") then
                 local boss, inWorld = Enemies.findBoss("Captain Elephant")
                 if boss then return Common.fight(mode, boss, inWorld) end
                 Movement.stop()

@@ -1934,6 +1934,24 @@ do
     check("waits for the next wave", StackFarm.enabled())
 end
 
+-- Bartilo's quest held: read from the game's quest data (the panel's
+-- title path is not always there), the Swan Pirates are farmed.
+stackSetup(4442272183, 1500)
+do
+    world.guide.Data.QuestData = { Task = { ["Swan Pirate"] = 50 } }
+    local Common = require("Features.Stack.Common")
+    check("questHas: from the quest data", Common.questHas("Swan Pirate", 50))
+    check("questHas: not another count", not Common.questHas("Swan Pirate", 8))
+    world.commF.OnInvoke = function(action, arg)
+        if action == "BartiloQuestProgress" then return 0 end
+    end
+    local World = require("Features.Stack.World")
+    local mode = {}
+    local status = World.bartilo(mode, 0)
+    check("bartilo: farms the Swan Pirates", status:find("taking the quest", 1, true) == nil, status)
+    eq("bartilo: no StartQuest", #calls(world.commF, "StartQuest"), 0)
+end
+
 -- Server answers are cached, not asked every frame.
 stackSetup(2753915549, 800)   -- Sea 1, level 800
 do

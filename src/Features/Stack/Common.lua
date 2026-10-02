@@ -264,13 +264,32 @@ function Common.pivot(node)
     return nil
 end
 
--- The title of the quest panel, or "" when no quest is shown.
+-- The title of the quest panel, or "" when no quest is shown. The fixed
+-- path first, then the objective searched anywhere on screen (the panel
+-- is not always at that path: the Bartilo quest went unseen).
 function Common.questTitle()
     local player = Services.player()
     local quest = player and Services.find(player, "PlayerGui.Main.Quest")
-    if not quest or not quest.Visible then return "" end
-    local title = Services.find(quest, "Container.QuestTitle.Title")
-    return title and tostring(title.Text) or ""
+    local title = quest and quest.Visible and Services.find(quest, "Container.QuestTitle.Title")
+    if title and tostring(title.Text) ~= "" then return tostring(title.Text) end
+    local ok, panel = pcall(function() return require("Game.Quests").readPanel() end)
+    return ok and panel and tostring(panel.title) or ""
+end
+
+-- Whether the active quest asks for `mob` (and `count` of them when given):
+-- the game's quest data first (no text, any language), then the title.
+function Common.questHas(mob, count)
+    local ok, target = pcall(function() return require("Game.Quests").target() end)
+    if ok and target and target.mob then
+        local name = Enemies.stripLevel(target.mob)
+        if name == mob or name:find(mob, 1, true) or mob:find(name, 1, true) then
+            return count == nil or tonumber(target.count) == count
+        end
+        if target.source == "GuideModule" then return false end
+    end
+    local title = Common.questTitle()
+    if not title:find(mob, 1, true) then return false end
+    return count == nil or title:find(tostring(count), 1, true) ~= nil
 end
 
 -- Presses and releases a key through VirtualInputManager.
