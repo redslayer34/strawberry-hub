@@ -96,31 +96,49 @@ local function torch()
     return "Burning the desert gate"
 end
 
+-- The cup, Teddy's way: FillCup and SickMan are asked from wherever the
+-- character stands first (the server does not check the distance), then
+-- next to the Sick Man. The fountain lies under the sea (y -152): the
+-- character got stuck in the water going there, so it is only tried last,
+-- for a short while, before the remote way again.
+Saber.CUP_TRIES = 3        -- remote tries per place
+Saber.FOUNTAIN_TIME = 25   -- seconds at most towards the fountain
+local cupTries, fountainSince = 0, nil
+
+local function giveCup(held)
+    if not act("Cup") then return end
+    cupTries = cupTries + 1
+    Services.invoke("ProQuestProgress", "FillCup", held)
+    call("SickMan")
+end
+
 local function cup()
     local held = Common.tool("Cup")
     if not held then
-        if at(Saber.CUP, 12) and act("GetCup") then call("GetCup") end
+        cupTries, fountainSince = 0, nil
+        if act("GetCup") then call("GetCup") end
+        Common.goTo(Saber.CUP)
         return "Taking the cup"
     end
     Common.equip("Cup")
-    local handle = held:FindFirstChild("Handle")
-    local empty = handle and handle:FindFirstChild("TouchInterest") ~= nil
-    if empty or not Saber.filled then
-        if not at(Saber.FOUNTAIN, 15) then return "Taking the cup to the fountain" end
-        if act("FillCup") then
-            call("FillCup", held)
-            Saber.filled = true
-        end
-        return "Filling the cup"
+    if cupTries < Saber.CUP_TRIES then
+        Movement.stop()
+        giveCup(held)
+        return "Filling the cup and giving it to the Sick Man"
     end
-    if not at(Saber.SICK_MAN, 10) then return "Taking the water to the Sick Man" end
-    if act("SickMan") then
-        call("SickMan")
-        -- Still not taken after a few tries: the cup was not filled, again.
-        Saber.sickTries = (Saber.sickTries or 0) + 1
-        if Saber.sickTries >= 3 then Saber.filled, Saber.sickTries = nil, 0 end
+    if cupTries < Saber.CUP_TRIES * 2 then
+        if at(Saber.SICK_MAN, 10) then giveCup(held) end
+        return "Taking the cup to the Sick Man"
     end
-    return "Giving the cup to the Sick Man"
+    fountainSince = fountainSince or os.clock()
+    if os.clock() - fountainSince > Saber.FOUNTAIN_TIME then
+        -- Not reached (the water): back up, and the remote way again.
+        cupTries, fountainSince = 0, nil
+        Common.goTo(Saber.SICK_MAN + Vector3.new(0, 30, 0))
+        return "Leaving the water"
+    end
+    if at(Saber.FOUNTAIN, 15) then giveCup(held) end
+    return "Taking the cup to the fountain"
 end
 
 local function richSon(why)
@@ -189,7 +207,7 @@ Saber.mode = Mode({
         Movement.stop()
         return "Done"
     end,
-    stop = function() Saber.filled, Saber.sickTries = nil, 0 end,
+    stop = function() cupTries, fountainSince = 0, nil end,
 })
 
 return Saber
