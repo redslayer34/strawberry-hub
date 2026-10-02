@@ -25,9 +25,11 @@ local LevelFarm = {
     target = nil,     -- the mob the attack loop should strike
 }
 
-LevelFarm.QUEST_RANGE = 8        -- studs from the quest giver to talk to it
-LevelFarm.QUEST_SETTLE = 1       -- seconds standing there before StartQuest
-LevelFarm.QUEST_RETRY = 3        -- seconds between two StartQuest attempts
+-- Teddy's SafeGetQuest: StartQuest from 30 studs, again every 0.5 s.
+LevelFarm.QUEST_RANGE = 30       -- studs from the quest giver to talk to it
+LevelFarm.QUEST_SETTLE = 0       -- seconds standing there before StartQuest
+LevelFarm.QUEST_RETRY = 0.5      -- seconds between two StartQuest attempts
+LevelFarm.BOSS_RETRY = 3         -- the same for a boss quest (its tries are counted)
 LevelFarm.ABANDON_EVERY = 3      -- seconds between two AbandonQuest (boss quests)
 LevelFarm.BOSS_TRIES = 3         -- boss quest asks that give nothing...
 LevelFarm.BOSS_PAUSE = 120       -- ...then boss quests are left alone this long
@@ -43,6 +45,19 @@ local function bossQuestsOn()
 end
 local search = Fight.newSearch()
 
+-- Double quest: of the giver's quests (best first), the one to take now.
+-- The best one, unless its mobs are not up (just killed for the last
+-- quest) while the other's are: then the other, and the farm does not
+-- wait for respawns. Returns the plan and a note for the status.
+function LevelFarm.choose(pair)
+    local best, other = pair[1], pair[2]
+    if not best or not other or not Settings.get("DoubleQuest") then return best, nil end
+    local up, otherUp = #Enemies.all(best.mob), #Enemies.all(other.mob)
+    local note = string.format("double quest: %d alive, %s %d", up, other.mob, otherUp)
+    if up >= best.count or up >= otherUp then return best, note end
+    return other, string.format("double quest: %d alive, %s %d", otherUp, best.mob, up)
+end
+
 function LevelFarm.enabled()
     return Settings.get("AutoFarmLevel") == true
 end
@@ -50,7 +65,9 @@ end
 local function takeQuest(weapon)
     LevelFarm.target = nil
     Player.equip(weapon or Settings.get("Weapon"))
-    local plan = (bossQuestsOn() and Quests.bossQuest(Player.level())) or Quests.best(Player.level())
+    local plan = bossQuestsOn() and Quests.bossQuest(Player.level())
+    local note
+    if not plan then plan, note = LevelFarm.choose(Quests.pair(Player.level())) end
     if not plan or not plan.position then
         LevelFarm.status = "No quest found for level " .. Player.level()
         Movement.stop()
@@ -68,9 +85,9 @@ local function takeQuest(weapon)
 
     local now = os.clock()
     arrivedAt = arrivedAt or now
-    LevelFarm.status = "Taking quest: " .. plan.mob
+    LevelFarm.status = "Taking quest: " .. plan.mob .. (note and (" (" .. note .. ")") or "")
     if now - arrivedAt >= LevelFarm.QUEST_SETTLE
-        and (not lastStart or now - lastStart >= LevelFarm.QUEST_RETRY) then
+        and (not lastStart or now - lastStart >= (plan.boss and LevelFarm.BOSS_RETRY or LevelFarm.QUEST_RETRY)) then
         lastStart = now
         if plan.boss then
             bossTries = bossTries + 1
@@ -92,8 +109,11 @@ local function hunt(name)
     end
     -- No spawn part streamed in yet. Quest mobs live around their quest
     -- giver, so waiting above it brings them into streaming range.
-    local plan = Quests.best(Player.level())
-    if plan and plan.mob == name and plan.position then
+    local plan
+    for _, quest in ipairs(Quests.pair(Player.level())) do
+        if quest.mob == name then plan = quest end
+    end
+    if plan and plan.position then
         Movement.to(CFrame.new(plan.position) * CFrame.new(0, Fight.SPAWN_HEIGHT, 0))
         LevelFarm.status = "Looking for " .. name .. " around its quest giver"
     else

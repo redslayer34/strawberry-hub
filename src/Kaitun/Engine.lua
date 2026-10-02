@@ -223,6 +223,7 @@ function Engine.idle(sea, level)
     if level < Engine.MAX_LEVEL or sea ~= 3 then
         keys.AutoFarmLevel = true
         keys.FarmBossQuests = true
+        keys.DoubleQuest = true
         -- Teddy's skip under 150; the level farm (still on) takes over after.
         if sea == 1 and level < SkipLevel.UNTIL and Config.get("SkipLevel") ~= false then
             keys.AutoSkipLevel = true

@@ -707,6 +707,56 @@ do
     eq("waits while dead", LevelFarm.status, "Waiting for respawn")
 end
 
+-- Double quest: the giver's two quests; the other one while the best
+-- one's mobs are not up.
+setup({ level = 980 })
+do
+    local pair = Quests.pair(980)
+    eq("pair: both quests of the giver", #pair, 2)
+    eq("pair: best first", pair[1].mob, "Vampire")
+    eq("pair: then the other", pair[2].mob, "Zombie")
+    eq("pair at 960: only one", #Quests.pair(960), 1)
+
+    LevelFarm.stop()
+    world.commF.OnInvoke = function() return true end
+    world.hrp.Position = Vector3.new(1000, 14, 1002)
+    local function startedId()
+        local calls = world.commF.Invoked or {}
+        local last = calls[#calls]
+        return last and last[3]
+    end
+
+    -- Vampires all dead, Zombies up: the Zombie quest.
+    mob("Zombie", Vector3.new(1050, 5, 1000))
+    mob("Zombie", Vector3.new(1060, 5, 1000))
+    LevelFarm.tick()
+    eq("best mobs down: the other quest", startedId(), 1)
+    check("status says double quest", LevelFarm.status:find("double quest", 1, true) ~= nil, LevelFarm.status)
+
+    -- Vampires up as well: the best quest again.
+    for index = 1, 3 do mob("Vampire", Vector3.new(1000 + index * 10, 5, 1050)) end
+    LevelFarm.stop()
+    world.commF.Invoked = nil
+    LevelFarm.tick()
+    eq("best mobs up: the best quest", startedId(), 2)
+
+    -- Off: always the best.
+    Settings.set("DoubleQuest", false)
+    for _, model in ipairs(Enemies.all("Vampire")) do model.Parent = nil end
+    LevelFarm.stop()
+    world.commF.Invoked = nil
+    LevelFarm.tick()
+    eq("double quest off: the best quest", startedId(), 2)
+    Settings.set("DoubleQuest", true)
+
+    -- StartQuest from 30 studs, while still flying in.
+    LevelFarm.stop()
+    world.commF.Invoked = nil
+    world.hrp.Position = Vector3.new(1000, 14, 1025)
+    LevelFarm.tick()
+    check("StartQuest from 25 studs away", startedId() ~= nil)
+end
+
 -- The in-game bug: quest taken, panel not where we looked, only the
 -- GuideModule knows. The farm must go fight, not re-take the quest.
 setup()

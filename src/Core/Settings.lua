@@ -15,6 +15,7 @@ Settings.DEFAULTS = {
     AutoFarmLevel = false,
     AutoSkipLevel = false,
     FarmBossQuests = false,
+    DoubleQuest = true,
     Weapon = "Melee",
     BringMob = true,
     BringCount = 3,

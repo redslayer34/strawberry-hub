@@ -41,6 +41,8 @@ return function(Window)
         .. "Auto Farm Level takes over at 150.")
     Bind.toggle(level, "FarmBossQuests", "Boss Quests First",
         "Takes a quest boss's quest whenever the boss is up: much more experience than a mob quest.")
+    Bind.toggle(level, "DoubleQuest", "Double Quest",
+        "Alternates between the giver's two quests so the farm never waits for respawns.")
     Bind.dropdown(level, "Weapon", "Weapon", Settings.WEAPONS,
         "Equipped automatically while farming.")
     Bind.toggle(level, "BringMob", "Bring Mob",

@@ -259,6 +259,45 @@ function Quests.best(level)
     return best
 end
 
+-- "Double quest": the best quest, then the other mob quests of the same
+-- giver the level allows, best first (Military Soldier and Military Spy,
+-- Toga Warrior and Gladiator...). Taking the other one while the first
+-- one's mobs respawn is what the hubs' DoubleQuest does. {} when nothing.
+function Quests.pair(level)
+    local best = Quests.best(level)
+    if not best then return {} end
+    local out = { best }
+    local data = guideData()
+    local npcs = data and data.NPCList
+    local all = Services.module("Quests")
+    local list = type(all) == "table" and all[best.questName]
+    if type(npcs) ~= "table" or type(list) ~= "table" then return out end
+    for _, npc in pairs(npcs) do
+        if npc.InternalQuestName == best.questName and type(npc.Levels) == "table" then
+            for id, required in pairs(npc.Levels) do
+                local quest = list[id]
+                if id ~= best.id and type(quest) == "table" and type(quest.Task) == "table" then
+                    local mob, count = next(quest.Task)
+                    if mob and type(count) == "number" and count > 1 and required <= level then
+                        out[#out + 1] = {
+                            questName = best.questName,
+                            id = id,
+                            mob = mob,
+                            count = count,
+                            level = required,
+                            npc = npc.NPCName,
+                            position = toVector(npc.Position),
+                        }
+                    end
+                end
+            end
+            break
+        end
+    end
+    table.sort(out, function(a, b) return a.level > b.level end)
+    return out
+end
+
 -- The best boss quest for `level` whose boss is up, or nil. Same shape as
 -- Quests.best. A boss quest gives far more experience than a mob quest: the
 -- Teddy Kaitun's "Triple Quest Method" takes one whenever its boss is up,
