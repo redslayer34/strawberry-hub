@@ -4240,6 +4240,25 @@ do
     Fight.engage(fake, normal)
     Fight.engage(fake, normal)
     eq("no damage at all: left alone", Enemies.nearest("Prisoner"), nil)
+
+    -- A mob close by that the character never gets closer to.
+    local progress = Fight.NO_PROGRESS_AFTER
+    Fight.NO_PROGRESS_AFTER = -1
+    local stuck = mob("Prisoner", Vector3.new(0, 0, 300))
+    Fight.engage(fake, stuck)
+    world.hrp.CFrame = CFrame.new(0, 0, 0)
+    Fight.engage(fake, stuck)
+    eq("unreachable mob: left alone", Enemies.nearest("Prisoner"), nil)
+    Fight.NO_PROGRESS_AFTER = progress
+
+    -- Three mobs in a row for nothing: the character holds still.
+    for index = 1, 2 do
+        local other = mob("Prisoner", Vector3.new(index, 0, 10))
+        Fight.engage(fake, other)
+        Fight.engage(fake, other)
+    end
+    check("three strikes: resyncing", Fight.resyncing())
+    check("resync status", Fight.status(normal, true):find("resync", 1, true) ~= nil)
     Fight.NO_DAMAGE_AFTER = after
 end
 

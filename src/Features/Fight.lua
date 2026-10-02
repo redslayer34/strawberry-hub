@@ -25,33 +25,84 @@ Fight.SPAWN_REACHED = 100    -- studs: close enough, mobs stream in
 -- A mob hit this long with its health never going down is left alone for
 -- a while (Enemies.ignore): a secret quest's mob, a shielded one...
 Fight.NO_DAMAGE_AFTER = 20
-local watched = { mob = nil, since = 0, health = 0 }
+-- A mob the character does not get closer to (stuck in a wall, a client
+-- position the server does not share) is left alone too.
+Fight.NO_PROGRESS_AFTER = 15
+Fight.PROGRESS = 10            -- studs closer that count as progress
+Fight.NEAR_ENOUGH = 1000       -- ...for a mob closer than this
+-- Several mobs in a row hit for nothing: the character itself is out of
+-- step with the server (its position there is not the one on screen, as
+-- the user found after a reset). It holds still a moment to resync.
+Fight.STRIKES = 3
+Fight.STRIKE_WINDOW = 180
+Fight.RESYNC_TIME = 4
+local watched = { mob = nil, since = 0, health = 0, best = math.huge, closerAt = 0 }
+local strikes = {}
+local resyncUntil, resyncAt = 0, nil
+
+local function strike(mob, seconds)
+    Enemies.ignore(mob, seconds)
+    watched.mob = nil
+    local now, kept = os.clock(), {}
+    for _, at in ipairs(strikes) do
+        if now - at <= Fight.STRIKE_WINDOW then kept[#kept + 1] = at end
+    end
+    kept[#kept + 1] = now
+    strikes = kept
+    if #strikes >= Fight.STRIKES then
+        strikes = {}
+        resyncUntil = now + Fight.RESYNC_TIME
+        local here = Player.position()
+        resyncAt = here and CFrame.new(here) or nil
+    end
+end
+
+-- Whether the character is holding still to resync with the server.
+function Fight.resyncing()
+    return os.clock() < resyncUntil
+end
 
 local function watchDamage(mob)
     local humanoid = mob:FindFirstChildOfClass("Humanoid")
-    if not humanoid then return end
-    local now = os.clock()
-    -- Only the time spent next to it counts (not the flight there).
     local root = mob:FindFirstChild("HumanoidRootPart")
-    if not root or Player.distanceTo(root.Position) > 40 then
-        watched.mob = nil
-        return
-    end
+    if not humanoid or not root then return end
+    local now = os.clock()
+    local distance = Player.distanceTo(root.Position)
     if watched.mob ~= mob then
         watched.mob, watched.since, watched.health = mob, now, humanoid.Health
+        watched.best, watched.closerAt = distance, now
         return
     end
+    if distance < watched.best - Fight.PROGRESS then
+        watched.best, watched.closerAt = distance, now
+    end
+    -- Only the time spent next to it counts for the damage (not the flight).
+    if distance > 40 then
+        watched.since, watched.health = now, humanoid.Health
+        -- Far away the Router may be going round through a door: only a
+        -- mob close by that cannot be reached counts.
+        if distance > Fight.NEAR_ENOUGH then watched.closerAt = now end
+        if now - watched.closerAt > Fight.NO_PROGRESS_AFTER then strike(mob, 60) end
+        return
+    end
+    watched.closerAt = now
     if humanoid.Health < watched.health then
         watched.since, watched.health = now, humanoid.Health
+        strikes = {}
     elseif now - watched.since > Fight.NO_DAMAGE_AFTER then
-        Enemies.ignore(mob, 120)
-        watched.mob = nil
+        strike(mob, 120)
     end
 end
 
 function Fight.engage(mode, mob, weapon)
     watchDamage(mob)
     local root = mob.HumanoidRootPart
+    if Fight.resyncing() then
+        -- Held where it was (not stopped: the float would go, over lava).
+        mode.target = nil
+        if resyncAt then Movement.to(resyncAt) end
+        return true
+    end
     Movement.to(root.CFrame * CFrame.new(7, Settings.get("FarmHeight"), 0))
     if Settings.get("BringMob") then
         Bring.run(mob, Settings.get("BringCount"))
@@ -64,6 +115,7 @@ end
 
 -- "Fighting X" plus a warning when the weapon is missing.
 function Fight.status(mob, hasWeapon, suffix, weapon)
+    if Fight.resyncing() then return "No damage on " .. Fight.STRIKES .. " mobs: holding still to resync" end
     local text = "Fighting " .. mob.Name .. (suffix or "")
     if not hasWeapon then
         text = text .. " -- no " .. (weapon or Settings.get("Weapon")) .. " in your inventory"
