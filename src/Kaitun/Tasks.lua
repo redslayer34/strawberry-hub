@@ -207,10 +207,19 @@ Tasks.LIST = {
         ready = function()
             local beli = Player.data("Beli") or 0
             if Electric.givenUp() then return false end
-            if Electric.hasBolt() and beli < Electric.PRICE then return false end
-            if Player.sea() == 1 then return true end
-            return beli >= Electric.PRICE
-                and Melee.mastery("Black Leg") >= Melee.SUPERHUMAN_NEEDS
+            local sea, level = Player.sea(), Player.level() or 0
+            -- A charged cloud already announced while the quest is on: take
+            -- it whatever the money (the bolt costs nothing).
+            if sea == 1 and not Electric.hasBolt() then
+                local state = Electric.state()
+                if (state == 1 or state == 2) and Electric.target() then return true end
+            end
+            -- Otherwise only with the $500,000 of the delivery: waiting for a
+            -- cloud (and hopping for one) would replace the level farm and
+            -- the Black Leg / Fishman purchases for nothing.
+            if beli < Electric.PRICE then return false end
+            if sea == 1 and level < 700 then return true end
+            return Melee.mastery("Black Leg") >= Melee.SUPERHUMAN_NEEDS
                 and Melee.mastery("Fishman Karate") >= Melee.SUPERHUMAN_NEEDS
         end,
         done = function() return Electric.owned() end,

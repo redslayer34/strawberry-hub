@@ -11,6 +11,7 @@
 --  so it carries on across server hops and restarts.
 --=============================================================================
 
+local Config = require("Kaitun.Config")
 local Engine = require("Kaitun.Engine")
 local Farm = require("Features.Farm")
 local Logo = require("UI.Logo")
@@ -314,7 +315,8 @@ function Screen.lines()
         Money = safe(function()
             return "Beli " .. short(Player.data("Beli")) .. "  ·  Fragments " .. short(Player.data("Fragments"))
         end),
-        Melee = "Melee: " .. safe(Melee.describe),
+        Melee = Config.skipped("Godhuman") and "Melee: chain OFF (Skip.Godhuman = true)"
+            or ("Melee: " .. safe(Melee.describe)),
         Sea = "Sea: " .. safe(Player.sea),
         Items = safe(function()
             local items = {}

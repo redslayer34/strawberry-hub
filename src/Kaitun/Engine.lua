@@ -566,7 +566,7 @@ function Engine.plan()
     local sea, level = Player.sea() or 1, Player.level() or 1
     for _, task in ipairs(Tasks.ordered()) do
         local ok, why = pcall(Engine.blocked, task, sea, level)
-        why = ok and why or "error"
+        if not ok then why = "error" end
         if why ~= "other sea" then
             -- "done" says who said so, to catch a false "owned".
             if why == "skipped" then

@@ -41,12 +41,27 @@ function newWorld.enabled()
     return Settings.get("StackNewWorld") == true and Player.sea() == 1 and Player.level() >= 700
 end
 
-function newWorld.want()
-    return Common.invoke("DressrosaQuestProgress", "Dressrosa") ~= nil
-end
-
 local function iceDoor()
     return Services.find(workspace, "Map.Ice.Door")
+end
+
+-- Waiting for the Ice Admiral is not a job: the farm goes on, and with a
+-- hop allowed the server is changed (Teddy: "Hop Find Ice Admiral").
+local function waitingForAdmiral()
+    if Common.invoke("DressrosaQuestProgress", "Dressrosa") == 0 then return false end
+    local door = iceDoor()
+    if not door or door.CanCollide then return false end   -- not loaded, or still closed
+    return Enemies.findBoss("Ice Admiral") == nil
+end
+
+function newWorld.want()
+    if Common.invoke("DressrosaQuestProgress", "Dressrosa") == nil then return false end
+    return not waitingForAdmiral()
+end
+
+function newWorld.hop()
+    if newWorld.enabled() and waitingForAdmiral() then return "no Ice Admiral" end
+    return nil
 end
 
 function newWorld.tick(mode)

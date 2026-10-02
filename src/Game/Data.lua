@@ -129,30 +129,40 @@ Data.ISLANDS = {
 }
 
 -- Fighting styles: the CommF_ call(s) that buy them, the teacher NPC to
--- stand next to, the names the inventory may list them under (the game
+-- stand next to (`at`: where it stands in each sea, the Teddy Kaitun's
+-- table, for when the NPC is not loaded), the names the inventory may list them under (the game
 -- keeps the old internal names for the first styles, Vxeze's MeleeInfo) and
 -- the sea their teacher is in.
 Data.FIGHTING_STYLES = {
     { name = "Black Leg", npc = "Dark Step Teacher", calls = { { "BuyBlackLeg" } },
-        inv = { "Black Leg", "Dark Step" }, sea = 1 },
+        inv = { "Black Leg", "Dark Step" }, sea = 1,
+        at = { Vector3.new(-985.919, 13.782, 3989.196), Vector3.new(-4754.082, 35.072, -4846.347),
+            Vector3.new(-5046.673, 371.554, -3181.369) } },
     { name = "Electro", npc = "Mad Scientist", calls = { { "BuyElectro" } },
-        inv = { "Electro", "Electric" }, sea = 1 },
+        inv = { "Electro", "Electric" }, sea = 1,
+        at = { Vector3.new(-5386.988, 13.553, -2146.912), Vector3.new(-4867.061, 35.072, -4764.177),
+            Vector3.new(-4992.725, 314.546, -3197.635) } },
     { name = "Fishman Karate", npc = "Water Kung-fu Teacher", calls = { { "BuyFishmanKarate" } },
-        inv = { "Fishman Karate", "Water Kung Fu" }, sea = 1 },
+        inv = { "Fishman Karate", "Water Kung Fu" }, sea = 1,
+        at = { Vector3.new(61580.652, 18.901, 985.204), Vector3.new(-4957.67, 35.071, -4665.6),
+            Vector3.new(-5023.662, 371.343, -3192.383) } },
     { name = "Dragon Claw", npc = "Sabi", calls = { { "BlackbeardReward", "DragonClaw", "1" }, { "BlackbeardReward", "DragonClaw", "2" } },
         inv = { "Dragon Claw", "Dragon Breath" }, sea = 2 },
     { name = "Superhuman", npc = "Martial Arts Master", calls = { { "BuySuperhuman" } },
-        inv = { "Superhuman" }, sea = 2 },
+        inv = { "Superhuman" }, sea = 2,
+        at = { [2] = Vector3.new(1378.382, 247.458, -5191.358), [3] = Vector3.new(-5004.467, 371.343, -3196.912) } },
     { name = "Death Step", npc = "Phoeyu, the Reformed", calls = { { "BuyDeathStep" } },
-        inv = { "Death Step" }, sea = 2 },
+        inv = { "Death Step" }, sea = 2,
+        at = { [2] = Vector3.new(6356.018, 297.667, -6761.593), [3] = Vector3.new(-4995.035, 314.546, -3222.354) } },
     { name = "Sharkman Karate", npc = "Sharkman Teacher", calls = { { "BuySharkmanKarate" } },
-        inv = { "Sharkman Karate" }, sea = 2 },
+        inv = { "Sharkman Karate" }, sea = 2,
+        at = { [2] = Vector3.new(-2600.607, 238.877, -10314.496), [3] = Vector3.new(-4972.77, 314.546, -3219.336) } },
     { name = "Electric Claw", npc = "Previous Hero", calls = { { "BuyElectricClaw" } },
-        inv = { "Electric Claw" }, sea = 3 },
+        inv = { "Electric Claw" }, sea = 3, at = { [3] = Vector3.new(-10371.693, 331.684, -10127.267) } },
     { name = "Dragon Talon", npc = "Uzoth", calls = { { "BuyDragonTalon" } },
-        inv = { "Dragon Talon" }, sea = 3 },
+        inv = { "Dragon Talon" }, sea = 3, at = { [3] = Vector3.new(5663.318, 1211.308, 865.413) } },
     { name = "Godhuman", npc = "Ancient Monk", calls = { { "BuyGodhuman" } },
-        inv = { "Godhuman", "God Human" }, sea = 3 },
+        inv = { "Godhuman", "God Human" }, sea = 3, at = { [3] = Vector3.new(-13775.168, 334.652, -9882.374) } },
     { name = "Sanguine Art", npc = "Shafi", calls = { { "BuySanguineArt" } },
         inv = { "Sanguine Art", "SanguineArt" }, sea = 3 },
 }

@@ -68,6 +68,9 @@ Melee.GODHUMAN_MATERIALS = {
 
 Melee.MAX_TRIES = 5        -- purchases / loads of one style that change nothing
 Melee.GIVE_UP = 600        -- then the style is left alone this long
+Melee.WALK_LIMIT = 90      -- seconds flying to a teacher before the style is left alone
+
+local walkSince = {}       -- [style] = when the flight to its teacher started
 
 local unlockCache = {}   -- [style] = { value, at }
 local lastLoad, lastBuy = -math.huge, -math.huge
@@ -292,7 +295,9 @@ local function buy(mode, name)
         end
         return "Claiming Dragon Claw"
     end
-    local where = World.npcPosition(style.npc)
+    -- The NPC when it is loaded, otherwise the teacher's spot in this sea
+    -- (Teddy's table): an NPC out of streaming range is not in the list.
+    local where = World.npcPosition(style.npc) or (style.at and style.at[Player.sea() or 0])
     if not where then
         if style.sea and not Common.travel(style.sea) then return "Travelling to Sea " .. style.sea .. " for " .. name end
         Movement.stop()
@@ -303,7 +308,17 @@ local function buy(mode, name)
         return "Looking for " .. style.npc
     end
     Common.goTo(CFrame.new(where + Vector3.new(0, 0, 4)))
-    if not Common.near(where, 10) then return "Going to " .. style.npc .. " for " .. name end
+    if not Common.near(where, 10) then
+        -- This mode runs above the farms: a teacher it cannot reach must
+        -- not hold the character forever.
+        walkSince[name] = walkSince[name] or os.clock()
+        if os.clock() - walkSince[name] > Melee.WALK_LIMIT then
+            walkSince[name] = nil
+            tries[name], givenUp[name] = 0, os.clock() + Melee.GIVE_UP
+        end
+        return "Going to " .. style.npc .. " for " .. name
+    end
+    walkSince[name] = nil
     if os.clock() - lastBuy >= Melee.BUY_EVERY then
         lastBuy = os.clock()
         attempt(name)
@@ -506,7 +521,7 @@ Melee.dragonTalon = Mode({
 function Melee.reset()
     unlockCache = {}
     lastLoad, lastBuy = -math.huge, -math.huge
-    tries, givenUp = {}, {}
+    tries, givenUp, walkSince = {}, {}, {}
     rolls = { at = -math.huge }
 end
 

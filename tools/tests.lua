@@ -3964,23 +3964,60 @@ do
     Logo.reset()
 end
 
--- The user's account: level 320, Sea 1, $504k, no Saber, no Electric. The
--- Electric quest must be what actually runs (not Saber, not the level farm).
-for _, beli in ipairs({ 504694, 200000 }) do
-    meleeSetup(2753915549, 320, {}, {}, beli)
+-- The user's accounts in Sea 1. Order wanted: a style to buy first (it is
+-- quick and unblocks the rest), then Electric once the $500k of the
+-- delivery are there, Saber otherwise; never the level farm over them.
+local function runningMode()
+    for _, mode in ipairs(require("Features.Farm").MODES) do
+        if mode.enabled() then return mode.name end
+    end
+end
+
+-- $504k, Combat only: Black Leg is bought first, Electric is the task.
+meleeSetup(2753915549, 320, {}, {}, 504694)
+do
     KConfig.reset()
     KEngine.reset()
     KEngine.tick()
     KEngine.tick()
-    local Farm = require("Features.Farm")
-    local active
-    for _, mode in ipairs(Farm.MODES) do
-        if mode.enabled() then active = mode.name break end
-    end
-    eq("electric before saber ($" .. beli .. ")", KEngine.status().task, "Electric")
-    eq("electric is the running farm mode ($" .. beli .. ")", active, "Electric")
-    local plan = table.concat(KEngine.plan(), " | ")
-    check("plan says Electric runs ($" .. beli .. ")", plan:find("Electric: running", 1, true) ~= nil, plan)
+    eq("$504k: Electric is the task", KEngine.status().task, "Electric")
+    eq("$504k: Black Leg bought first", runningMode(), "Melee")
+    check("$504k: plan says Electric runs", table.concat(KEngine.plan(), " | "):find("Electric: running", 1, true) ~= nil)
+end
+
+-- $504k with Black Leg held: the Electric quest is what runs.
+meleeSetup(2753915549, 369, { style("Dark Step", 197) }, {}, 704630)
+do
+    newInstance("Tool", "Dark Step", world.player.Backpack).ToolTip = "Melee"
+    KConfig.reset()
+    KEngine.reset()
+    KEngine.tick()
+    KEngine.tick()
+    eq("$704k + Black Leg: Electric is the task", KEngine.status().task, "Electric")
+    eq("$704k + Black Leg: the Electric quest runs", runningMode(), "Electric")
+end
+
+-- $200k: the quest waits for the money (no cloud announced), Saber runs.
+meleeSetup(2753915549, 320, { style("Dark Step", 197) }, {}, 200000)
+do
+    newInstance("Tool", "Dark Step", world.player.Backpack).ToolTip = "Melee"
+    KConfig.reset()
+    KEngine.reset()
+    KEngine.tick()
+    KEngine.tick()
+    eq("$200k: Saber is the task", KEngine.status().task, "Saber")
+    check("$200k: plan says Electric is not ready", table.concat(KEngine.plan(), " | "):find("Electric: not ready", 1, true) ~= nil)
+end
+
+-- Level 120, $50k: nothing holds the character but the skip level.
+meleeSetup(2753915549, 120, {}, {}, 50000)
+do
+    KConfig.reset()
+    KEngine.reset()
+    KEngine.tick()
+    KEngine.tick()
+    eq("low level: no task", KEngine.status().task, nil)
+    eq("low level: skip level runs", runningMode(), "Skip Level")
 end
 
 -- The item replication list once claimed a Saber and the Electric style

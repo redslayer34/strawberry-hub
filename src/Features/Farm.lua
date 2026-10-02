@@ -84,13 +84,16 @@ Farm.MODES = {
     Swords.yoru,
     Swords.rainbow,
     Guitar.mode,
+    -- Learning / equipping a style takes a moment and unblocks the rest; it
+    -- gives up on its own (Melee.WALK_LIMIT, MAX_TRIES), so it may sit above
+    -- the long quests.
+    Melee.mode,
     Saber.mode,
     Electric.mode,
     Melee.libraryKey,
     Melee.waterKey,
     Melee.electricClaw,
     Melee.dragonTalon,
-    Melee.mode,
     Swords.ttk,
     ItemMastery.upgradeSword,
     ItemMastery.upgradeGun,
