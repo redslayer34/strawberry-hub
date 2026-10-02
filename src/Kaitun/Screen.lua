@@ -313,7 +313,8 @@ function Screen.lines()
             return "Next fruit spin: " .. clock(left)
         end),
         Task = safe(function()
-            local task = status.task or ("idle: " .. tostring(status.idle))
+            local task = status.task and (status.task .. (status.detail and (" (" .. status.detail .. ")") or ""))
+                or ("idle: " .. tostring(status.idle))
             return "Task: " .. task .. (status.hop and ("  (hop soon: " .. status.hop .. ")") or "")
         end),
         Status = safe(Farm.status),

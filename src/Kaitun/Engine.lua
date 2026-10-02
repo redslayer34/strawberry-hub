@@ -624,8 +624,14 @@ function Engine.status()
         if left > 0 then resting[#resting + 1] = string.format("%s %ds", name, math.floor(left)) end
     end
     table.sort(resting)
+    local detail
+    if current and current.detail then
+        local ok, text = pcall(current.detail)
+        if ok and type(text) == "string" then detail = text end
+    end
     return {
         task = current and current.name or nil,
+        detail = detail,
         idle = idleName,
         hop = hopNote,
         log = log,
@@ -660,7 +666,12 @@ function Engine.plan()
                 local okWhy, detail = pcall(task.why)
                 if okWhy and detail then why = "not ready (" .. tostring(detail) .. ")" end
             end
-            list[#list + 1] = task.name .. ": " .. (task == current and "running" or why or "ready")
+            local text = task == current and "running" or why or "ready"
+            if task == current and task.detail then
+                local okDetail, detail = pcall(task.detail)
+                if okDetail and type(detail) == "string" then text = text .. " (" .. detail .. ")" end
+            end
+            list[#list + 1] = task.name .. ": " .. text
         end
     end
     planCache = { at = now(), list = list }

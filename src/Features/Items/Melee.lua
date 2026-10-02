@@ -470,14 +470,20 @@ function Melee.describe()
 end
 
 -- The fragments the next style waits on, or 0 (the Kaitun raids for them).
-function Melee.fragmentsNeeded()
+-- The style that only lacks fragments now, and how many it costs; or nil.
+function Melee.fragmentsFor()
     for _, entry in ipairs(Melee.CHAIN) do
         if entry.fragments and Melee.useful(entry) and not Melee.owned(entry.name) then
             local missing = Melee.missing(entry)
-            if missing == entry.fragments .. " fragments" then return entry.fragments end
+            if missing == entry.fragments .. " fragments" then return entry.name, entry.fragments end
         end
     end
-    return 0
+    return nil, 0
+end
+
+function Melee.fragmentsNeeded()
+    local _, amount = Melee.fragmentsFor()
+    return amount
 end
 
 -- The first Godhuman material still short, or nil.

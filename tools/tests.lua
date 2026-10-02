@@ -2492,6 +2492,26 @@ do
     Raids.fight(mode)
     Raids.ISLAND_EMPTY = empty
     eq("raid: cleared island -> the next one", Raids.fight(mode), "Raid: going to island 2")
+
+    -- Kill aura on the last island only.
+    local function killable(at)
+        local enemy = mob("Raid Mob", at)
+        enemy.Humanoid.ChangeState = function(self, state) self.Killed = state end
+        return enemy
+    end
+    local three = part("Island 3", Vector3.new(5000, 0, 0), locations)
+    world.hrp.Position = three.Position
+    local early = killable(three.Position + Vector3.new(0, 0, 20))
+    Raids.fight(mode)
+    eq("kill aura: not on island 3", early.Humanoid.Killed, nil)
+    early.Parent = nil
+    local five = part("Island 5", Vector3.new(9000, 0, 0), locations)
+    world.hrp.Position = five.Position
+    check("last island seen", Raids.lastIsland())
+    local late = killable(five.Position + Vector3.new(0, 0, 20))
+    Raids.reset()
+    check("kill aura: status says so", Raids.fight(mode):find("kill aura", 1, true) ~= nil)
+    check("kill aura: killed on island 5", late.Humanoid.Killed ~= nil)
     timer.Visible = false
     Raids.reset()
 end
@@ -3249,6 +3269,17 @@ do
     Settings.set("DodgeSkills", true)
     Helpers.onEnemyDescendant(cast)
     eq("mob casting: 200 studs up", Helpers.lift(), 200)
+
+    -- Raids only: off outside a raid, on inside one.
+    Settings.set("DodgeSkills", false)
+    Helpers.reset()
+    Helpers.onEnemyDescendant(cast)
+    eq("raid dodge: not outside a raid", Helpers.lift(), 0)
+    local raidTimer = newInstance("Frame", "RaidTimer", folder("TopHUDList", world.player.PlayerGui.Main))
+    raidTimer.Visible = true
+    Helpers.onEnemyDescendant(cast)
+    eq("raid dodge: in a raid", Helpers.lift(), 200)
+    raidTimer.Visible = false
     Farm.target = realTarget
     Movement.liftProvider = nil
     Movement.stop()
@@ -4505,6 +4536,17 @@ end
 local function taskNamed(name)
     for _, task in ipairs(KTasks.LIST) do if task.name == name then return task end end
 end
+
+-- Why the Kaitun raids: the fragments' purpose on the screen.
+meleeSetup(4442272183, 1000, { style("Dark Step", 300) }, { BuyDeathStep = 0 }, 100000)
+do
+    local reason, goal = KTasks.fragmentReason()
+    eq("fragments: for Dragon Claw", reason, "Dragon Claw")
+    eq("fragments: 1500", goal, 1500)
+    check("fragments task detail", tostring(taskNamed("Fragments").detail()):find("Dragon Claw: 0/1500", 1, true) ~= nil,
+        tostring(taskNamed("Fragments").detail()))
+end
+
 
 -- Sea 2 Key Hop only from level 1500, and not while the other key's boss is here.
 meleeSetup(4442272183, 1200, { style("Dark Step", 400), style("Water Kung Fu", 400) },

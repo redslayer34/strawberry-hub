@@ -129,6 +129,29 @@ local function raidEnemy()
     return best
 end
 
+-- On the last island of the raid (island 5): the nearest island is 5.
+Raids.LAST_ISLAND = 5
+function Raids.lastIsland()
+    local here = Player.position()
+    if not here then return false end
+    local best, bestDistance
+    for _, island in ipairs(islands()) do
+        local distance = (island.part.Position - here).Magnitude
+        if distance < Raids.NEXT_ISLAND and (not bestDistance or distance < bestDistance) then
+            best, bestDistance = island, distance
+        end
+    end
+    return best ~= nil and best.number >= Raids.LAST_ISLAND
+end
+
+-- Banana's "Kill Aura Only Raid": the raid mob fought is killed, then the
+-- next one after the delay. Always with Instant Kill, and on the last
+-- island with RaidKillLastIsland.
+local function killAura()
+    if Settings.get("RaidInstantKill") then return true end
+    return Settings.get("RaidKillLastIsland") and Raids.lastIsland()
+end
+
 -- One step inside a raid.
 function Raids.fight(mode)
     lastRaidAt = os.clock()
@@ -136,11 +159,12 @@ function Raids.fight(mode)
     local enemy = raidEnemy()
     if enemy then
         arrivedAt = nil
-        if Settings.get("RaidInstantKill") and os.clock() - lastKill >= Settings.get("RaidKillDelay") then
+        local aura = killAura()
+        if aura and os.clock() - lastKill >= Settings.get("RaidKillDelay") then
             lastKill = os.clock()
             pcall(function() enemy.Humanoid:ChangeState(Enum.HumanoidStateType.Dead) end)
         end
-        return "Raid: " .. Common.fight(mode, enemy, true)
+        return "Raid: " .. Common.fight(mode, enemy, true) .. (aura and " (kill aura)" or "")
     end
     local island = nextIsland()
     if island then

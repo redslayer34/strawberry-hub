@@ -31,6 +31,10 @@ return function(Window)
     Bind.toggle(raids, "RaidHopFruit", "Hop To Find A Fruit", "No fruit to pay with: picks one up or hops.")
     Bind.toggle(raids, "RaidInstantKill", "Instant Kill (risk)", "Kills raid mobs at once. The anti-cheat may notice.")
     Bind.slider(raids, "RaidKillDelay", "Instant Kill Delay", 0, 5, 0, "Seconds between two instant kills.")
+    Bind.toggle(raids, "RaidKillLastIsland", "Kill Aura on the Last Island",
+        "On island 5 only: the raid mobs are killed at once, one every Instant Kill Delay (Banana's kill aura).")
+    Bind.toggle(raids, "DodgeSkillsRaid", "Dodge Mob Skills (raids only)",
+        "In a raid, flies 200 studs up while the fought mob casts a skill.")
 
     local law = tab:AddSection("Raid Law")
     Bind.toggle(law, "OtherLaw", "Auto Buy Chip And Kill Law",

@@ -103,8 +103,17 @@ local function dodgeActive(kind)
     return false
 end
 
+-- Banana's mob skill dodge: everywhere with DodgeSkills, or only in raids
+-- with DodgeSkillsRaid.
+local function dodgeOn()
+    if Settings.get("DodgeSkills") then return true end
+    if not Settings.get("DodgeSkillsRaid") then return false end
+    local ok, inRaid = pcall(function() return require("Features.Raids").inRaid() end)
+    return ok and inRaid == true
+end
+
 function Helpers.onEnemyDescendant(node)
-    if not Settings.get("DodgeSkills") or not Helpers.MOB_CASTS[node.Name] then return end
+    if not Helpers.MOB_CASTS[node.Name] or not dodgeOn() then return end
     local target = fightTarget()
     local owner = node.Parent and node.Parent.Parent
     if target and owner and owner.Name == target.Name then startDodge("mob", node, 0.5, 2) end

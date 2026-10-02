@@ -114,14 +114,26 @@ end
 
 -- The fragments the next step waits on: a style of the melee chain, the
 -- Soul Guitar, a legendary haki colour (late game).
-function Tasks.fragmentGoal(lateLevel)
-    local goal = 0
-    if Tasks.needsColours(Player.level(), lateLevel or 2200) then goal = Tasks.COLOUR_FRAGMENTS end
-    if not Config.skipped("Godhuman") then goal = math.max(goal, Melee.fragmentsNeeded()) end
-    if not Config.skipped("SoulGuitar") and not owned("Skull Guitar") and Guitar.missing() == nil
-        and (Player.level() or 0) >= 2300 then
-        goal = math.max(goal, Guitar.FRAGMENTS)
+-- What the fragments are for, and the goal: the largest of the haki
+-- colours, the next melee style that only lacks fragments, the Soul Guitar.
+function Tasks.fragmentReason(lateLevel)
+    local reason, goal = nil, 0
+    if Tasks.needsColours(Player.level(), lateLevel or 2200) then
+        reason, goal = "the haki colours", Tasks.COLOUR_FRAGMENTS
     end
+    if not Config.skipped("Godhuman") then
+        local style, amount = Melee.fragmentsFor()
+        if style and amount > goal then reason, goal = style, amount end
+    end
+    if not Config.skipped("SoulGuitar") and not owned("Skull Guitar") and Guitar.missing() == nil
+        and (Player.level() or 0) >= 2300 and Guitar.FRAGMENTS > goal then
+        reason, goal = "Soul Guitar", Guitar.FRAGMENTS
+    end
+    return reason, goal
+end
+
+function Tasks.fragmentGoal(lateLevel)
+    local _, goal = Tasks.fragmentReason(lateLevel)
     return goal
 end
 
@@ -206,7 +218,8 @@ Tasks.LIST = {
     {
         name = "AwakenFruit", priority = 6, seas = { 2, 3 }, minLevel = Raids.MIN_LEVEL, mode = Raids.solo,
         keys = function()
-            return { RaidAuto = true, FruitAwaken = true, RaidCheapFruit = true, RaidName = Tasks.fruitRaid() or "Flame" }
+            return { RaidAuto = true, FruitAwaken = true, RaidCheapFruit = true, RaidName = Tasks.fruitRaid() or "Flame",
+                RaidKillLastIsland = true, DodgeSkillsRaid = true }
         end,
         ready = function()
             local raid = Tasks.fruitRaid()
@@ -219,6 +232,10 @@ Tasks.LIST = {
             local _, all = Tasks.awakening()
             return all
         end,
+        detail = function()
+            local raid = Tasks.fruitRaid()
+            return raid and ("awakening " .. tostring(Player.data("DevilFruit")) .. " (raid " .. raid .. ")") or nil
+        end,
         maxTime = 1800,
     },
     {
@@ -227,10 +244,17 @@ Tasks.LIST = {
         keys = function()
             local raid = Tasks.fruitRaid()
             if raid == "Dough" then raid = nil end
-            return { RaidAuto = true, RaidCheapFruit = true, FruitAwaken = true, RaidName = raid or "Flame" }
+            return { RaidAuto = true, RaidCheapFruit = true, FruitAwaken = true, RaidName = raid or "Flame",
+                RaidKillLastIsland = true, DodgeSkillsRaid = true }
         end,
         ready = function()
             return (Player.data("Fragments") or 0) < Tasks.fragmentGoal() and Tasks.canPayRaid()
+        end,
+        -- On the screen: what the fragments are for.
+        detail = function()
+            local reason, goal = Tasks.fragmentReason()
+            if not reason then return nil end
+            return string.format("for %s: %d/%d fragments", reason, Player.data("Fragments") or 0, goal)
         end,
         maxTime = 1800,
     },
