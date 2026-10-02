@@ -1,8 +1,10 @@
 --=============================================================================
 -- RACES: V2 / V3, CYBORG, GHOUL, DRACO V2 / V3
 --=============================================================================
---  V2 (Alchemist, Sea 2, 500k Beli): three flowers (two lying around, the
---  third from Swan Pirates), then back to the Alchemist.
+--  V2 (Alchemist, Sea 2, level 850, 500k Beli): Bartilo's Colosseum Quest
+--  first (50 Swan Pirates, Jeremy, the plates: the Alchemist answers
+--  nothing before), then three flowers (two lying around, the third from
+--  Swan Pirates), then back to the Alchemist.
 --  V3 (Wenlocktoad, 2M Beli), per race:
 --    Human    kill Jeremy, Orbitus and Diamond
 --    Mink     collect 30 chests
@@ -28,6 +30,7 @@ local Player = require("Core.Player")
 local Raids = require("Features.Raids")
 local Services = require("Core.Services")
 local Settings = require("Core.Settings")
+local StackWorld = require("Features.Stack.World")
 local World = require("Game.World")
 
 local Upgrade = {}
@@ -88,6 +91,13 @@ local function v2(mode)
         Movement.stop()
         return "V2 needs 500k Beli"
     end
+    -- The Colosseum Quest (Bartilo's) first: until it is done the
+    -- Alchemist answers nothing (the wiki: "the ability to talk to
+    -- Alchemist" is its reward).
+    local colosseum = StackWorld.bartiloProgress()
+    if colosseum ~= nil and colosseum ~= 3 then
+        return "Colosseum quest first: " .. StackWorld.bartilo(mode, colosseum)
+    end
     local step = Common.invoke("Alchemist", "1")
     local allFlowers = Common.has("Flower 1") and Common.has("Flower 2") and Common.has("Flower 3")
     -- Teddy: 1 is the quest under way, -2 done; anything else (0, nil, a
@@ -100,7 +110,7 @@ local function v2(mode)
             Common.forget()
             -- No answer at all, again and again, at the NPC: the game no
             -- longer takes this call (v30). Left alone for a while.
-            if step == nil then
+            if step == nil and colosseum == 3 then
                 nilAnswers = nilAnswers + 1
                 if nilAnswers >= Upgrade.NIL_TRIES then
                     nilAnswers, Upgrade.v2PausedUntil = 0, os.clock() + Upgrade.V2_PAUSE
@@ -222,7 +232,7 @@ Upgrade.v2v3 = Mode({
     name = "Race V2-V3",
     key = "RaceV2V3",
     want = function()
-        if Upgrade.version() == 1 and Upgrade.v2Paused() then return false end
+        if Upgrade.version() == 1 and (Upgrade.v2Paused() or StackWorld.bartiloWaiting()) then return false end
         return Upgrade.version() < 3
     end,
     idleStatus = "Already V3, or the Alchemist does not answer",

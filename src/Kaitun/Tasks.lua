@@ -38,6 +38,7 @@ local RaceUpgrade = require("Features.Races.Upgrade")
 local Raids = require("Features.Raids")
 local Saber = require("Features.Items.Saber")
 local Summons = require("Features.Stack.Summons")
+local StackWorld = require("Features.Stack.World")
 local Swords = require("Features.Items.Swords")
 
 local Tasks = {}
@@ -177,14 +178,24 @@ Tasks.LIST = {
     {
         -- Teddy: Sea 2, level 850, $500k for V2, $2M for V3 (from Sea 3 the
         -- trip back would come every rest).
-        name = "Race", priority = 5, seas = { 2 }, minLevel = 850, mode = RaceUpgrade.v2v3,
+        -- Level 1500: the Alchemist only talks once Bartilo's Colosseum
+        -- Quest is done, which the Third World quest does at 1500 anyway
+        -- (the user's choice; V2 itself still does it if needed).
+        name = "Race", priority = 5, seas = { 2 }, minLevel = 1500, mode = RaceUpgrade.v2v3,
         keys = { RaceV2V3 = true },
         ready = function()
             local beli = Player.data("Beli") or 0
-            if RaceUpgrade.version() <= 1 then return beli >= 500000 and not RaceUpgrade.v2Paused() end
+            if RaceUpgrade.version() <= 1 then
+                -- Jeremy (the Colosseum Quest) not up: the farms meanwhile.
+                if StackWorld.bartiloWaiting() then return false end
+                return beli >= 500000 and not RaceUpgrade.v2Paused()
+            end
             return beli >= 2000000
         end,
         why = function()
+            if RaceUpgrade.version() <= 1 and StackWorld.bartiloWaiting() then
+                return "Colosseum quest: waiting for Jeremy"
+            end
             if RaceUpgrade.v2Paused() then
                 return "the Alchemist does not answer; game remotes: " .. RaceUpgrade.alchemistRemotes()
             end

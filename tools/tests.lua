@@ -2716,8 +2716,18 @@ do
 end
 
 -- V3 done: the mode lets the next farm run.
+-- The Colosseum Quest (Bartilo) comes before the Alchemist.
+raceSetup(4442272183, "Human", { Wenlocktoad = 0, BartiloQuestProgress = 0 })
+do
+    newInstance("IntValue", "Beli", world.player.Data).Value = 600000
+    Settings.set("RaceV2V3", true)
+    RaceUpgrade.v2v3.tick()
+    check("colosseum first", RaceUpgrade.v2v3.status:find("Colosseum quest first", 1, true) ~= nil,
+        RaceUpgrade.v2v3.status)
+end
+
 -- The Alchemist answering nothing at all (v30): V2 is left alone a while.
-raceSetup(4442272183, "Human", { Wenlocktoad = 0 })
+raceSetup(4442272183, "Human", { Wenlocktoad = 0, BartiloQuestProgress = 3 })
 do
     newInstance("IntValue", "Beli", world.player.Data).Value = 600000
     Settings.set("RaceV2V3", true)
@@ -4428,10 +4438,11 @@ do
 end
 
 -- Race: Sea 2 only, with the money of the step.
-meleeSetup(4442272183, 900, {}, { Alchemist = 0, Wenlocktoad = 0 }, 100000)
+meleeSetup(4442272183, 1500, {}, { Alchemist = 0, Wenlocktoad = 0 }, 100000)
 do
     KConfig.reset(); KEngine.reset()
-    eq("race: not ready under $500k", KEngine.blocked(taskNamed("Race"), 2, 900), "not ready")
+    eq("race: not ready under $500k", KEngine.blocked(taskNamed("Race"), 2, 1500), "not ready")
+    eq("race: waits for level 1500", KEngine.blocked(taskNamed("Race"), 2, 900), "level 1500")
     eq("race: never from Sea 3", KEngine.blocked(taskNamed("Race"), 3, 1600), "other sea")
 end
 

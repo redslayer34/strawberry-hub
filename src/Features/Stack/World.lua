@@ -285,6 +285,20 @@ local function bartilo(mode, progress)
     return "Bartilo: plates"
 end
 
+-- Bartilo's quest is the "Colosseum Quest": the Alchemist (Race V2)
+-- answers nothing until it is done. Shared with Races/Upgrade.
+-- The progress: 0 (Swan Pirates), 1 (Jeremy), 2 (plates), 3 done, or nil.
+function World.bartiloProgress()
+    return Common.invoke("BartiloQuestProgress", "Bartilo")
+end
+
+-- Jeremy is not up: nothing to do on the quest for now.
+function World.bartiloWaiting()
+    return World.bartiloProgress() == 1 and Enemies.findBoss("Jeremy") == nil
+end
+
+World.bartilo = bartilo
+
 function thirdWorld.tick(mode)
     local step, progress = stage()
     if step == "bartilo" then return bartilo(mode, progress) end
