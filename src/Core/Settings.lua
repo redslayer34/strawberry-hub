@@ -319,7 +319,7 @@ Settings.DEFAULTS = {
     TweenSpeed = 300,
     SmartTravel = true,
     PortalFruit = false,
-    LoadIslands = true,
+    LoadIslands = false,
     ResetTeleport = true,
     TeleportDistance = 2000,
 }

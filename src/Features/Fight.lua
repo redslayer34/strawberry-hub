@@ -8,6 +8,7 @@
 
 local Bring = require("Game.Bring")
 local Enemies = require("Game.Enemies")
+local IslandLoader = require("Game.IslandLoader")
 local Mastery = require("Game.Mastery")
 local Movement = require("Game.Movement")
 local Player = require("Core.Player")
@@ -174,6 +175,8 @@ function Search:run(mode, names)
     end
 
     Movement.to(point.CFrame * CFrame.new(0, Fight.SPAWN_HEIGHT, 0))
+    -- No mob up where they spawn: have that place loaded (low graphics).
+    IslandLoader.focus(point.Position)
     if Player.distanceTo(point.Position) <= Fight.SPAWN_REACHED then
         self.visited[point] = true
     end

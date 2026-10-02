@@ -79,7 +79,8 @@ return function(Window, ui)
             .. "Fist of Darkness, a Chalice, a Hallow Essence, a Microchip, a flower, the Red Key or an unstored "
             .. "fruit, nor in a raid, a dungeon or on the Submerged Island.")
     Bind.toggle(travel, "LoadIslands", "Load every island",
-        "Keeps every island loaded, like Banana Cat Hub. Uses more memory: turn it off if the game lags.")
+        "Keeps every island loaded, like Banana Cat Hub. Uses more memory. Off, only the place a farm is "
+            .. "looking for mobs in is loaded, when it finds none (enough on low graphics).")
     local portals = travel:AddParagraph({ Title = "Portal doors in this sea", Content = Router.describe() })
     local log = travel:AddParagraph({ Title = "Travel log", Content = Router.logText() })
     Loop.start("PortalPanel", 2, function()

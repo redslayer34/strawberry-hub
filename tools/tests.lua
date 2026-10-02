@@ -1548,6 +1548,27 @@ do
     workspace.CurrentCamera = nil
 end
 
+-- The light way: only the place a farm looks in, paced.
+setup()
+do
+    workspace.CurrentCamera = newInstance("Camera", "Camera")
+    local remotes = rs:FindFirstChild("Remotes") or newInstance("Folder", "Remotes", rs)
+    local stream = newInstance("RemoteEvent", "RequestStreamAroundAsync", remotes)
+    local island = newInstance("Model", "Skylands", workspace)
+    island:SetAttribute("LevelOfDetailDiameter", 1000)
+    part("Base", Vector3.new(-4200, 1000, -500), island)
+    island.WorldPivot = CFrame.new(-4200, 1000, -500)
+    check("focus: asked", IslandLoader.focus(Vector3.new(-4227, 1088, -567)))
+    local fired = stream.Fired and stream.Fired[1]
+    local request = fired and fired[1] and fired[1][1]
+    check("focus: the server streams the place", request ~= nil and (request.cf.Position - Vector3.new(-4227, 1088, -567)).Magnitude < 1)
+    local point = workspace.CurrentCamera:FindFirstChild("StrawberryFocusPoint")
+    check("focus: one LoD point on that island", point ~= nil and (point.Position - Vector3.new(-4200, 1000, -500)).Magnitude < 1)
+    eq("focus: not again right away", IslandLoader.focus(Vector3.new(-4230, 1090, -560)), false)
+    IslandLoader.destroy()
+    eq("focus: point removed on unload", workspace.CurrentCamera:FindFirstChild("StrawberryFocusPoint"), nil)
+end
+
 -- Sea 3 submarine, both ways.
 setup()
 do

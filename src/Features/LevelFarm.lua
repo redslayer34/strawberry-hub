@@ -14,6 +14,7 @@
 
 local Enemies = require("Game.Enemies")
 local Fight = require("Features.Fight")
+local IslandLoader = require("Game.IslandLoader")
 local Movement = require("Game.Movement")
 local Player = require("Core.Player")
 local Quests = require("Game.Quests")
@@ -83,6 +84,8 @@ local function takeQuest(weapon)
     end
 
     Movement.to(CFrame.new(plan.position) * CFrame.new(0, 4, 2))
+    -- The giver's island loaded ahead of the arrival (its mobs with it).
+    IslandLoader.focus(plan.position)
 
     if Player.distanceTo(plan.position) > LevelFarm.QUEST_RANGE then
         arrivedAt = nil
@@ -123,6 +126,7 @@ local function hunt(name)
     end
     if plan and plan.position then
         Movement.to(CFrame.new(plan.position) * CFrame.new(0, Fight.SPAWN_HEIGHT, 0))
+        IslandLoader.focus(plan.position)
         LevelFarm.status = "Looking for " .. name .. " around its quest giver"
     else
         LevelFarm.status = "Waiting for " .. name .. " (no spawn point loaded)"

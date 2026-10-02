@@ -12,6 +12,7 @@
 --=============================================================================
 
 local Enemies = require("Game.Enemies")
+local IslandLoader = require("Game.IslandLoader")
 local MobFarm = require("Features.MobFarm")
 local Movement = require("Game.Movement")
 local Player = require("Core.Player")
@@ -48,6 +49,9 @@ local mode = MobFarm({
     before = function(farm)
         local step = SkipLevel.step()
         if not step or Enemies.nearest({ step.mob }) then return false end
+        -- None loaded: the Skylands loaded (low graphics keep them as
+        -- stand-ins, without their mobs).
+        IslandLoader.focus(step.spot)
         if Player.distanceTo(step.spot) <= SkipLevel.FAR then return false end
         farm.target = nil
         Movement.to(CFrame.new(step.spot + Vector3.new(0, SkipLevel.HEIGHT, 0)))
