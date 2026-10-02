@@ -181,8 +181,13 @@ Tasks.LIST = {
         keys = { RaceV2V3 = true },
         ready = function()
             local beli = Player.data("Beli") or 0
-            if RaceUpgrade.version() <= 1 then return beli >= 500000 end
+            if RaceUpgrade.version() <= 1 then return beli >= 500000 and not RaceUpgrade.v2Paused() end
             return beli >= 2000000
+        end,
+        why = function()
+            if RaceUpgrade.v2Paused() then
+                return "the Alchemist does not answer; game remotes: " .. RaceUpgrade.alchemistRemotes()
+            end
         end,
         done = function() return RaceUpgrade.version() >= 3 end,
         maxTime = 2400,

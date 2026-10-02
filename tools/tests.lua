@@ -2716,6 +2716,22 @@ do
 end
 
 -- V3 done: the mode lets the next farm run.
+-- The Alchemist answering nothing at all (v30): V2 is left alone a while.
+raceSetup(4442272183, "Human", { Wenlocktoad = 0 })
+do
+    newInstance("IntValue", "Beli", world.player.Data).Value = 600000
+    Settings.set("RaceV2V3", true)
+    world.hrp.Position = RaceUpgrade.ALCHEMIST_TURN_IN
+    local ask = require("Features.Stack.Common")
+    for _ = 1, RaceUpgrade.NIL_TRIES do
+        ask.reset()
+        RaceUpgrade.v2v3.tick()
+    end
+    check("nil answers: V2 paused", RaceUpgrade.v2Paused(), RaceUpgrade.v2v3.status)
+    check("nil answers: mode off", not RaceUpgrade.v2v3.enabled())
+    RaceUpgrade.v2PausedUntil = nil
+end
+
 raceSetup(4442272183, "Human", { Alchemist = -2, Wenlocktoad = -2 })
 do
     Settings.set("RaceV2V3", true)

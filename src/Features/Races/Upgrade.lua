@@ -40,6 +40,31 @@ Upgrade.MINK_CHESTS = 30
 Upgrade.CYBORG_CHESTS = 20
 Upgrade.FISHMAN_SPOT = Vector3.new(753.0653686523438, 0, 6994.5146484375)
 
+Upgrade.NIL_TRIES = 5          -- asks at the Alchemist answered nil...
+Upgrade.V2_PAUSE = 1800        -- ...then V2 is left alone this long
+Upgrade.v2PausedUntil = nil
+local nilAnswers = 0
+
+function Upgrade.v2Paused()
+    return Upgrade.v2PausedUntil ~= nil and os.clock() < Upgrade.v2PausedUntil
+end
+
+-- The game's remotes whose name looks like the Alchemist's or a race's:
+-- for the screen, when the old call stops answering.
+function Upgrade.alchemistRemotes()
+    local found = {}
+    local replicated = Services.replicated()
+    for _, root in ipairs({ Services.find(replicated, "Modules.Net"), replicated:FindFirstChild("Remotes") }) do
+        for _, child in ipairs(root and root:GetChildren() or {}) do
+            local lower = child.Name:lower()
+            if lower:find("alchem", 1, true) or lower:find("race", 1, true) or lower:find("flower", 1, true) then
+                found[#found + 1] = child.Name
+            end
+        end
+    end
+    return #found > 0 and table.concat(found, ", ") or "none"
+end
+
 local search = Fight.newSearch()
 local chests = ChestHunt.new()
 local humanDone = {}
@@ -73,9 +98,19 @@ local function v2(mode)
         if Common.near(where, 12) and Common.every("Alchemist2", 3) then
             Services.invoke("Alchemist", "2")
             Common.forget()
+            -- No answer at all, again and again, at the NPC: the game no
+            -- longer takes this call (v30). Left alone for a while.
+            if step == nil then
+                nilAnswers = nilAnswers + 1
+                if nilAnswers >= Upgrade.NIL_TRIES then
+                    nilAnswers, Upgrade.v2PausedUntil = 0, os.clock() + Upgrade.V2_PAUSE
+                end
+            end
         end
-        return "Taking the Alchemist's quest (answer " .. tostring(step) .. ")"
+        return "Taking the Alchemist's quest (answer " .. tostring(step)
+            .. (step == nil and ("; remotes: " .. Upgrade.alchemistRemotes()) or "") .. ")"
     end
+    nilAnswers = 0
     if step == 1 and not allFlowers then
         -- A flower that is not out (Transparency 1: flower 1 only shows at
         -- night) is left for later instead of standing on it (Teddy).
@@ -186,8 +221,11 @@ end
 Upgrade.v2v3 = Mode({
     name = "Race V2-V3",
     key = "RaceV2V3",
-    want = function() return Upgrade.version() < 3 end,
-    idleStatus = "Already V3",
+    want = function()
+        if Upgrade.version() == 1 and Upgrade.v2Paused() then return false end
+        return Upgrade.version() < 3
+    end,
+    idleStatus = "Already V3, or the Alchemist does not answer",
     tick = function(mode)
         if not Common.travel(2) then return "Travelling to Sea 2" end
         if Upgrade.version() == 1 then return v2(mode) end
