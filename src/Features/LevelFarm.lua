@@ -42,6 +42,13 @@ LevelFarm.BOSS_REACH = 60        -- seconds to reach the boss after taking its q
 LevelFarm.BOSS_NEAR = 200        -- studs: at the boss
 LevelFarm.BOSS_STALE = 20        -- seconds at a parked copy without the boss loading
 
+-- Whatever the cause (a bugged mob, a desync...): the quest's kill count
+-- frozen this long while fighting means the farm is stuck. First the quest
+-- is dropped (its mobs left alone a while), then the character is reset.
+LevelFarm.STUCK_AFTER = 120
+LevelFarm.STUCK_AGAIN = 600     -- a second freeze within this time: reset
+local stuck = { value = nil, since = nil, lastFix = nil }
+
 local arrivedAt, lastStart, lastAbandon
 local bossTries, bossPausedUntil = 0, nil
 local bossHeldSince, staleSince
@@ -201,6 +208,37 @@ local function bossTick(quest, weapon)
     return giveUpBoss(quest.mob, copy and "fought by someone else" or "gone")
 end
 
+-- The farm-level watchdog (see STUCK_AFTER). Returns true when it acted.
+function LevelFarm.unstick(quest)
+    local current = Quests.progress()
+    local now = os.clock()
+    if current == nil then return false end
+    if current ~= stuck.value or not stuck.since then
+        stuck.value, stuck.since = current, now
+        return false
+    end
+    if now - stuck.since < LevelFarm.STUCK_AFTER then return false end
+    stuck.since = now
+    if stuck.lastFix and now - stuck.lastFix < LevelFarm.STUCK_AGAIN then
+        stuck.lastFix = nil
+        local blocked
+        pcall(function() blocked = require("Game.Router").resetBlocked() end)
+        if not blocked then
+            LevelFarm.target = nil
+            pcall(function()
+                local humanoid = Player.humanoid()
+                if humanoid then humanoid.Health = 0 end
+            end)
+            LevelFarm.status = "Still stuck: resetting the character"
+            return true
+        end
+    end
+    stuck.lastFix = now
+    for _, model in ipairs(Enemies.all(quest.mob)) do Enemies.ignore(model, 120) end
+    abandon("No kill for " .. math.floor(LevelFarm.STUCK_AFTER / 60) .. " min: dropping the quest")
+    return true
+end
+
 -- `weapon` (optional) replaces the Weapon setting (mastery farms).
 function LevelFarm.tick(weapon)
     if not Player.alive() then
@@ -238,11 +276,13 @@ function LevelFarm.tick(weapon)
             return
         end
     end
+    if mob and LevelFarm.unstick(quest) then return end
     if mob then
         local hasWeapon = Fight.engage(LevelFarm, mob, weapon)
         LevelFarm.status = Fight.status(mob, hasWeapon, quest.count and (" x" .. quest.count) or "", weapon)
         return
     end
+    stuck.since = nil   -- only the time spent fighting counts
     return hunt(quest.mob)
 end
 
@@ -253,6 +293,7 @@ function LevelFarm.stop()
     arrivedAt, lastStart, lastAbandon = nil, nil, nil
     bossTries, bossPausedUntil = 0, nil
     bossHeldSince, staleSince = nil, nil
+    stuck = { value = nil, since = nil, lastFix = nil }
     search:reset()
 end
 

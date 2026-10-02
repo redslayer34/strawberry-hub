@@ -4708,6 +4708,78 @@ do
     FruitsModule.resetRoll()
 end
 
+-- Copies of a bugged mob, the target switching between them: still
+-- ignored once the delay passes (one record per mob).
+setup()
+do
+    local Fight = require("Features.Fight")
+    local after = Fight.NO_DAMAGE_AFTER
+    Fight.NO_DAMAGE_AFTER = -1
+    local a = mob("Lava Pirate", Vector3.new(0, 0, 10))
+    local b = mob("Lava Pirate", Vector3.new(0, 0, 12))
+    local fake = {}
+    for _ = 1, 2 do
+        Fight.engage(fake, a)
+        Fight.engage(fake, b)
+    end
+    eq("bugged copies: all left alone", Enemies.nearest("Lava Pirate"), nil)
+    local said = Fight.status(a, true)
+    check("status says it", said:find("cannot be damaged", 1, true) ~= nil or said:find("resync", 1, true) ~= nil, said)
+    Fight.NO_DAMAGE_AFTER = after
+
+    -- A small dip (< 1 %) is no progress.
+    local c = mob("Lava Pirate", Vector3.new(0, 0, 14))
+    c.Humanoid.MaxHealth = 1000
+    c.Humanoid.Health = 1000
+    Fight.engage(fake, c)
+    c.Humanoid.Health = 995
+    Fight.NO_DAMAGE_AFTER = -1
+    Fight.engage(fake, c)
+    eq("small dip: still left alone", Enemies.nearest("Lava Pirate"), nil)
+    Fight.NO_DAMAGE_AFTER = after
+
+    -- Too long next to a normal mob, even with its health going down.
+    local maxNear = Fight.MOB_MAX_NEAR
+    Fight.MOB_MAX_NEAR = -1
+    local d = mob("Lava Pirate", Vector3.new(0, 0, 16))
+    Fight.engage(fake, d)
+    d.Humanoid.Health = 50
+    Fight.engage(fake, d)
+    eq("too long on a normal mob: left alone", Enemies.nearest("Lava Pirate"), nil)
+    local boss = mob("Ice Admiral", Vector3.new(0, 0, 18))
+    Fight.engage(fake, boss)
+    boss.Humanoid.Health = 50
+    Fight.engage(fake, boss)
+    eq("a boss is not", Enemies.nearest("Ice Admiral"), boss)
+    Fight.MOB_MAX_NEAR = maxNear
+end
+
+-- The farm-level watchdog: the kill count frozen while fighting.
+setup()
+do
+    LevelFarm.stop()
+    world.commF.OnInvoke = function() return true end
+    world.questPanel.Visible = true
+    world.guide.Data.QuestData = { Task = { Zombie = 8 } }
+    local title = newInstance("TextLabel", "Title", world.questPanel)
+    title.Text = "Defeat 8 Zombies"
+    local count = newInstance("TextLabel", "Count", world.questPanel)
+    count.Text = "5/8"
+    mob("Zombie", Vector3.new(0, 0, 10))
+    local after = LevelFarm.STUCK_AFTER
+    LevelFarm.STUCK_AFTER = -1
+    Quests.reset()
+    LevelFarm.tick()
+    LevelFarm.tick()
+    eq("frozen count: quest dropped", #calls(world.commF, "AbandonQuest"), 1)
+    mob("Zombie", Vector3.new(0, 0, 12))
+    Quests.reset()
+    LevelFarm.tick()
+    LevelFarm.tick()
+    eq("frozen again: the character is reset", world.humanoid.Health, 0)
+    LevelFarm.STUCK_AFTER = after
+end
+
 -- Saber follows the server's progress (ProQuestProgress), step by step.
 local Saber = require("Features.Items.Saber")
 do

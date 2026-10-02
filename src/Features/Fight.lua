@@ -37,13 +37,19 @@ Fight.NEAR_ENOUGH = 1000       -- ...for a mob closer than this
 Fight.STRIKES = 3
 Fight.STRIKE_WINDOW = 180
 Fight.RESYNC_TIME = 4
-local watched = { mob = nil, since = 0, health = 0, best = math.huge, closerAt = 0 }
+Fight.MOB_MAX_NEAR = 60       -- a normal mob still up after this long next to it: bugged
+Fight.REAL_DROP = 0.01         -- a health drop counts from 1 % of MaxHealth
+-- One record per mob (weak keys): switching between copies of a bugged mob
+-- no longer starts the count again.
+local records = setmetatable({}, { __mode = "k" })
 local strikes = {}
 local resyncUntil, resyncAt = 0, nil
+Fight.lastIgnored = nil      -- { name, at } for the status
 
 local function strike(mob, seconds)
     Enemies.ignore(mob, seconds)
-    watched.mob = nil
+    records[mob] = nil
+    Fight.lastIgnored = { name = mob.Name, at = os.clock() }
     local now, kept = os.clock(), {}
     for _, at in ipairs(strikes) do
         if now - at <= Fight.STRIKE_WINDOW then kept[#kept + 1] = at end
@@ -69,30 +75,37 @@ local function watchDamage(mob)
     if not humanoid or not root then return end
     local now = os.clock()
     local distance = Player.distanceTo(root.Position)
-    if watched.mob ~= mob then
-        watched.mob, watched.since, watched.health = mob, now, humanoid.Health
-        watched.best, watched.closerAt = distance, now
+    local record = records[mob]
+    if not record then
+        records[mob] = { last = now, near = 0, low = humanoid.Health, lowerAt = now, best = distance, closerAt = now }
         return
     end
-    if distance < watched.best - Fight.PROGRESS then
-        watched.best, watched.closerAt = distance, now
+    local dt = math.min(now - record.last, 1)
+    record.last = now
+    if distance < record.best - Fight.PROGRESS then
+        record.best, record.closerAt = distance, now
     end
     -- Only the time spent next to it counts for the damage (not the flight).
     if distance > 40 then
-        watched.since, watched.health = now, humanoid.Health
+        record.lowerAt = now
         -- Far away the Router may be going round through a door: only a
         -- mob close by that cannot be reached counts.
-        if distance > Fight.NEAR_ENOUGH then watched.closerAt = now end
-        if now - watched.closerAt > Fight.NO_PROGRESS_AFTER then strike(mob, 60) end
+        if distance > Fight.NEAR_ENOUGH then record.closerAt = now end
+        if now - record.closerAt > Fight.NO_PROGRESS_AFTER then strike(mob, 60) end
         return
     end
-    watched.closerAt = now
-    if humanoid.Health < watched.health then
-        watched.since, watched.health = now, humanoid.Health
+    record.closerAt = now
+    record.near = record.near + dt
+    local maxHealth = (humanoid.MaxHealth and humanoid.MaxHealth > 0) and humanoid.MaxHealth or 100
+    if humanoid.Health <= record.low - maxHealth * Fight.REAL_DROP then
+        record.low, record.lowerAt = humanoid.Health, now
         strikes = {}
-    elseif now - watched.since > Fight.NO_DAMAGE_AFTER then
-        strike(mob, 120)
+    elseif now - record.lowerAt > Fight.NO_DAMAGE_AFTER then
+        return strike(mob, 120)
     end
+    -- A normal mob dies in seconds: one still up after this long is bugged
+    -- (bosses take longer).
+    if record.near > Fight.MOB_MAX_NEAR and not Fight.isBoss(mob) then strike(mob, 120) end
 end
 
 Fight.BOSS_EXTRA = 10
@@ -133,6 +146,10 @@ end
 -- "Fighting X" plus a warning when the weapon is missing.
 function Fight.status(mob, hasWeapon, suffix, weapon)
     if Fight.resyncing() then return "No damage on " .. Fight.STRIKES .. " mobs: holding still to resync" end
+    local ignored = Fight.lastIgnored
+    if ignored and os.clock() - ignored.at < 4 then
+        return ignored.name .. " cannot be damaged: left alone 2 min"
+    end
     local text = "Fighting " .. mob.Name .. (suffix or "")
     if not hasWeapon then
         text = text .. " -- no " .. (weapon or Settings.get("Weapon")) .. " in your inventory"
