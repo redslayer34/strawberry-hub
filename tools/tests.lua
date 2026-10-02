@@ -4200,6 +4200,33 @@ do
     Fight.NO_DAMAGE_AFTER = after
 end
 
+-- Saber follows the server's progress (ProQuestProgress), step by step.
+local Saber = require("Features.Items.Saber")
+do
+    eq("saber: plates first", Saber.step({ Plates = { true, true, false, false, false } }), "plates")
+    local plates = { true, true, true, true, true }
+    eq("saber: then the torch", Saber.step({ Plates = plates }), "torch")
+    eq("saber: then the cup", Saber.step({ Plates = plates, UsedTorch = true }), "cup")
+    eq("saber: then the Rich Son", Saber.step({ Plates = plates, UsedTorch = true, UsedCup = true }), "talk")
+    eq("saber: then the Mob Leader", Saber.step({ Plates = plates, UsedTorch = true, UsedCup = true, TalkedSon = true }), "mob")
+    eq("saber: then the Relic", Saber.step({ Plates = plates, UsedTorch = true, UsedCup = true, TalkedSon = true, KilledMob = true }), "relic")
+    eq("saber: the Saber Expert only after the Relic", Saber.step({ Plates = plates, UsedTorch = true, UsedCup = true,
+        TalkedSon = true, KilledMob = true, UsedRelic = true }), "shanks")
+    eq("saber: done", Saber.step({ KilledShanks = true }), nil)
+end
+
+local saberProgress = { Plates = { true, true, true, true, true }, UsedTorch = true }
+itemsSetup(2753915549, 220, {}, { ProQuestProgress = function(what) if what == nil then return saberProgress end end })
+do
+    Settings.set("ItemSaber", true)
+    check("saber: wanted mid-quest", Saber.mode.enabled())
+    Saber.mode.tick()
+    check("saber: works on the cup, not the Saber Expert", tostring(Saber.mode.status):find("3/6", 1, true) ~= nil, Saber.mode.status)
+    saberProgress = { KilledShanks = true }
+    require("Features.Stack.Common").forget()
+    check("saber: done -> not wanted", not Saber.mode.enabled())
+end
+
 ---------------------------------------------------------------------------
 -- Report
 ---------------------------------------------------------------------------

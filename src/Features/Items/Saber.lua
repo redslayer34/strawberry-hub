@@ -1,12 +1,18 @@
 --=============================================================================
 -- ITEMS: SABER (Sea 1, level 200)
 --=============================================================================
---  The reference's steps, with its exact positions:
---    1  press the jungle plates until the plate door opens
---    2  take the jungle torch and burn the desert gate
---    3  take the cup, fill it at the fountain, give it to the Sick Man
---    4  Rich Son: kill the Mob Leader, then carry the Relic to the jungle
---    5  the final door opens: kill the Saber Expert
+--  The step comes from the server, as in the Teddy Kaitun: ProQuestProgress
+--  (no argument) answers { Plates = {true, ...}, UsedTorch, UsedCup,
+--  TalkedSon, KilledMob, UsedRelic, KilledShanks }. Reading the map instead
+--  (which doors look open) sent the character to the Saber Expert before
+--  the puzzle was done, or left it waiting for him. One step at a time:
+--
+--    1  the 5 jungle plates
+--    2  the jungle torch, DestroyTorch at the desert gate
+--    3  GetCup, FillCup at the fountain, SickMan
+--    4  RichSon (talk), kill the Mob Leader
+--    5  RichSon again for the Relic, PlaceRelic in the jungle
+--    6  kill the Saber Expert (Shanks)
 --=============================================================================
 
 local Common = require("Features.Stack.Common")
@@ -19,92 +25,140 @@ local Services = require("Core.Services")
 local Saber = {}
 
 Saber.MIN_LEVEL = 200
-Saber.CUP_SPOT = Vector3.new(1112.46521, 4.92147732, 4364.55469)
-Saber.CUP_TAKE = Vector3.new(1113.66992, 7.5484705, 4365.27832)
-Saber.FOUNTAIN = Vector3.new(1395.77307, 37.4733238, -1324.34631)
-Saber.SICK_MAN = Vector3.new(1457.8768310547, 88.377502441406, -1390.6892089844)
-Saber.RICH_SON = Vector3.new(-1404.07996, 29.8520069, 5.26677656)
-Saber.RELIC_SPOT = Vector3.new(-1405.3677978516, 29.977333068848, 4.5685839653015)
-Saber.FIRE_SPOT = Vector3.new(1115.23499, 4.92147732, 4349.36963)
-Saber.FIRE_TOUCH = Vector3.new(1114.59863, 4.92147732, 4350.64258)
+Saber.ACT_EVERY = 1.5
+-- Teddy's positions.
+Saber.TORCH = Vector3.new(-1679.2634, 20.4901, 170.7659)
+Saber.BURN = Vector3.new(1121.07, 4, 4389.22)
+Saber.CUP = Vector3.new(1109.47, 4, 4402.89)
+Saber.FOUNTAIN = Vector3.new(1398, -152, -1520)
+Saber.SICK_MAN = Vector3.new(1503.4, 77.35, -1297.55)
+Saber.RICH_SON = Vector3.new(-939.34, 26.03, 4114.77)
+Saber.MOB_LEADER = Vector3.new(-2880.716, 10, 5430.853)
+Saber.RELIC_SPOT = Vector3.new(-1405.31445, 29.8519974, 4.34172916)
 
-local function anyOpen(folderPath)
-    local folder = Services.find(workspace, folderPath)
-    for _, part in ipairs(folder and folder:GetChildren() or {}) do
-        if part:IsA("Part") and not part.CanCollide then return true end
-    end
-    return false
+-- The server's progress table, or nil (cached by Common.invoke).
+function Saber.progress()
+    local answer = Common.invoke("ProQuestProgress")
+    return type(answer) == "table" and answer or nil
 end
 
-local function platePressable()
-    local plates = Services.find(workspace, "Map.Jungle.QuestPlates")
-    for _, plate in ipairs(plates and plates:GetChildren() or {}) do
-        local button = plate:IsA("Model") and plate:FindFirstChild("Button")
-        if button and button:FindFirstChild("TouchInterest") then return button end
+-- Plates pressed (the true values of the Plates table).
+function Saber.plates(progress)
+    local count = 0
+    for _, value in pairs(type(progress) == "table" and type(progress.Plates) == "table" and progress.Plates or {}) do
+        if value == true then count = count + 1 end
     end
-    return nil
+    return count
 end
 
-local function cupStep()
-    local cup = Common.tool("Cup")
-    if not cup then
-        if Common.near(Saber.CUP_SPOT, 5) then
-            Common.goTo(Saber.CUP_TAKE)
-            Common.touch(Services.find(workspace, "Map.Desert.Cup"))
-            return "Taking the cup"
+local function act(key)
+    return Common.every("Saber" .. key, Saber.ACT_EVERY)
+end
+
+local function call(...)
+    Services.invoke("ProQuestProgress", ...)
+    Common.forget()
+end
+
+-- Flies to `where`; true once there.
+local function at(where, radius)
+    Common.goTo(where)
+    return Common.near(where, radius or 10)
+end
+
+local function plates()
+    local folder = Services.find(workspace, "Map.Jungle.QuestPlates")
+    for index = 1, 5 do
+        local plate = folder and folder:FindFirstChild("Plate" .. index)
+        local button = plate and plate:FindFirstChild("Button")
+        if button and button:FindFirstChild("TouchInterest") then
+            Common.goTo(button.CFrame)
+            if Common.near(button.Position, 6) then Common.touch(button) end
+            return "Pressing jungle plate " .. index
         end
-        Common.goTo(Saber.CUP_SPOT)
-        return "Going to the cup"
+    end
+    -- Not loaded yet: the jungle first.
+    Common.goTo(Saber.TORCH)
+    return "Going to the jungle plates"
+end
+
+local function torch()
+    if not Common.has("Torch") then
+        local lying = Services.find(workspace, "Map.Jungle.Torch")
+        local where = lying and lying.Position or Saber.TORCH
+        Common.goTo(where)
+        if lying and Common.near(where, 8) then Common.touch(lying) end
+        return "Taking the jungle torch"
+    end
+    Common.equip("Torch")
+    if not at(Saber.BURN, 12) then return "Carrying the torch to the desert gate" end
+    if act("Torch") then call("DestroyTorch") end
+    return "Burning the desert gate"
+end
+
+local function cup()
+    local held = Common.tool("Cup")
+    if not held then
+        if at(Saber.CUP, 12) and act("GetCup") then call("GetCup") end
+        return "Taking the cup"
     end
     Common.equip("Cup")
-    local handle = cup:FindFirstChild("Handle")
-    if handle and handle:FindFirstChild("TouchInterest") then
-        Common.goTo(Saber.FOUNTAIN)
+    local handle = held:FindFirstChild("Handle")
+    local empty = handle and handle:FindFirstChild("TouchInterest") ~= nil
+    if empty or not Saber.filled then
+        if not at(Saber.FOUNTAIN, 15) then return "Taking the cup to the fountain" end
+        if act("FillCup") then
+            call("FillCup", held)
+            Saber.filled = true
+        end
         return "Filling the cup"
     end
-    Common.goTo(Saber.SICK_MAN)
-    if Common.near(Saber.SICK_MAN, 8) and Common.every("SickMan", 3) then
-        Services.invoke("ProQuestProgress", "SickMan")
-        Common.forget()
+    if not at(Saber.SICK_MAN, 10) then return "Taking the water to the Sick Man" end
+    if act("SickMan") then
+        call("SickMan")
+        -- Still not taken after a few tries: the cup was not filled, again.
+        Saber.sickTries = (Saber.sickTries or 0) + 1
+        if Saber.sickTries >= 3 then Saber.filled, Saber.sickTries = nil, 0 end
     end
     return "Giving the cup to the Sick Man"
 end
 
-local function richSon(mode, progress)
-    if progress == 0 then
-        local leader, inWorld = Enemies.findBoss("Mob Leader")
-        if leader then return Common.fight(mode, leader, inWorld) end
-        Movement.stop()
-        return "Waiting for the Mob Leader"
-    end
-    if not Common.has("Relic") then
-        Common.goTo(Saber.RICH_SON)
-        if Common.near(Saber.RICH_SON, 8) and Common.every("RichSon", 3) then
-            Services.invoke("ProQuestProgress", "RichSon")
-            Common.forget()
-        end
-        return "Taking the Relic"
-    end
-    Common.equip("Relic")
-    Common.goTo(Saber.RELIC_SPOT)
-    return "Carrying the Relic"
+local function richSon(why)
+    if at(Saber.RICH_SON, 10) and act("RichSon") then call("RichSon") end
+    return why
 end
 
-local function torchStep()
-    local torch = Common.tool("Torch")
-    if not torch then
-        local lying = Services.find(workspace, "Map.Jungle.Torch")
-        if lying then Common.goTo(lying.CFrame) else Movement.stop() end
-        return "Taking the jungle torch"
-    end
-    Common.equip("Torch")
-    if Common.near(Saber.FIRE_SPOT, 5) then
-        Common.goTo(Saber.FIRE_TOUCH)
-        Common.touch(Services.find(workspace, "Map.Desert.Burn.Fire"), torch)
-        return "Burning the gate"
-    end
-    Common.goTo(Saber.FIRE_SPOT)
-    return "Carrying the torch"
+local function fightAt(mode, name, where)
+    local boss, inWorld = Enemies.findBoss(name)
+    if boss then return Common.fight(mode, boss, inWorld) end
+    mode.target = nil
+    Common.goTo(where + Vector3.new(0, 25, 0))
+    return "Looking for the " .. name
+end
+
+local function relic()
+    if not Common.has("Relic") then return richSon("Taking the Relic from the Rich Son") end
+    Common.equip("Relic")
+    if not at(Saber.RELIC_SPOT, 8) then return "Carrying the Relic to the jungle" end
+    pcall(function()
+        local invisible = Services.find(workspace, "Map.Jungle.Final.Invis")
+        if invisible then invisible.CanCollide = false end
+    end)
+    if act("PlaceRelic") then call("PlaceRelic") end
+    return "Placing the Relic"
+end
+
+-- The step the server says is next: "plates", "torch", "cup", "talk",
+-- "mob", "relic", "shanks", or nil (done, or no answer yet).
+function Saber.step(progress)
+    if not progress or progress.KilledShanks then return nil end
+    if Saber.plates(progress) < 5 then return "plates" end
+    if not progress.UsedTorch then return "torch" end
+    if not progress.UsedCup then return "cup" end
+    if not progress.TalkedSon then return "talk" end
+    if not progress.KilledMob then return "mob" end
+    if not progress.UsedRelic then return "relic" end
+    return "shanks"
 end
 
 Saber.mode = Mode({
@@ -112,31 +166,30 @@ Saber.mode = Mode({
     key = "ItemSaber",
     sea = 1,
     want = function()
-        return Player.level() >= Saber.MIN_LEVEL and not Common.owns("Saber")
+        if Player.level() < Saber.MIN_LEVEL or Common.owns("Saber") then return false end
+        local progress = Saber.progress()
+        return progress == nil or Saber.step(progress) ~= nil
     end,
     idleStatus = "Owned, or level 200 needed",
     tick = function(mode)
-        if anyOpen("Map.Jungle.Final") then
-            local expert, inWorld = Enemies.findBoss("Saber Expert")
-            if expert then return Common.fight(mode, expert, inWorld) end
+        mode.target = nil
+        local progress = Saber.progress()
+        local step = Saber.step(progress)
+        if not progress then
             Movement.stop()
-            return "Waiting for the Saber Expert"
+            return "Reading the Saber quest"
         end
-        local door = Services.find(workspace, "Map.Jungle.QuestPlates.Door")
-        if door and door.CanCollide then
-            local button = platePressable()
-            if button then
-                Common.goTo(button.CFrame)
-                return "Pressing the jungle plates"
-            end
-        end
-        if anyOpen("Map.Desert.Burn") then
-            local progress = Common.invoke("ProQuestProgress", "RichSon")
-            if progress == 0 or progress == 1 then return richSon(mode, progress) end
-            return cupStep()
-        end
-        return torchStep()
+        if step == "plates" then return "1/6 " .. plates() end
+        if step == "torch" then return "2/6 " .. torch() end
+        if step == "cup" then return "3/6 " .. cup() end
+        if step == "talk" then return "4/6 " .. richSon("Talking to the Rich Son") end
+        if step == "mob" then return "4/6 " .. fightAt(mode, "Mob Leader", Saber.MOB_LEADER) end
+        if step == "relic" then return "5/6 " .. relic() end
+        if step == "shanks" then return "6/6 " .. fightAt(mode, "Saber Expert", Saber.RELIC_SPOT) end
+        Movement.stop()
+        return "Done"
     end,
+    stop = function() Saber.filled, Saber.sickTries = nil, 0 end,
 })
 
 return Saber
