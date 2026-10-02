@@ -3191,6 +3191,11 @@ do
     Boat.reset()
     RaceUpgrade.v2v3.tick()
     eq("Fishman V3 goes for a boat", RaceUpgrade.v2v3.status, "Fishman V3: Going to the boat dealer")
+    -- A piranha on the boat: fought before sailing on (Banana).
+    mob("Piranha", world.hrp.Position + Vector3.new(0, 0, 50))
+    RaceUpgrade.v2v3.tick()
+    check("Fishman V3 clears the piranha", RaceUpgrade.v2v3.status:find("clearing the way", 1, true) ~= nil,
+        RaceUpgrade.v2v3.status)
 end
 
 ---------------------------------------------------------------------------

@@ -135,6 +135,15 @@ function Events.find(kinds, radius, brigadeOnly)
     return nil
 end
 
+-- What attacks the boat close by (Banana's check while sailing): ships,
+-- sharks and piranhas within THREAT_RANGE. Fought first, or they sink
+-- the boat and keep hitting the character.
+Events.THREAT_RANGE = 500
+Events.THREATS = { Terrorshark = true, Ship = true, Shark = true, Piranha = true }
+function Events.threat(radius)
+    return Events.find(Events.THREATS, radius or Events.THREAT_RANGE)
+end
+
 -- Any sea beast within `radius` (the Fishman V3 quest takes any).
 function Events.anySeaBeast(radius)
     return seaBeast(radius or Events.RADIUS, 0)

@@ -212,6 +212,9 @@ local function v3(mode)
     if race == "Fishman" then
         local beast = Events.anySeaBeast()
         if beast then return "Fishman V3: " .. Events.fight(mode, beast) end
+        -- Piranhas, sharks or ships on the boat: those first (Banana).
+        local threat = Events.threat()
+        if threat then return "Fishman V3: clearing the way: " .. Events.fight(mode, threat) end
         return "Fishman V3: " .. Events.patrol(Upgrade.FISHMAN_SPOT, "the sea beasts", "Brigade")
     end
     local accept = race == "Skypiea" and function(player)
@@ -409,6 +412,8 @@ Upgrade.draco = Mode({
             end
             dracoShark = shark or dracoShark
             if shark then return "Draco V3: " .. Events.fight(mode, shark) end
+            local threat = Events.threat()
+            if threat then return "Draco V3: clearing the way: " .. Events.fight(mode, threat) end
             return "Draco V3: " .. Events.patrol(Boat.ZONES["Zone 6"], "Zone 6")
         end
         local near, status = atWizard()
