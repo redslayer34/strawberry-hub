@@ -3749,6 +3749,41 @@ do
     eq("fire essence: bone gacha", buys, 1)
 end
 
+-- An NPC's "Interact" prompt held like a player would (v30 dialogues).
+setup()
+do
+    local npc = newInstance("Model", "Mad Scientist", folder("NPCs", workspace))
+    local root = part("HumanoidRootPart", Vector3.new(0, 0, 0), npc)
+    local prompt = newInstance("ProximityPrompt", "ProximityPrompt", root)
+    prompt.HoldDuration = 0
+    local held = 0
+    prompt.InputHoldBegin = function() held = held + 1 end
+    prompt.InputHoldEnd = function() end
+    check("interact: a prompt near", World.interact(Vector3.new(0, 0, 5), 15))
+    stepTasks()
+    eq("interact: held", held, 1)
+    eq("interact: none far away", World.interact(Vector3.new(500, 0, 0), 15), false)
+end
+
+-- A remembered bolt the server denies (cloud phase): forgotten, the cloud
+-- is looked for instead of "Giving the Lightning Bolt".
+meleeSetup(2753915549, 300, {}, { ElectroQuestState = 1, DeliverLightningBolt = 0 }, 600000)
+do
+    local files = {}
+    local realWrite, realRead, realIs = writefile, readfile, isfile
+    writefile = function(path, text) files[path] = text end
+    readfile = function(path) return files[path] end
+    isfile = function(path) return files[path] ~= nil end
+    Electric.reset()
+    files["StrawberryHub/electric_bolt_" .. tostring(world.player.UserId or 0) .. ".txt"] = "1"
+    Settings.set("ItemElectric", true)
+    Electric.mode.tick()
+    eq("remembered bolt, state 1: looks for the cloud", Electric.mode.status, "Looking for a charged storm cloud")
+    eq("remembered bolt forgotten", files["StrawberryHub/electric_bolt_" .. tostring(world.player.UserId or 0) .. ".txt"], "0")
+    writefile, readfile, isfile = realWrite, realRead, realIs
+    Electric.reset()
+end
+
 -- Electric: the Lightning Bolt quest.
 local electricState = 0
 meleeSetup(2753915549, 300, {}, {

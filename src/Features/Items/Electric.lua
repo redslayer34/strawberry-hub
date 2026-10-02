@@ -154,19 +154,37 @@ rememberBolt = function()
     end)
 end
 
+-- The remembered bolt is wrong (the server says the quest still wants
+-- one, or it could not be handed in): forgotten.
+local function forgetBolt()
+    boltSeen = false
+    pcall(function()
+        if writefile then writefile(boltFile(), "0") end
+    end)
+end
+
 local function boltRemembered()
     if boltSeen == nil then
-        local ok, found = pcall(function() return isfile and isfile(boltFile()) end)
+        local ok, found = pcall(function()
+            return isfile and readfile and isfile(boltFile()) and readfile(boltFile()) == "1"
+        end)
         boltSeen = ok and found == true
     end
     return boltSeen
 end
 
 -- Whether the player holds the Lightning Bolt (or the server says so).
+-- The server wins: the cloud phase (1 or 2) means no bolt yet ("Still
+-- empty-handed?"), whatever was remembered.
 function Electric.hasBolt()
     local state = Electric.state()
     if state == Electric.STATE_HAS_BOLT then return true end
     if Common.has("Lightning Bolt") or Common.itemCount("Lightning Bolt") > 0 then return true end
+    if state == 1 or state == 2 then
+        if boltRemembered() then forgetBolt() end
+        lastState = state
+        return false
+    end
     if lastState and (lastState == 1 or lastState == 2) and state and state ~= 1 and state ~= 2 and state ~= 0 then
         rememberBolt()
     end
@@ -178,10 +196,16 @@ local function scientist()
     return World.npcPosition("Mad Scientist") or Electric.SCIENTIST
 end
 
+Electric.INTERACT_EVERY = 5
+
+-- At the Mad Scientist, his dialogue opened (his "Interact" prompt): in v30
+-- his remotes answer only then (the user had to press it).
 local function atScientist()
     local where = scientist()
     Common.goTo(CFrame.new(where + Vector3.new(0, 1.5, 4)))
-    return Common.near(where, 10)
+    if not Common.near(where, 10) then return false end
+    if Common.every("ElectricInteract", Electric.INTERACT_EVERY) then World.interact(where, 15) end
+    return true
 end
 
 local function strike(mode, part)
@@ -205,6 +229,8 @@ local function strike(mode, part)
     return "Striking the charged storm cloud"
 end
 
+Electric.DELIVER_TRIES = 5     -- deliveries of a remembered bolt before forgetting it
+local deliveries = 0
 Electric.ACCEPT_TRIES = 5      -- asks with no change of state...
 Electric.GIVE_UP = 600         -- ...then the quest is left alone this long
 local askTries, askState, givenUpUntil = 0, nil, nil
@@ -228,11 +254,21 @@ function Electric.step(mode)
         end
         if not atScientist() then return "Taking the Lightning Bolt to the Mad Scientist" end
         if Common.every("ElectricDeliver", 2) then
-            if Services.invoke("DeliverLightningBolt") ~= 1 then Services.invoke("BuyElectro") end
+            local delivered = Services.invoke("DeliverLightningBolt")
+            local bought
+            if delivered ~= 1 then bought = Services.invoke("BuyElectro") end
+            Electric.answers = string.format("deliver %s, buy %s", tostring(delivered), tostring(bought))
             Common.forget()
             Melee.forget()
+            -- A remembered bolt that cannot be handed in is not there.
+            deliveries = deliveries + 1
+            if deliveries >= Electric.DELIVER_TRIES and not Electric.owned()
+                and state ~= Electric.STATE_HAS_BOLT and not Common.has("Lightning Bolt") then
+                deliveries = 0
+                forgetBolt()
+            end
         end
-        return "Giving the Lightning Bolt"
+        return "Giving the Lightning Bolt" .. (Electric.answers and (" (" .. Electric.answers .. ")") or "")
     end
     if state ~= 1 and state ~= 2 then
         if not atScientist() then return "Going to the Mad Scientist" end
@@ -296,6 +332,7 @@ function Electric.reset()
     lastHit = -math.huge
     boltSeen, lastState = nil, nil
     askTries, askState, givenUpUntil = 0, nil, nil
+    deliveries = 0
     Electric.answers = nil
 end
 

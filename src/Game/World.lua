@@ -52,6 +52,52 @@ local function npcFolders()
     return folders
 end
 
+-- Vxeze's FindHiddenPromptNear + HoldHiddenPrompt: the nearest enabled
+-- ProximityPrompt within `radius` of `position` (NPCs, then the map) is
+-- held like a player's "Interact". In v30 some NPCs answer their remotes
+-- only once their dialogue was opened (the Mad Scientist, for the user).
+-- Returns true when a prompt was used.
+local function promptPosition(prompt)
+    local parent = prompt.Parent
+    if not parent then return nil end
+    if parent:IsA("Attachment") then return parent.WorldPosition end
+    if parent:IsA("BasePart") then return parent.Position end
+    if parent:IsA("Model") then
+        local ok, pivot = pcall(function() return parent:GetPivot() end)
+        return ok and pivot and pivot.Position or nil
+    end
+    return nil
+end
+
+function World.interact(position, radius)
+    local best, bestDistance
+    local roots = npcFolders()
+    local map = workspace:FindFirstChild("Map")
+    if map then roots[#roots + 1] = map end
+    for _, root in ipairs(roots) do
+        for _, node in ipairs(root:GetDescendants()) do
+            if node:IsA("ProximityPrompt") and node.Enabled ~= false then
+                local at = promptPosition(node)
+                local distance = at and (at - position).Magnitude
+                if distance and distance <= radius and (not bestDistance or distance < bestDistance) then
+                    best, bestDistance = node, distance
+                end
+            end
+        end
+    end
+    if not best then return false end
+    local hold = (tonumber(best.HoldDuration) or 0) + 0.35
+    task.spawn(function()
+        local held = pcall(function()
+            best:InputHoldBegin()
+            task.wait(hold)
+            best:InputHoldEnd()
+        end)
+        if not held and fireproximityprompt then pcall(fireproximityprompt, best, hold) end
+    end)
+    return true
+end
+
 local function listed(name)
     return not name:find("Boat", 1, true) and not name:find("Set Home", 1, true)
 end
