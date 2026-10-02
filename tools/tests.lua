@@ -3456,7 +3456,7 @@ do
     -- With the money, every visit also offers the bolt (the server's state
     -- after the cloud is not always 4), then the purchase.
     eq("electric: rich visit offers the bolt", #calls(world.commF, "DeliverLightningBolt"), 1)
-    eq("electric: then BuyElectro", #calls(world.commF, "BuyElectro"), 1)
+    eq("electric: then BuyElectro (and its check)", #calls(world.commF, "BuyElectro"), 2)
 
     require("Features.Stack.Common").forget()
     electricState = 1
@@ -3483,7 +3483,7 @@ do
     electricState = 4
     Electric.mode.tick()
     eq("electric: bolt delivered", #calls(world.commF, "DeliverLightningBolt"), 2)
-    eq("electric: delivery not 1 -> BuyElectro", #calls(world.commF, "BuyElectro"), 2)
+    eq("electric: delivery not 1 -> BuyElectro", #calls(world.commF, "BuyElectro"), 3)
 end
 
 meleeSetup(2753915549, 300, { style("Electric", 10) }, {}, 600000)
