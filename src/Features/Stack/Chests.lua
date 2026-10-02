@@ -21,9 +21,11 @@ local Chests = { name = "Chests" }
 Chests.CYCLE = 4 * 3600
 Chests.OPEN_BEFORE = 5
 Chests.MAX_CHESTS = 10
+Chests.WINDOW = 180           -- seconds the collecting window stays open at most
 Chests.ITEMS = { "God's Chalice", "Fist of Darkness" }
 
 local collecting = false
+local openedAt
 local hunt = ChestHunt.new()
 
 -- Test hook: the clock the spawn is computed with.
@@ -59,10 +61,11 @@ local function update()
     if not collecting then
         local left = Chests.spawnIn()
         if left and left <= Chests.OPEN_BEFORE then
-            collecting = true
+            collecting, openedAt = true, os.clock()
             hunt:reset()
         end
-    elseif hunt.collected >= Chests.MAX_CHESTS or hasItem() then
+    elseif hunt.collected >= Chests.MAX_CHESTS or hasItem() or os.clock() - (openedAt or 0) > Chests.WINDOW then
+        -- No chest around for minutes must not hold the character either.
         collecting = false
     end
 end

@@ -39,12 +39,14 @@
 --  job that cannot be done (a race V3 the Kaitun cannot do) fades out.
 --=============================================================================
 
+local Cdk = require("Features.Items.Cdk")
 local Common = require("Features.Stack.Common")
 local Config = require("Kaitun.Config")
 local Data = require("Game.Data")
 local Enemies = require("Game.Enemies")
 local EliteHunter = require("Features.Stack.EliteHunter")
 local Farm = require("Features.Farm")
+local Fruits = require("Features.Fruits")
 local Loop = require("Core.Loop")
 local Melee = require("Features.Items.Melee")
 local Player = require("Core.Player")
@@ -160,6 +162,15 @@ function Engine.background(sea, level, anchored)
         StackFruit = true,
         ItemMeleeProgress = not Config.skipped("Godhuman"),
     }
+    -- CDK and Tushita (priority 1) come before every event, as in Teddy:
+    -- while one of them works, no elite, chest, fruit or Dough King pulls
+    -- the character away, and no style purchase either (a trial left half
+    -- way fails). The castle raid stays: CDK's good trial 4 is one.
+    if current and currentWorking and current.priority <= 1 then
+        keys.StackEliteHunter, keys.StackChests, keys.StackFruit = false, false, false
+        keys.StackDoughKing, keys.StackSummonDoughKing = false, false
+        keys.ItemMeleeProgress = false
+    end
     local url = Config.get("WebhookUrl")
     if type(url) == "string" and url ~= "" then
         keys.WebhookUrl = url
@@ -186,6 +197,11 @@ function Engine.background(sea, level, anchored)
         keys.StackDoughKing = late
         keys.StackSoulReaper = late
         keys.StackSummonSoulReaper = late
+        -- CDK's evil trial 4 / 5 needs Soul Reaper alive (it sends the player
+        -- to Hell): no fighting it then, no summoning it before (Teddy).
+        local _, evil = Cdk.progress()
+        if evil == -4 or evil == -5 then keys.StackSoulReaper = false end
+        if type(evil) == "number" and evil < -1 then keys.StackSummonSoulReaper = false end
         -- The summons only as the chalice plan says; the pads only with a
         -- chalice in hand (otherwise they mean a trip to the Boat Castle
         -- every few minutes for nothing).
@@ -214,7 +230,10 @@ function Engine.idle(sea, level)
         end
         return keys, "Level farm"
     end
-    if not Config.skipped("Godhuman") and not Melee.unlocked("Dragon Talon") then
+    -- Bones only while the Death King still rolls today (Teddy's
+    -- CheckRandomBone); otherwise Katakuri.
+    local rolls = Melee.boneRolls()
+    if not Config.skipped("Godhuman") and not Melee.unlocked("Dragon Talon") and (rolls == nil or rolls > 0) then
         keys.AutoBone = true
         return keys, "Bones (Fire Essence)"
     end
@@ -266,6 +285,12 @@ function Engine.blocked(task, sea, level)
     if task.ready then
         local ok, ready = pcall(task.ready)
         if not (ok and ready) then return "not ready" end
+    end
+    -- Its mode has nothing to do right now: picking it would only take the
+    -- character from a working task for the watchdog's 30 s.
+    if task.mode and task.mode.wanted and task ~= current then
+        local ok, wanted = pcall(task.mode.wanted)
+        if ok and wanted == false then return "nothing to do" end
     end
     return nil
 end
@@ -412,10 +437,11 @@ end
 -- Mirror Fractal / Valkyrie Helm hops).
 function Engine.lateHop(sea, level)
     if sea == 2 and level >= Engine.SEA_LEVEL[3] and StackWorld.needsTrevorFruit() then
-        -- A fruit worth 1M is bought (purchases) once the money is there;
-        -- far from it, a fruit on the ground of another server is quicker.
+        -- A fruit worth 1M on sale is bought (purchases) once the level farm
+        -- has made the money; only when none is on sale at all may a fruit on
+        -- the ground of another server do.
         local _, price = StackWorld.cheapestTrevorFruit()
-        if not price or (Player.data("Beli") or 0) < price / 2 then return "Swan door: no fruit worth 1M" end
+        if not price then return "Swan door: no fruit worth 1M on sale" end
     end
     -- Hopping instead of levelling would slow everything else down: the
     -- late game hops wait for the max level, as in Teddy.
@@ -443,6 +469,7 @@ local function purchases(sea, level)
         local fruit, price = StackWorld.cheapestTrevorFruit()
         if fruit and (Player.data("Beli") or 0) >= price then
             lastBuy = t
+            Fruits.keep(fruit, 120)
             Services.invoke("PurchaseRawFruit", fruit)
             Common.forget()
             note("bought " .. fruit .. " for Trevor")

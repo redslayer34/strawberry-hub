@@ -41,6 +41,12 @@ function Common.invoke(...)
     return value
 end
 
+-- Forgets only the inventory (after a gacha roll: flushing every cached
+-- answer once a second cost a burst of server calls each time).
+function Common.forgetInventory()
+    inventoryCache = nil
+end
+
 -- Forgets cached answers (after an action that changes them).
 function Common.forget()
     cache, inventoryCache = {}, nil

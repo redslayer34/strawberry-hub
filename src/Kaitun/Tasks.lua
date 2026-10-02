@@ -81,6 +81,16 @@ function Tasks.awakening()
     return can, any and all
 end
 
+-- Teddy's Sea 2 Key Hop: only from level 1500 (before, the Sea 2 level
+-- farm and quests come first), only for a key that holds its style back,
+-- and not while the other key's boss is on this server (that one first).
+Tasks.KEY_HOP_LEVEL = 1500
+function Tasks.keyHop(mine, other)
+    if (Player.level() or 0) < Tasks.KEY_HOP_LEVEL then return nil end
+    if other.needed() and not other.missing() then return nil end
+    return mine.needed() and mine.missing() or nil
+end
+
 Tasks.RAID_BELI = 1000000
 
 -- A raid chip held, or something to pay one with: a fruit under 1M in the
@@ -117,14 +127,19 @@ end
 Tasks.LIST = {
     {
         name = "CDK", priority = 1, seas = { 3 }, mode = Cdk.mode,
-        keys = { ItemCDK = true },
+        -- Good 4 waits for a castle raid, Good 5 for the Cake Queen: with
+        -- Hop on, another server instead of standing there.
+        keys = function()
+            local hop = Config.get("Hop") == true
+            return { ItemCDK = true, CdkHopRaid = hop, CdkHopCakeQueen = hop }
+        end,
         maxTime = 7200,
         ready = function() return Cdk.requirements() == nil end,
         done = function() return owned("Cursed Dual Katana") end,
     },
     {
         -- Tushita and Yama to 350 for the CDK (Teddy's Items Farm Force).
-        name = "CdkMastery", group = "CDK", priority = 2, seas = { 3 }, mode = Cdk.mastery,
+        name = "CdkMastery", group = "CDK", priority = 7, seas = { 3 }, mode = Cdk.mastery,
         keys = { ItemCdkMastery = true },
         ready = function() return Cdk.masteryTarget() ~= nil end,
         done = function() return owned("Cursed Dual Katana") end,
@@ -132,16 +147,24 @@ Tasks.LIST = {
     },
     {
         -- Only possible while rip_indra True Form is alive: rests until then.
-        name = "Tushita", priority = 1, seas = { 3 }, mode = Swords.tushita,
+        name = "Tushita", priority = 1, seas = { 3 }, minLevel = 2000, mode = Swords.tushita,
         keys = { ItemTushita = true },
         done = function() return owned("Tushita") end,
         wake = function() return Enemies.findBoss({ "rip_indra True Form", "Longma" }) ~= nil end,
     },
     {
+        -- Teddy: the puzzle at priority 3, its materials at 7.
         name = "SoulGuitar", priority = 3, seas = { 2, 3 }, minLevel = 2300, mode = Guitar.mode,
         keys = function() return { ItemSoulGuitar = true, GuitarHopMoon = Config.get("Hop") == true } end,
-        -- Materials need no fragments; the rest does.
-        ready = function() return Guitar.missing() ~= nil or (Player.data("Fragments") or 0) >= Guitar.FRAGMENTS end,
+        ready = function() return Guitar.missing() == nil and (Player.data("Fragments") or 0) >= Guitar.FRAGMENTS end,
+        done = function() return owned("Skull Guitar") end,
+        maxTime = 3600,
+    },
+    {
+        name = "SoulGuitarMaterials", group = "SoulGuitar", priority = 7, seas = { 2, 3 }, minLevel = 2300,
+        mode = Guitar.mode,
+        keys = { ItemSoulGuitar = true },
+        ready = function() return Guitar.missing() ~= nil end,
         done = function() return owned("Skull Guitar") end,
         maxTime = 3600,
     },
@@ -152,8 +175,15 @@ Tasks.LIST = {
         doneBy = function() return Common.ownedBy("Saber") end,
     },
     {
-        name = "Race", priority = 5, seas = { 2, 3 }, mode = RaceUpgrade.v2v3,
+        -- Teddy: Sea 2, level 850, $500k for V2, $2M for V3 (from Sea 3 the
+        -- trip back would come every rest).
+        name = "Race", priority = 5, seas = { 2 }, minLevel = 850, mode = RaceUpgrade.v2v3,
         keys = { RaceV2V3 = true },
+        ready = function()
+            local beli = Player.data("Beli") or 0
+            if RaceUpgrade.version() <= 1 then return beli >= 500000 end
+            return beli >= 2000000
+        end,
         done = function() return RaceUpgrade.version() >= 3 end,
         maxTime = 2400,
     },
@@ -242,23 +272,30 @@ Tasks.LIST = {
         keys = { ItemLibraryKey = true },
         ready = function() return Player.sea() == 2 or Melee.libraryKey.needed() end,
         done = function() return Melee.unlocked("Death Step") end,
-        hop = function() return Melee.libraryKey.needed() and Melee.libraryKey.missing() or nil end,
+        hop = function() return Tasks.keyHop(Melee.libraryKey, Melee.waterKey) end,
+        wake = function() return Enemies.findBoss("Awakened Ice Admiral") ~= nil end,
     },
     {
         name = "WaterKey", group = "Godhuman", priority = 4, seas = { 2, 3 }, minLevel = 850, mode = Melee.waterKey,
         keys = { ItemWaterKey = true },
         ready = function() return Player.sea() == 2 or Melee.waterKey.needed() end,
         done = function() return Melee.unlocked("Sharkman Karate") end,
-        hop = function() return Melee.waterKey.needed() and Melee.waterKey.missing() or nil end,
+        hop = function() return Tasks.keyHop(Melee.waterKey, Melee.libraryKey) end,
+        wake = function() return Enemies.findBoss("Tide Keeper") ~= nil end,
     },
     {
         name = "FireEssence", group = "Godhuman", priority = 6, seas = { 3 }, mode = Melee.dragonTalon,
+        wake = function() return Common.itemCount("Bones") >= 50 end,
         keys = { ItemDragonTalon = true },
         done = function() return Melee.unlocked("Dragon Talon") end,
     },
     {
         name = "GodhumanMaterials", group = "Godhuman", priority = 7, seas = { 2, 3 }, mode = MaterialFarm,
-        keys = function() return { AutoMaterial = true, Material = Melee.missingMaterial() or "" } end,
+        -- The idle Katakuri / bones farms sit above the material farm in
+        -- Farm.MODES: off while the materials are farmed.
+        keys = function()
+            return { AutoMaterial = true, Material = Melee.missingMaterial() or "", AutoBone = false, AutoKatakuri = false }
+        end,
         ready = function() return Melee.owned("Dragon Talon") and Melee.missingMaterial() ~= nil end,
         done = function() return Melee.owned("Godhuman") end,
         maxTime = 3600,

@@ -70,17 +70,23 @@ local function v2(mode)
         return "Taking the Alchemist's quest"
     end
     if step == 1 then
+        -- A flower that is not out (Transparency 1: flower 1 only shows at
+        -- night) is left for later instead of standing on it (Teddy).
+        local waiting
         for index = 1, 2 do
             if not Common.has("Flower " .. index) then
                 local flower = workspace:FindFirstChild("Flower" .. index)
-                if flower then
+                if flower and flower.Transparency ~= 1 then
                     Common.goTo(flower.CFrame)
                     Common.touch(flower)
                     return "Picking flower " .. index
                 end
-                Movement.stop()
-                return "Waiting for flower " .. index
+                waiting = waiting or index
             end
+        end
+        if waiting and Common.has("Flower 3") then
+            Movement.stop()
+            return "Waiting for flower " .. waiting
         end
         return "Flower 3: " .. Common.farm(mode, { "Swan Pirate" }, search)
     end

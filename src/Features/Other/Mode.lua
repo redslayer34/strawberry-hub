@@ -40,6 +40,16 @@ return function(spec)
         return true
     end
 
+    -- The want check alone, without the setting (the Kaitun asks before
+    -- switching the setting on, so a task with nothing to do never takes
+    -- the character from a working one).
+    function mode.wanted()
+        if spec.sea and Player.sea() ~= spec.sea then return false end
+        if not spec.want then return true end
+        local ok, wanted = pcall(spec.want)
+        return ok and wanted == true
+    end
+
     function mode.tick()
         mode.target = nil
         if not Player.alive() then

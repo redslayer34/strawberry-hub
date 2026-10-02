@@ -159,10 +159,34 @@ function Raids.cheapFruit()
     return nil
 end
 
+-- The cheapest fruit on sale under CHEAP_FRUIT, and its price.
+function Raids.cheapestOnSale()
+    local list = Common.invoke("GetFruits", false)
+    local best, bestPrice
+    for _, fruit in ipairs(type(list) == "table" and list or {}) do
+        local price = type(fruit) == "table" and tonumber(fruit.Price) or nil
+        if price and fruit.OnSale and price < Raids.CHEAP_FRUIT and (not bestPrice or price < bestPrice) then
+            best, bestPrice = fruit.Name, price
+        end
+    end
+    return best, bestPrice
+end
+
 -- Buys a chip. Returns the status, or nil when nothing could be done.
 function Raids.buyChip()
     if Player.level() < Raids.MIN_LEVEL then return nil end
     local cheap = Settings.get("RaidCheapFruit") and not holdsFruit() and Raids.cheapFruit()
+    -- No fruit under 1M to pay with: buy the cheapest one on sale (Teddy
+    -- pays the chip with a fruit), if the money is there.
+    if Settings.get("RaidCheapFruit") and not holdsFruit() and not cheap and Common.every("RaidBuyFruit", 10) then
+        local name, price = Raids.cheapestOnSale()
+        if name and (Player.data("Beli") or 0) >= price then
+            Fruits.keep(name, 120)
+            Services.invoke("PurchaseRawFruit", name)
+            Common.forget()
+            return "Buying " .. name .. " to pay the chip"
+        end
+    end
     if cheap and Common.every("RaidLoadFruit", 3) then
         Fruits.keep(cheap, 60)
         Services.invoke("LoadFruit", cheap)
@@ -191,13 +215,19 @@ function Raids.buyChip()
     return "Buying a " .. tostring(Settings.get("RaidName")) .. " chip"
 end
 
+Raids.LAB = Vector3.new(-6438.73535, 250.645355, -4501.50684)   -- Sea 2 (Teddy)
+
 local function goToSummoner()
     if Player.sea() == 3 then
         Common.goTo(Raids.CASTLE)
         return "Going to the raid summoner"
     end
+    if Player.sea() == 2 then
+        Common.goTo(Raids.LAB)
+        return "Going to the raid lab"
+    end
     Movement.stop()
-    return "Raid summoner not loaded: go to the raid lab once"
+    return "Raids are in Sea 2 and Sea 3"
 end
 
 local function press(button)

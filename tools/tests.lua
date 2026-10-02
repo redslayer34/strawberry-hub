@@ -3635,7 +3635,17 @@ do
     local World = require("Features.Stack.World")
     check("swan: Trevor needs a fruit", World.needsTrevorFruit())
     eq("swan: cheapest fruit worth 1M", (World.cheapestTrevorFruit()), "Buddha-Buddha")
-    eq("swan: far from the money -> hop", KEngine.lateHop(2, 1600), "Swan door: no fruit worth 1M")
+    eq("swan: a 1M fruit on sale -> farm the money, no hop", KEngine.lateHop(2, 1600), nil)
+    local saved = fruitStock
+    fruitStock = { { Name = "Spin-Spin", Price = 7500, OnSale = true } }
+    world.commF.OnInvoke = function(action, ...)
+        if action == "GetFruits" then return fruitStock end
+        if action == "BartiloQuestProgress" then return 3 end
+        if action == "TalkTrevor" then return 1 end
+    end
+    require("Features.Stack.Common").forget()
+    eq("swan: none worth 1M on sale -> hop for a ground fruit", KEngine.lateHop(2, 1600), "Swan door: no fruit worth 1M on sale")
+    fruitStock = saved
 end
 swanSetup(700000)
 do
@@ -4085,6 +4095,78 @@ do
     end
     check("accept: given up after the same answer again and again", Electric.givenUp())
     check("accept: the mode lets the farms run", not Electric.mode.enabled())
+end
+
+---------------------------------------------------------------------------
+-- Simulation audit (Sea 1 / Sea 2 / Sea 3): regressions
+---------------------------------------------------------------------------
+
+local function taskNamed(name)
+    for _, task in ipairs(KTasks.LIST) do if task.name == name then return task end end
+end
+
+-- Sea 2 Key Hop only from level 1500, and not while the other key's boss is here.
+meleeSetup(4442272183, 1200, { style("Dark Step", 400), style("Water Kung Fu", 400) },
+    { BuyDeathStep = 0, BuySharkmanKarate = "locked" })
+do
+    eq("key hop: none under level 1500", taskNamed("LibraryKey").hop(), nil)
+    world.level.Value = 1600
+    eq("key hop: from 1500 for a missing boss", taskNamed("LibraryKey").hop(), "no Awakened Ice Admiral")
+    mob("Tide Keeper", Vector3.new(0, 0, 40))
+    eq("key hop: not while the other key's boss is here", taskNamed("LibraryKey").hop(), nil)
+    check("key: the boss wakes its task", taskNamed("WaterKey").wake())
+end
+
+-- Race: Sea 2 only, with the money of the step.
+meleeSetup(4442272183, 900, {}, { Alchemist = 0, Wenlocktoad = 0 }, 100000)
+do
+    KConfig.reset(); KEngine.reset()
+    eq("race: not ready under $500k", KEngine.blocked(taskNamed("Race"), 2, 900), "not ready")
+    eq("race: never from Sea 3", KEngine.blocked(taskNamed("Race"), 3, 1600), "other sea")
+end
+
+-- Soul Reaper is left alive (and not summoned) during CDK's evil trials 4 / 5.
+lateSetup({}, { getColors = colours(true), CDKQuest = function() return { Good = 4, Evil = -5 } end })
+do
+    local keys = KEngine.background(3, 2500, false)
+    eq("cdk evil 5: Soul Reaper not fought", keys.StackSoulReaper, false)
+    eq("cdk evil 5: Soul Reaper not summoned", keys.StackSummonSoulReaper, false)
+end
+
+-- Godhuman materials beat the idle Katakuri / bones farms.
+do
+    local keys = KTasks.keysOf(taskNamed("GodhumanMaterials"))
+    eq("godhuman materials: Katakuri off", keys.AutoKatakuri, false)
+    eq("godhuman materials: bones off", keys.AutoBone, false)
+end
+
+-- A task whose mode has nothing to do never takes the character.
+kaitunSetup(7449423635, 2500)
+do
+    local saved = KTasks.LIST
+    local busy = { name = "Busy", status = "working", enabled = function() return true end }
+    local lazy = { name = "Lazy", status = "idle", enabled = function() return false end,
+        wanted = function() return false end }
+    local working = { name = "Working", priority = 5, seas = { 3 }, mode = busy, keys = { ItemYama = true } }
+    local urgent = { name = "Urgent", priority = 1, seas = { 3 }, mode = lazy, keys = { ItemTushita = true } }
+    KTasks.LIST = { working, urgent }
+    KEngine.tick()
+    KEngine.tick()
+    eq("nothing to do: the working task keeps going", KEngine.status().task, "Working")
+    eq("nothing to do: shown as such", KEngine.blocked(urgent, 3, 2500), "nothing to do")
+    KTasks.LIST = saved
+end
+
+-- Teddy's level gates.
+eq("electric claw from level 2000", Melee.step("Electric Claw").level, 2000)
+eq("tushita from level 2000", taskNamed("Tushita").minLevel, 2000)
+
+-- Raid chips paid with the cheapest fruit under 1M on sale.
+meleeSetup(4442272183, 1200, {}, { GetFruits = {
+    { Name = "Spin-Spin", Price = 7500, OnSale = true }, { Name = "Kilo-Kilo", Price = 5000, OnSale = true },
+    { Name = "Leopard-Leopard", Price = 5000000, OnSale = true } } })
+do
+    eq("raid chip: cheapest fruit on sale", (Raids.cheapestOnSale()), "Kilo-Kilo")
 end
 
 ---------------------------------------------------------------------------

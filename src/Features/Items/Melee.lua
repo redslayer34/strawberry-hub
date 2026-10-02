@@ -49,7 +49,7 @@ Melee.CHAIN = {
         needs = { "Black Leg" }, unlock = "Death Step" },
     { name = "Sharkman Karate", level = 700, beli = 2500000, fragments = 5000, minSea = 2,
         needs = { "Fishman Karate" }, unlock = "Sharkman Karate" },
-    { name = "Electric Claw", level = 1500, beli = 3000000, fragments = 5000, minSea = 3,
+    { name = "Electric Claw", level = 2000, beli = 3000000, fragments = 5000, minSea = 3,
         needs = { "Electro" }, unlock = "Electric Claw" },
     { name = "Dragon Talon", level = 1500, beli = 3000000, fragments = 5000, minSea = 3,
         needs = { "Dragon Claw" }, unlock = "Dragon Talon" },
@@ -510,7 +510,7 @@ Melee.dragonTalon = Mode({
         Movement.stop()
         if Common.every("FireEssenceRoll", 1) then
             Services.invoke("Bones", "Buy", 1, 1)
-            Common.forget()
+            Common.forgetInventory()
             rolls.at = -math.huge
         end
         return string.format("Rolling bones for a Fire Essence (%d bones)", Common.itemCount("Bones"))
