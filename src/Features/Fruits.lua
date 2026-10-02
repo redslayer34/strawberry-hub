@@ -53,6 +53,46 @@ local function bannerBox()
     return "DLCBoxData"
 end
 
+-- When the next roll is allowed: the Cousin rolls once every ROLL_COOLDOWN.
+-- The time of the last roll is kept per account in the workspace (os.time,
+-- survives a rejoin); CheckTime answering a number of seconds wins.
+Fruits.ROLL_COOLDOWN = 7200
+local lastRollAt          -- os.time() of the last roll, or false (unknown)
+local serverLeft          -- { seconds, at = os.time() } from CheckTime
+
+local function rollFile()
+    local player = Services.player()
+    return "StrawberryHub/roll_" .. tostring(player and player.UserId or 0) .. ".txt"
+end
+
+local function lastRoll()
+    if lastRollAt == nil then
+        lastRollAt = false
+        pcall(function()
+            if isfile and readfile and isfile(rollFile()) then lastRollAt = tonumber(readfile(rollFile())) or false end
+        end)
+    end
+    return lastRollAt or nil
+end
+
+local function rolled()
+    lastRollAt = os.time()
+    serverLeft = nil
+    pcall(function()
+        if not writefile then return end
+        if makefolder and isfolder and not isfolder("StrawberryHub") then makefolder("StrawberryHub") end
+        writefile(rollFile(), tostring(lastRollAt))
+    end)
+end
+
+-- Seconds before the next roll (0: now), or nil when not known yet.
+function Fruits.nextRollIn()
+    if serverLeft then return math.max(0, serverLeft.seconds - (os.time() - serverLeft.at)) end
+    local last = lastRoll()
+    if last then return math.max(0, Fruits.ROLL_COOLDOWN - (os.time() - last)) end
+    return nil
+end
+
 -- Rolls once when allowed. Returns true when a fruit was rolled.
 function Fruits.roll()
     local box = bannerBox()
@@ -60,9 +100,18 @@ function Fruits.roll()
     if not commF then return false end
     local ok, money, level, price = pcall(function() return commF:InvokeServer("Cousin", "Check", box) end)
     if not ok or (level or 0) < 50 or (money or 0) < (price or math.huge) then return false end
-    if Services.invoke("Cousin", "CheckTime", box) ~= true then return false end
-    return Services.invoke("Cousin", box) == 1
+    local time = Services.invoke("Cousin", "CheckTime", box)
+    if type(time) == "number" and time > 0 then serverLeft = { seconds = time, at = os.time() } end
+    if time ~= true then return false end
+    if Services.invoke("Cousin", box) == 1 then
+        rolled()
+        return true
+    end
+    return false
 end
+
+-- Test hook.
+function Fruits.resetRoll() lastRollAt, serverLeft = nil, nil end
 
 local function closeSpinner()
     local player = Services.player()

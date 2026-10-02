@@ -4540,6 +4540,28 @@ do
     Fight.NO_DAMAGE_AFTER = after
 end
 
+-- The time left before the next fruit spin, shown under the Kaitun's time.
+setup()
+do
+    local FruitsModule = require("Features.Fruits")
+    FruitsModule.resetRoll()
+    eq("spin: unknown at first", FruitsModule.nextRollIn(), nil)
+    local allowed = false
+    world.commF.OnInvoke = function(action, arg)
+        if action == "Cousin" and arg == "Check" then return 1000000, 900, 50000 end
+        if action == "Cousin" and arg == "CheckTime" then return allowed or 3000 end
+        if action == "Cousin" then return 1 end
+    end
+    check("spin: not allowed yet", not FruitsModule.roll())
+    local left = FruitsModule.nextRollIn()
+    check("spin: the server's time left", left and left <= 3000 and left > 2990, tostring(left))
+    allowed = true
+    check("spin: rolled", FruitsModule.roll())
+    left = FruitsModule.nextRollIn()
+    check("spin: two hours from now", left and left > 7190, tostring(left))
+    FruitsModule.resetRoll()
+end
+
 -- Saber follows the server's progress (ProQuestProgress), step by step.
 local Saber = require("Features.Items.Saber")
 do

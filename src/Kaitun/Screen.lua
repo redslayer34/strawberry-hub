@@ -14,6 +14,7 @@
 local Config = require("Kaitun.Config")
 local Engine = require("Kaitun.Engine")
 local Farm = require("Features.Farm")
+local Fruits = require("Features.Fruits")
 local Logo = require("UI.Logo")
 local Loop = require("Core.Loop")
 local Melee = require("Features.Items.Melee")
@@ -236,12 +237,13 @@ function Screen.build()
 
     text(center, "Running", 174, 24, 20, SOFT)
     text(center, "Time", 198, 18, 14, MUTED)
+    text(center, "Spin", 216, 14, 12, MUTED)
 
     for index = 1, 3 do
         local dot = Instance.new("Frame")
         dot.Name = "Dot" .. index
         dot.AnchorPoint = Vector2.new(0.5, 0)
-        dot.Position = UDim2.new(0.5, (index - 2) * 16, 0, 222)
+        dot.Position = UDim2.new(0.5, (index - 2) * 16, 0, 234)
         dot.Size = UDim2.new(0, 8, 0, 8)
         dot.BackgroundColor3 = RED
         dot.BorderSizePixel = 0
@@ -250,18 +252,18 @@ function Screen.build()
         dots[index] = dot
     end
 
-    text(center, "Task", 238, 18, 15, TEXT, Enum.Font.GothamBold)
-    text(center, "Status", 258, 34, 13, SOFT, Enum.Font.Gotham)
+    text(center, "Task", 250, 18, 15, TEXT, Enum.Font.GothamBold)
+    text(center, "Status", 270, 34, 13, SOFT, Enum.Font.Gotham)
 
-    box(center, "Level", -214, 300, 200)
-    box(center, "Fragments", 0, 300, 200)
-    box(center, "Beli", 214, 300, 200)
-    box(center, "Melee", -107, 342, 414)
-    box(center, "Sea", 214, 342, 200)
+    box(center, "Level", -214, 312, 200)
+    box(center, "Fragments", 0, 312, 200)
+    box(center, "Beli", 214, 312, 200)
+    box(center, "Melee", -107, 354, 414)
+    box(center, "Sea", 214, 354, 200)
 
-    text(center, "Items", 386, 18, 13, SOFT, Enum.Font.Gotham)
-    text(center, "Resting", 404, 30, 12, MUTED, Enum.Font.Gotham)
-    text(center, "Last", 438, 16, 12, MUTED, Enum.Font.Gotham)
+    text(center, "Items", 398, 18, 13, SOFT, Enum.Font.Gotham)
+    text(center, "Resting", 416, 30, 12, MUTED, Enum.Font.Gotham)
+    text(center, "Last", 450, 16, 12, MUTED, Enum.Font.Gotham)
 
     local input = Services.get("UserInputService")
     connections[#connections + 1] = input.InputBegan:Connect(function(event, processed)
@@ -304,6 +306,12 @@ function Screen.lines()
     local lines = {
         Running = "Kaitun Running" .. string.rep(".", tick % 3 + 1),
         Time = "Time: " .. clock(session) .. "  •  Total: " .. clock(totalBefore + session),
+        Spin = safe(function()
+            local left = Fruits.nextRollIn()
+            if left == nil then return "Next fruit spin: unknown yet" end
+            if left <= 0 then return "Next fruit spin: now" end
+            return "Next fruit spin: " .. clock(left)
+        end),
         Task = safe(function()
             local task = status.task or ("idle: " .. tostring(status.idle))
             return "Task: " .. task .. (status.hop and ("  (hop soon: " .. status.hop .. ")") or "")
