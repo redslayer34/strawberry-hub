@@ -248,8 +248,12 @@ function Electric.step(mode)
                 askTries, givenUpUntil = 0, os.clock() + Electric.GIVE_UP
             end
             local accepted = Services.invoke("AcceptElectroQuest")
-            Electric.answers = string.format("deliver %s, buy %s, accept %s",
-                tostring(delivered), tostring(bought), tostring(accepted))
+            -- For the states nobody documents (6...): whether the bolt is in
+            -- the inventory, and what the purchase check says.
+            local bolts = Common.itemCount("Lightning Bolt")
+            local check = Services.invoke("BuyElectro", true)
+            Electric.answers = string.format("deliver %s, buy %s, accept %s, check %s, bolts %s",
+                tostring(delivered), tostring(bought), tostring(accepted), tostring(check), tostring(bolts))
             Common.forget()
             Melee.forget()
         end
