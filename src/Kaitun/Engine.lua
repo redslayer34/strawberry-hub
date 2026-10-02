@@ -76,7 +76,6 @@ Engine.LOG_SIZE = 10
 Engine.SEA_LEVEL = { [2] = 700, [3] = 1500 }
 Engine.COCOA = 10
 Engine.COLOUR_FRAGMENTS = Tasks.COLOUR_FRAGMENTS
-Engine.ROLL_BELI = 10000000    -- the Cousin's gacha only with money to spare
 Engine.BUY_EVERY = 5
 
 local current, startedAt
@@ -149,7 +148,9 @@ function Engine.background(sea, level, anchored)
         AutoStats = true,
         StatTargets = Config.get("Stats"),
         FruitStore = Config.get("StoreFruits") == true,
-        FruitRandom = level >= 1100 and (Player.data("Beli") or 0) >= Engine.ROLL_BELI,
+        -- The Cousin's gacha whenever the server allows it (every 2 h), as
+        -- Teddy does (the user's choice).
+        FruitRandom = true,
         AutoKen = true,
         AutoV3 = true,
         BringMob = true,
