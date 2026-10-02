@@ -9,7 +9,7 @@
 --                (race V4 progress Begin / Teleport), as Vxeze Hub does
 --    submarine   Sea 3: the only way to and from the Submerged Island
 --    entrance    Sea 1 (Banana Cat Hub): into and out of the Underwater
---                City, up to the Sky and the Upper Sky, from wherever the
+--                City, up to the Sky (not the Upper Sky), from wherever the
 --                character is: requestEntrance(dest), the server moves it
 --
 --  Then every way that fits is given an estimated time and the one that
@@ -112,7 +112,6 @@ local UNDERWATER = v(61163.8515625, 11.759522438049316, 1819.7841796875)
 local function underwater(position)
     return position.X > 55000 or (position - UNDERWATER).Magnitude < 3000
 end
-local UPPER_SKY = v(-7894.6201171875, 5545.49169921875, -380.2467346191406)
 local SKY = v(-4607.82275390625, 872.5422973632812, -1667.556884765625)
 Router.ENTRANCES = {
     { name = "Underwater City entrance", dest = UNDERWATER, arrived = 2000,
@@ -121,10 +120,8 @@ Router.ENTRANCES = {
     { name = "Underwater City exit", dest = v(3876.280517578125, 35.10614013671875, -1939.3201904296875), arrived = 2000,
         to = function(goal) return goal.X <= 55000 and (goal - UNDERWATER).Magnitude >= 4000 end,
         inside = function(here) return not underwater(here) end },
-    -- Nothing else in Sea 1 is that high: above 4000 is the Upper Skylands.
-    { name = "Upper Sky entrance", dest = UPPER_SKY,
-        to = function(goal) return goal.Y >= 4000 end,
-        inside = function(here) return here.Y >= 4000 end },
+    -- No Upper Sky entrance: it kept the Shanda quest from working (the
+    -- user's tests, Teddy's point then Banana's); the character flies up.
     { name = "Sky entrance", dest = SKY, arrived = 3000,
         to = function(goal) return goal.Y >= 200 and goal.Y < 4000 and (goal - SKY).Magnitude < 3000 end,
         inside = function(here) return here.Y >= 200 and (here - SKY).Magnitude <= 3000 end },

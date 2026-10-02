@@ -95,6 +95,16 @@ local function watchDamage(mob)
     end
 end
 
+Fight.BOSS_EXTRA = 10
+
+function Fight.isBoss(mob)
+    local name = Enemies.stripLevel(mob.Name)
+    for _, boss in ipairs(require("Game.Data").BOSSES) do
+        if name == boss or name:find(boss, 1, true) then return true end
+    end
+    return false
+end
+
 function Fight.engage(mode, mob, weapon)
     watchDamage(mob)
     local root = mob.HumanoidRootPart
@@ -104,7 +114,10 @@ function Fight.engage(mode, mob, weapon)
         if resyncAt then Movement.to(resyncAt) end
         return true
     end
-    Movement.to(root.CFrame * CFrame.new(7, Settings.get("FarmHeight"), 0))
+    -- A little higher over a boss: its area attacks hit hard (the Ice
+    -- Admiral at level 700).
+    local height = Settings.get("FarmHeight") + (Fight.isBoss(mob) and Fight.BOSS_EXTRA or 0)
+    Movement.to(root.CFrame * CFrame.new(7, height, 0))
     if Settings.get("BringMob") then
         Bring.run(mob, Settings.get("BringCount"))
     end

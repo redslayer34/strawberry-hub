@@ -1596,7 +1596,7 @@ do
     eq("to the Underwater City: entrance", Router.plan(town, city).name, "Underwater City entrance")
     eq("out of the Underwater City: exit", Router.plan(city, town).name, "Underwater City exit")
     eq("inside the city: fly", Router.plan(city, city + Vector3.new(0, 0, 1000)).kind, "direct")
-    eq("to the Upper Sky: entrance", Router.plan(town, Vector3.new(-7894, 5545, -380)).name, "Upper Sky entrance")
+    check("to the Upper Sky: no entrance (flies)", Router.plan(town, Vector3.new(-7894, 5545, -380)).kind ~= "entrance")
     eq("to the Sky: entrance", Router.plan(town, Vector3.new(-4607, 872, -1667)).name, "Sky entrance")
     eq("on the ground: no entrance", Router.plan(town, Vector3.new(-1100, 10, 3800)).kind ~= "entrance", true)
     eq("already in the Sky: fly", Router.plan(Vector3.new(-4970, 717, -2622), Vector3.new(-4607, 872, -1667)).kind,
@@ -1620,14 +1620,13 @@ do
     world.commF.OnInvoke = function() return nil end
     Router.reset()
     world.hrp.Position = town
-    Router.update(town, Vector3.new(-7894, 5545, -380))
+    Router.update(town, Vector3.new(-4607, 872, -1667))
     for _ = 1, 8 do
         stepTasks()
         world.hrp.Position = town
     end
-    eq("put back: says so", Router.lastTrip(), "Upper Sky entrance put back")
-    check("upper sky: Banana's destination", (Router.ENTRANCES[3].dest - Vector3.new(-7894.62, 5545.49, -380.25)).Magnitude < 1)
-    check("put back: not tried again", Router.plan(town, Vector3.new(-7894, 5545, -380)).kind ~= "entrance")
+    eq("put back: says so", Router.lastTrip(), "Sky entrance put back")
+    check("put back: not tried again", Router.plan(town, Vector3.new(-4607, 872, -1667)).kind ~= "entrance")
     eq("already on the Upper Skylands: fly", Router.plan(Vector3.new(-7800, 5550, -300), Vector3.new(-7894, 5545, -380)).kind,
         "direct")
 end
@@ -3133,6 +3132,22 @@ do
     world.humanoid.Health = 90
     Helpers.updateHealth()
     eq("recovered: back down", Helpers.lift(), 0)
+
+    -- Against a boss the escape stays close (it reset when left far).
+    Settings.set("LowHpHeight", 800)
+    local admiral = mob("Ice Admiral", Vector3.new(0, 0, 500))
+    local realBossTarget = Farm.target
+    Farm.target = function() return admiral end
+    world.humanoid.Health = 30
+    Helpers.updateHealth()
+    eq("boss: low HP escape capped", Helpers.lift(), Helpers.BOSS_ESCAPE)
+    Farm.target = function() return nil end
+    eq("no boss: the full height", Helpers.lift(), 800)
+    Farm.target = realBossTarget
+    world.humanoid.Health = 90
+    Helpers.updateHealth()
+    Settings.set("LowHpHeight", 100)
+    admiral.Parent = nil
 
     local target = mob("Magma Admiral", Vector3.new(0, 0, 30))
     local realTarget = Farm.target

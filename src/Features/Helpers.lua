@@ -27,6 +27,8 @@ local Settings = require("Core.Settings")
 
 local Helpers = {}
 
+Helpers.BOSS_ESCAPE = 120   -- studs up at low health while fighting a boss
+
 Helpers.CLICK_RANGE = 80
 Helpers.KEN_EVERY = 3
 Helpers.V3_EVERY = 3
@@ -56,6 +58,13 @@ end
 local function fightTarget()
     local ok, target = pcall(function() return require("Features.Farm").target() end)
     return ok and target or nil
+end
+
+-- Whether `mob` is a boss (Fight's list check).
+function Helpers.isBoss(mob)
+    if not mob then return false end
+    local ok, boss = pcall(function() return require("Features.Fight").isBoss(mob) end)
+    return ok and boss == true
 end
 
 local function pressKey(key)
@@ -141,7 +150,13 @@ end
 function Helpers.lift()
     if dodgeActive("mob") or dodgeActive("shark") then return Helpers.DODGE_LIFT end
     if beamActive() then return Helpers.BEAM_LIFT end
-    if lowHp and Settings.get("LowHpEscape") then return tonumber(Settings.get("LowHpHeight")) or 0 end
+    if lowHp and Settings.get("LowHpEscape") then
+        local height = tonumber(Settings.get("LowHpHeight")) or 0
+        -- Against a boss, not too far: 800 studs away it lost the
+        -- character and came back to full health (the Ice Admiral).
+        if Helpers.isBoss(fightTarget()) then return math.min(height, Helpers.BOSS_ESCAPE) end
+        return height
+    end
     return 0
 end
 
