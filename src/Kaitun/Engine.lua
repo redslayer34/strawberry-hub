@@ -50,6 +50,7 @@ local Fruits = require("Features.Fruits")
 local Loop = require("Core.Loop")
 local Melee = require("Features.Items.Melee")
 local Player = require("Core.Player")
+local Raids = require("Features.Raids")
 local Services = require("Core.Services")
 local Settings = require("Core.Settings")
 local SkipLevel = require("Features.SkipLevel")
@@ -168,7 +169,7 @@ function Engine.background(sea, level, anchored)
     -- while one of them works, no elite, chest, fruit or Dough King pulls
     -- the character away, and no style purchase either (a trial left half
     -- way fails). The castle raid stays: CDK's good trial 4 is one.
-    if current and currentWorking and current.priority <= 1 then
+    if current and (currentWorking and current.priority <= 1 or Raids.active()) then
         keys.StackEliteHunter, keys.StackChests, keys.StackFruit = false, false, false
         keys.StackDoughKing, keys.StackSummonDoughKing = false, false
         keys.ItemMeleeProgress = false
@@ -303,6 +304,11 @@ end
 -- ready: a task of the same priority coming back from its rest (Saber and
 -- Electric, say) must not cut a running quest in the middle.
 function Engine.pick(sea, level, list)
+    -- A raid under way is never dropped: its chip and fruit are spent, so
+    -- the task may say "not ready" in the middle of it.
+    if current and current.mode and (current.mode == Raids.solo or current.mode == Raids.multi) and Raids.active() then
+        return current
+    end
     local keep = currentWorking and current and not Engine.blocked(current, sea, level) and current or nil
     for _, task in ipairs(Tasks.ordered(list)) do
         if keep and task.priority >= keep.priority then return keep end

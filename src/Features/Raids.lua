@@ -27,14 +27,19 @@ local Raids = {}
 Raids.CASTLE = Vector3.new(-5500, 314, -2855)
 Raids.MIN_LEVEL = 1100
 Raids.ISLAND_RANGE = 3000
-Raids.FIGHT_RANGE = 400
+Raids.FIGHT_RANGE = 2000    -- Teddy: every enemy this close, inside a raid
+Raids.NEXT_ISLAND = 2500    -- the next island is this close
+Raids.ISLAND_EMPTY = 5      -- seconds on an island with no enemy: it is done
+Raids.START_WAIT = 20       -- seconds after the press for the raid to start (Teddy: 15)
 Raids.SLOT_RANGE = 10
-Raids.AFTER_RAID = 5        -- seconds before pressing the button again
+Raids.AFTER_RAID = 10       -- seconds before pressing the button again
 Raids.BUY_TRIES = 3         -- chip purchases without a chip before backing off
 Raids.BACKOFF = 60
 Raids.CHEAP_FRUIT = 1000000 -- fruits under this price may pay for the chip
 
 local lastRaidAt, lastKill = -math.huge, -math.huge
+local pressedAt = -math.huge
+local done, arrivedAt = {}, nil   -- islands cleared in this raid, time on the current one
 local buyTries, backoffUntil = 0, nil
 
 -- Raid names for the list, from ReplicatedStorage.Raids.
@@ -73,16 +78,30 @@ local function islands()
     return list
 end
 
+-- Teddy: the RaidTimer on screen is the raid. (The islands load a moment
+-- later: waiting for them made the farm leave a raid that was starting.)
 function Raids.inRaid()
     local player = Services.player()
     local timer = player and Services.find(player, "PlayerGui.Main.TopHUDList.RaidTimer")
-    return timer ~= nil and timer.Visible == true and #islands() > 0
+    return timer ~= nil and timer.Visible == true
 end
 
-local function lastIsland()
-    local best
+-- In a raid, or the button pressed a moment ago (the raid is starting):
+-- nothing may take the character away then.
+function Raids.active()
+    return Raids.inRaid() or os.clock() - pressedAt < Raids.START_WAIT
+end
+
+-- Teddy's order: the nearest island not cleared yet.
+local function nextIsland()
+    local here = Player.position()
+    if not here then return nil end
+    local best, bestDistance
     for _, island in ipairs(islands()) do
-        if not best or island.number > best.number then best = island end
+        local distance = (island.part.Position - here).Magnitude
+        if not done[island.part] and distance < Raids.NEXT_ISLAND and (not bestDistance or distance < bestDistance) then
+            best, bestDistance = island, distance
+        end
     end
     return best
 end
@@ -113,23 +132,36 @@ end
 -- One step inside a raid.
 function Raids.fight(mode)
     lastRaidAt = os.clock()
+    pressedAt = -math.huge
     local enemy = raidEnemy()
     if enemy then
+        arrivedAt = nil
         if Settings.get("RaidInstantKill") and os.clock() - lastKill >= Settings.get("RaidKillDelay") then
             lastKill = os.clock()
             pcall(function() enemy.Humanoid:ChangeState(Enum.HumanoidStateType.Dead) end)
         end
         return "Raid: " .. Common.fight(mode, enemy, true)
     end
-    local island = lastIsland()
+    local island = nextIsland()
     if island then
         local offset = (island.number == 2 and Settings.get("RaidName") == "Phoenix")
             and CFrame.new(300, 60, 0) or CFrame.new(0, 60, 0)
-        Common.goTo(island.part.CFrame * offset)
+        local spot = island.part.CFrame * offset
+        Common.goTo(spot)
+        if Player.distanceTo(spot.Position) <= 100 then
+            -- On the island and nothing to fight: the wave is not up yet,
+            -- or the island is cleared.
+            arrivedAt = arrivedAt or os.clock()
+            if os.clock() - arrivedAt >= Raids.ISLAND_EMPTY then
+                done[island.part], arrivedAt = true, nil
+            end
+            return "Raid: island " .. island.number .. ", waiting for enemies"
+        end
+        arrivedAt = nil
         return "Raid: going to island " .. island.number
     end
     Movement.stop()
-    return "Raid: waiting"
+    return "Raid: waiting for the next island"
 end
 
 ---------------------------------------------------------------------------
@@ -235,9 +267,23 @@ local function press(button)
     local detector = button:FindFirstChild("ClickDetector")
     if detector and fireclickdetector and os.clock() - lastRaidAt >= Raids.AFTER_RAID
         and Common.every("RaidPress", 2) then
+        pcall(function()
+            local humanoid = Player.humanoid()
+            if humanoid then humanoid:UnequipTools() end
+        end)
         pcall(fireclickdetector, detector)
+        pressedAt = os.clock()
+        done, arrivedAt = {}, nil
     end
     return "Starting the raid"
+end
+
+-- Pressed a moment ago, no timer yet: stay put until the game moves the
+-- character into the raid (Teddy waits 15 s).
+local function starting()
+    if Raids.inRaid() or os.clock() - pressedAt >= Raids.START_WAIT then return nil end
+    Movement.stop()
+    return "Waiting for the raid to start"
 end
 
 local function busyBackingOff()
@@ -252,12 +298,14 @@ Raids.solo = Mode({
     name = "Raid",
     key = "RaidAuto",
     want = function()
-        if Raids.inRaid() or Common.has("Special Microchip") then return true end
+        if Raids.active() or Common.has("Special Microchip") then return true end
         return Player.level() >= Raids.MIN_LEVEL and not busyBackingOff()
     end,
     idleStatus = "Level 1100 needed, or waiting after failed chip purchases",
     tick = function(mode)
         if Raids.inRaid() then return Raids.fight(mode) end
+        local wait = starting()
+        if wait then return wait end
         if Common.has("Special Microchip") then
             buyTries = 0
             local button = Raids.button()
@@ -317,6 +365,8 @@ Raids.multi = Mode({
     key = "MultiRaid",
     tick = function(mode)
         if Raids.inRaid() then return Raids.fight(mode) end
+        local wait = starting()
+        if wait then return wait end
         local button = Raids.button()
         if not button then return goToSummoner() end
         local list = slots(button)
@@ -351,6 +401,7 @@ Raids.multi = Mode({
 -- Test hook.
 function Raids.reset()
     lastRaidAt, lastKill = -math.huge, -math.huge
+    pressedAt, done, arrivedAt = -math.huge, {}, nil
     buyTries, backoffUntil = 0, nil
 end
 

@@ -2457,11 +2457,43 @@ do
     eq("everyone on a slot: started", pressed, main.ClickDetector)
     fireclickdetector = nil
 
+    -- Pressed: the next ticks wait for the raid, nothing else.
+    Raids.multi.tick()
+    eq("pressed: waits for the raid to start", Raids.multi.status, "Waiting for the raid to start")
+    check("pressed: the raid counts as active", Raids.active())
+    Raids.reset()
+
     -- A slot taker goes to the free slot.
     Settings.set("MultiRaidBuyer", false)
     Settings.set("MultiRaidSlot", true)
     Raids.multi.tick()
     check("slot taker heads for the slot", Raids.multi.status:find("Taking a raid slot", 1, true) ~= nil, Raids.multi.status)
+end
+
+-- In a raid: the timer alone is enough (the islands load later); the
+-- nearest island not cleared, then the next one.
+batchBSetup()
+do
+    Raids.reset()
+    local hud = folder("TopHUDList", world.player.PlayerGui.Main)
+    local timer = newInstance("Frame", "RaidTimer", hud)
+    timer.Visible = true
+    check("raid: timer only -> in a raid", Raids.inRaid())
+    local mode = {}
+    Raids.fight(mode)
+    eq("raid: no island yet -> waits", mode.status or Raids.fight(mode), "Raid: waiting for the next island")
+    local locations = folder("Locations", folder("_WorldOrigin", workspace))
+    local one = part("Island 1", Vector3.new(0, 0, 100), locations)
+    part("Island 2", Vector3.new(0, 0, 900), locations)
+    eq("raid: nearest island first", Raids.fight(mode), "Raid: going to island 1")
+    world.hrp.Position = one.Position + Vector3.new(0, 60, 0)
+    local empty = Raids.ISLAND_EMPTY
+    Raids.ISLAND_EMPTY = -1
+    Raids.fight(mode)
+    Raids.ISLAND_EMPTY = empty
+    eq("raid: cleared island -> the next one", Raids.fight(mode), "Raid: going to island 2")
+    timer.Visible = false
+    Raids.reset()
 end
 
 -- Dungeon join: the leader sets the difficulty and starts at the count.

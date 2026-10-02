@@ -326,7 +326,7 @@ function Router.resetBlocked()
     if here and Player.sea() == 3 and within(here, Router.ISLAND, Router.ISLAND_RADIUS) then
         return "on the Submerged Island"
     end
-    if inside("Features.Raids", "inRaid") then return "in a raid" end
+    if inside("Features.Raids", "active") then return "in a raid" end
     if inside("Features.Dungeon", "inside") then return "in a dungeon" end
     return nil
 end

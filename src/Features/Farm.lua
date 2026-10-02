@@ -127,7 +127,17 @@ end
 
 function Farm.tick()
     local chosen
-    for _, mode in ipairs(Farm.MODES) do
+    -- A raid under way (or starting) comes before everything: leaving the
+    -- area loses it.
+    if Raids.active() then
+        for _, mode in ipairs({ Raids.multi, Raids.solo }) do
+            if mode.enabled() then
+                chosen = mode
+                break
+            end
+        end
+    end
+    for _, mode in ipairs(chosen and {} or Farm.MODES) do
         if mode.enabled() then
             chosen = mode
             break
