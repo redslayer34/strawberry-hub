@@ -642,6 +642,11 @@ function Engine.plan()
                 local okBy, by = pcall(task.doneBy)
                 if okBy and by then why = "done, " .. tostring(by) end
             end
+            -- "not ready" says why, when the task can tell.
+            if why == "not ready" and task.why then
+                local okWhy, detail = pcall(task.why)
+                if okWhy and detail then why = "not ready (" .. tostring(detail) .. ")" end
+            end
             list[#list + 1] = task.name .. ": " .. (task == current and "running" or why or "ready")
         end
     end

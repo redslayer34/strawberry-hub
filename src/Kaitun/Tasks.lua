@@ -263,6 +263,10 @@ Tasks.LIST = {
             return nil
         end,
         hopAfter = 180,
+        -- Given up: the screen says the Mad Scientist's last answers.
+        why = function()
+            if Electric.givenUp() then return "Mad Scientist gave the same answer: " .. tostring(Electric.answers) end
+        end,
         maxTime = 3600,
     },
     {

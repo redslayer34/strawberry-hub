@@ -232,16 +232,29 @@ function Electric.step(mode)
     if state ~= 1 and state ~= 2 then
         if not atScientist() then return "Going to the Mad Scientist" end
         if Common.every("ElectricAccept", 3) then
+            -- The server's state after the cloud is not always 4: with the
+            -- money, the bolt is offered (then the purchase) at every visit
+            -- before asking for the quest. Without a bolt they just fail.
+            local rich = (Player.data("Beli") or 0) >= Electric.PRICE
+            local delivered, bought
+            if rich then
+                delivered = Services.invoke("DeliverLightningBolt")
+                if delivered ~= 1 then bought = Services.invoke("BuyElectro") end
+            end
             -- The same answer again and again: the quest does not start
             -- this way; leave it for a while instead of talking forever.
             if state == askState then askTries = askTries + 1 else askTries, askState = 1, state end
             if askTries > Electric.ACCEPT_TRIES then
                 askTries, givenUpUntil = 0, os.clock() + Electric.GIVE_UP
             end
-            Services.invoke("AcceptElectroQuest")
+            local accepted = Services.invoke("AcceptElectroQuest")
+            Electric.answers = string.format("deliver %s, buy %s, accept %s",
+                tostring(delivered), tostring(bought), tostring(accepted))
             Common.forget()
+            Melee.forget()
         end
-        return "Asking the Mad Scientist about Electric (state " .. tostring(state) .. ")"
+        return "Asking the Mad Scientist about Electric (state " .. tostring(state)
+            .. (Electric.answers and "; " .. Electric.answers or "") .. ")"
     end
     askTries = 0
     local part, cloud = Electric.target()
@@ -272,6 +285,7 @@ function Electric.reset()
     lastHit = -math.huge
     boltSeen, lastState = nil, nil
     askTries, askState, givenUpUntil = 0, nil, nil
+    Electric.answers = nil
 end
 
 return Electric
