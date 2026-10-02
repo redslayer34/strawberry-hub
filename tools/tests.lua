@@ -614,32 +614,55 @@ setup()
 do
     Settings.set("SmartTravel", false)
     local dt = 1 / 60
-    Movement.to(CFrame.new(100, 0, 0))
+    world.hrp.Position = Vector3.new(0, 30, 0)
+    Movement.to(CFrame.new(100, 30, 0))
     Movement.step(dt)
-    near("one step at TweenSpeed", world.hrp.Position, Vector3.new(5, 0, 0))
+    near("one step at TweenSpeed", world.hrp.Position, Vector3.new(5, 30, 0))
     check("float force added", world.hrp:FindFirstChild("FloatForce") ~= nil)
 
     -- The server pulls the character back: the cap drops to 70 %.
-    world.hrp.Position = Vector3.new(-50, 0, 0)
+    world.hrp.Position = Vector3.new(-50, 30, 0)
     Movement.step(dt)
-    near("slower after a pull-back", world.hrp.Position, Vector3.new(-50 + 3.5, 0, 0))
+    near("slower after a pull-back", world.hrp.Position, Vector3.new(-50 + 3.5, 30, 0))
 
-    world.hrp.Position = Vector3.new(99, 0, 0)
+    world.hrp.Position = Vector3.new(99, 30, 0)
     Movement.step(dt)
-    near("snaps onto a close goal", world.hrp.Position, Vector3.new(100, 0, 0))
+    near("snaps onto a close goal", world.hrp.Position, Vector3.new(100, 30, 0))
 
     Movement.step(1)
-    near("a huge dt is capped per frame", world.hrp.Position, Vector3.new(100, 0, 0))
+    near("a huge dt is capped per frame", world.hrp.Position, Vector3.new(100, 30, 0))
 
     Movement.stop()
     check("stop clears the goal", not Movement.moving())
     check("stop removes the float force", world.hrp:FindFirstChild("FloatForce") == nil)
 
     Movement.reset()
-    world.hrp.Position = Vector3.new(0, 0, 0)
-    Movement.to(CFrame.new(1000, 0, 0))
+    world.hrp.Position = Vector3.new(0, 30, 0)
+    Movement.to(CFrame.new(1000, 30, 0))
     Movement.step(1)
-    near("step never exceeds the per-frame cap", world.hrp.Position, Vector3.new(18, 0, 0))
+    near("step never exceeds the per-frame cap", world.hrp.Position, Vector3.new(18, 30, 0))
+end
+
+-- Never through the water while the goal is far; free over the goal.
+setup()
+do
+    Settings.set("SmartTravel", false)
+    Movement.reset()
+    world.hrp.Position = Vector3.new(0, 0, 0)
+    Movement.to(CFrame.new(2000, 0, 0))
+    for _ = 1, 10 do Movement.step(1 / 60) end
+    check("far goal at sea level: climbs above the water", world.hrp.Position.Y > 0, tostring(world.hrp.Position))
+    for _ = 1, 30 do Movement.step(1 / 60) end
+    check("then stays above it", world.hrp.Position.Y >= 20, tostring(world.hrp.Position))
+    world.hrp.Position = Vector3.new(1950, 25, 0)
+    Movement.to(CFrame.new(2000, 5, 0))
+    Movement.step(1 / 60)
+    check("over the goal: comes down", world.hrp.Position.Y < 25, tostring(world.hrp.Position))
+    world.hrp.Position = Vector3.new(60000, 0, 1800)
+    Movement.to(CFrame.new(61163, -10, 1819))
+    Movement.step(1 / 60)
+    check("underwater city: no floor", world.hrp.Position.Y <= 0, tostring(world.hrp.Position))
+    Movement.stop()
 end
 
 ---------------------------------------------------------------------------

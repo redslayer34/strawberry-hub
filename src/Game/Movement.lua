@@ -37,6 +37,16 @@ local nextRaise = 0
 local lastPlaced
 local lastCharacter
 
+Movement.SAFE_Y = 25      -- the lowest a flight goes while the goal is far (above the water)
+Movement.NEAR = 100       -- studs (flat) from the goal: free to come down
+
+-- Places under the sea on purpose: the Sea 1 Underwater City, the Sea 3
+-- Submerged Island.
+local function underwaterPlace(position)
+    if position.X > 55000 then return true end
+    return Player.sea() == 3 and (position - Router.ISLAND).Magnitude < Router.ISLAND_RADIUS
+end
+
 function Movement.to(cframe)
     goal = cframe
 end
@@ -154,6 +164,22 @@ function Movement.step(dt)
         if lift > 0 then
             destination = goal * CFrame.new(0, lift, 0)
             target = destination.Position
+        end
+    end
+
+    -- Never through the sea on the way: while the goal is still far, the
+    -- flight stays above the water; over the goal it comes down freely.
+    if not aim and target.Y < Movement.SAFE_Y and not underwaterPlace(target) and not underwaterPlace(here) then
+        local flat = Vector3.new(target.X - here.X, 0, target.Z - here.Z).Magnitude
+        if flat > Movement.NEAR then
+            -- Under that height: straight up first, then level.
+            if here.Y < Movement.SAFE_Y - 1 then
+                target = Vector3.new(here.X, Movement.SAFE_Y, here.Z)
+            else
+                target = Vector3.new(target.X, Movement.SAFE_Y, target.Z)
+            end
+            -- A snap lands on this point, not on the goal far away.
+            destination = CFrame.new(target)
         end
     end
 
