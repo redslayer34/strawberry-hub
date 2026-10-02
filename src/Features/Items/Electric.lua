@@ -44,6 +44,8 @@ Electric.HIT_EVERY = 0.4
 Electric.STATE_HAS_BOLT = 4
 
 local clouds = {}       -- [cloud] = { parts }
+local struck = setmetatable({}, { __mode = "k" })   -- clouds hit by us
+local rememberBolt     -- defined with the quest state below
 local connection
 local lastHit = -math.huge
 
@@ -68,6 +70,7 @@ function Electric.onMoment(name, kind, cloud, extra)
         clouds[cloud] = parts
         for _, part in ipairs(extra) do parts[#parts + 1] = part end
     elseif kind == "Break" then
+        if clouds[cloud] and struck[cloud] then rememberBolt() end
         clouds[cloud] = nil
     end
 end
@@ -85,9 +88,9 @@ end
 function Electric.target()
     for cloud, parts in pairs(clouds) do
         for _, part in ipairs(parts) do
-            if tagged(part) then return part end
+            if tagged(part) then return part, cloud end
         end
-        if tagged(cloud) then return cloud end
+        if tagged(cloud) then return cloud, cloud end
         clouds[cloud] = nil
     end
     return nil
@@ -131,6 +134,46 @@ function Electric.state()
     return tonumber(Common.invoke("ElectroQuestState"))
 end
 
+-- The bolt phase, remembered per account in the workspace: the server's
+-- state number after the cloud is not always 4 (the user's game went back
+-- to "asking the Mad Scientist" with the bolt in hand), so once the cloud
+-- phase (1 or 2) gave way to another state, or a struck cloud broke, the
+-- bolt is taken as obtained until Electric is owned.
+local boltSeen, lastState
+local function boltFile()
+    local player = Services.player()
+    return "StrawberryHub/electric_bolt_" .. tostring(player and player.UserId or 0) .. ".txt"
+end
+
+rememberBolt = function()
+    boltSeen = true
+    pcall(function()
+        if not writefile then return end
+        if makefolder and isfolder and not isfolder("StrawberryHub") then makefolder("StrawberryHub") end
+        writefile(boltFile(), "1")
+    end)
+end
+
+local function boltRemembered()
+    if boltSeen == nil then
+        local ok, found = pcall(function() return isfile and isfile(boltFile()) end)
+        boltSeen = ok and found == true
+    end
+    return boltSeen
+end
+
+-- Whether the player holds the Lightning Bolt (or the server says so).
+function Electric.hasBolt()
+    local state = Electric.state()
+    if state == Electric.STATE_HAS_BOLT then return true end
+    if Common.has("Lightning Bolt") or Common.itemCount("Lightning Bolt") > 0 then return true end
+    if lastState and (lastState == 1 or lastState == 2) and state and state ~= 1 and state ~= 2 and state ~= 0 then
+        rememberBolt()
+    end
+    lastState = state or lastState
+    return boltRemembered()
+end
+
 local function scientist()
     return World.npcPosition("Mad Scientist") or Electric.SCIENTIST
 end
@@ -162,10 +205,22 @@ local function strike(mode, part)
     return "Striking the charged storm cloud"
 end
 
+Electric.ACCEPT_TRIES = 5      -- asks with no change of state...
+Electric.GIVE_UP = 600         -- ...then the quest is left alone this long
+local askTries, askState, givenUpUntil = 0, nil, nil
+
+function Electric.givenUp()
+    return givenUpUntil ~= nil and os.clock() < givenUpUntil
+end
+
 function Electric.step(mode)
     if not Common.travel(1) then return "Travelling to Sea 1" end
     local state = Electric.state()
-    if state == Electric.STATE_HAS_BOLT then
+    if Electric.hasBolt() then
+        if (Player.data("Beli") or 0) < Electric.PRICE then
+            Movement.stop()
+            return "Holding the Lightning Bolt until $500,000"
+        end
         if not atScientist() then return "Taking the Lightning Bolt to the Mad Scientist" end
         if Common.every("ElectricDeliver", 2) then
             if Services.invoke("DeliverLightningBolt") ~= 1 then Services.invoke("BuyElectro") end
@@ -177,13 +232,23 @@ function Electric.step(mode)
     if state ~= 1 and state ~= 2 then
         if not atScientist() then return "Going to the Mad Scientist" end
         if Common.every("ElectricAccept", 3) then
+            -- The same answer again and again: the quest does not start
+            -- this way; leave it for a while instead of talking forever.
+            if state == askState then askTries = askTries + 1 else askTries, askState = 1, state end
+            if askTries > Electric.ACCEPT_TRIES then
+                askTries, givenUpUntil = 0, os.clock() + Electric.GIVE_UP
+            end
             Services.invoke("AcceptElectroQuest")
             Common.forget()
         end
-        return "Asking the Mad Scientist about Electric"
+        return "Asking the Mad Scientist about Electric (state " .. tostring(state) .. ")"
     end
-    local part = Electric.target()
-    if part then return strike(mode, part) end
+    askTries = 0
+    local part, cloud = Electric.target()
+    if part then
+        if cloud then struck[cloud] = true end
+        return strike(mode, part)
+    end
     Common.goTo(Electric.SKY_WAIT)
     return "Looking for a charged storm cloud"
 end
@@ -194,8 +259,8 @@ Electric.mode = Mode({
     -- The quest and the bolt cost nothing: only the delivery wants $500,000,
     -- so with the bolt in hand and less money the farms go on meanwhile.
     want = function()
-        if Electric.owned() then return false end
-        return Electric.state() ~= Electric.STATE_HAS_BOLT or (Player.data("Beli") or 0) >= Electric.PRICE
+        if Electric.owned() or Electric.givenUp() then return false end
+        return not Electric.hasBolt() or (Player.data("Beli") or 0) >= Electric.PRICE
     end,
     idleStatus = "Owned, or holding the bolt until $500,000",
     tick = Electric.step,
@@ -205,6 +270,8 @@ Electric.mode = Mode({
 function Electric.reset()
     Electric.destroy()
     lastHit = -math.huge
+    boltSeen, lastState = nil, nil
+    askTries, askState, givenUpUntil = 0, nil, nil
 end
 
 return Electric

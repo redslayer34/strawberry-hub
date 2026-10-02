@@ -4020,6 +4020,36 @@ do
     eq("no warning from it", #WARNINGS, 0)
 end
 
+-- The user's game: after the cloud the state was neither 4 nor 1/2, and the
+-- Kaitun went back to asking the Mad Scientist. The bolt phase is now
+-- recognised, and with less than $500k the farms go on.
+local boltState = 1
+meleeSetup(2753915549, 184, {}, { ElectroQuestState = function() return boltState end }, 202281)
+do
+    local npc = newInstance("Model", "Mad Scientist", folder("NPCs", workspace))
+    part("HumanoidRootPart", Vector3.new(0, 0, -4), npc)
+    check("bolt: not yet during the cloud phase", not Electric.hasBolt())
+    boltState = 3
+    require("Features.Stack.Common").forget()
+    check("bolt: the state after the cloud phase means the bolt", Electric.hasBolt())
+    Settings.set("ItemElectric", true)
+    check("bolt: under $500k the quest waits (farms go on)", not Electric.mode.enabled())
+end
+
+meleeSetup(2753915549, 184, {}, { ElectroQuestState = 0 }, 202281)
+do
+    local npc = newInstance("Model", "Mad Scientist", folder("NPCs", workspace))
+    part("HumanoidRootPart", Vector3.new(0, 0, -4), npc)
+    local CommonModule = require("Features.Stack.Common")
+    Settings.set("ItemElectric", true)
+    for _ = 1, Electric.ACCEPT_TRIES + 2 do
+        CommonModule.reset()
+        Electric.step({})
+    end
+    check("accept: given up after the same answer again and again", Electric.givenUp())
+    check("accept: the mode lets the farms run", not Electric.mode.enabled())
+end
+
 ---------------------------------------------------------------------------
 -- Report
 ---------------------------------------------------------------------------

@@ -206,7 +206,8 @@ Tasks.LIST = {
         keys = { ItemElectric = true },
         ready = function()
             local beli = Player.data("Beli") or 0
-            if Electric.state() == Electric.STATE_HAS_BOLT and beli < Electric.PRICE then return false end
+            if Electric.givenUp() then return false end
+            if Electric.hasBolt() and beli < Electric.PRICE then return false end
             if Player.sea() == 1 then return true end
             return beli >= Electric.PRICE
                 and Melee.mastery("Black Leg") >= Melee.SUPERHUMAN_NEEDS
