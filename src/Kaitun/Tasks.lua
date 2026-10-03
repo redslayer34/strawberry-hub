@@ -116,8 +116,21 @@ end
 -- Soul Guitar, a legendary haki colour (late game).
 -- What the fragments are for, and the goal: the largest of the haki
 -- colours, the next melee style that only lacks fragments, the Soul Guitar.
+-- The race the config's GetRace asks for, while the player is not it yet.
+Tasks.RACES = { Cyborg = true, Ghoul = true }
+Tasks.CYBORG_FRAGMENTS = 1000   -- the Microchip
+function Tasks.raceWanted()
+    local wanted = Config.get("GetRace")
+    if not Tasks.RACES[wanted] or Config.skipped("Race") then return nil end
+    if Player.data("Race") == wanted then return nil end
+    return wanted
+end
+
 function Tasks.fragmentReason(lateLevel)
     local reason, goal = nil, 0
+    if Tasks.raceWanted() == "Cyborg" and not Common.has("Microchip") and not Common.has("Core Brain") then
+        reason, goal = "the Cyborg race", Tasks.CYBORG_FRAGMENTS
+    end
     if Tasks.needsColours(Player.level(), lateLevel or 2200) then
         reason, goal = "the haki colours", Tasks.COLOUR_FRAGMENTS
     end
@@ -193,10 +206,40 @@ Tasks.LIST = {
         -- Level 1500: the Alchemist only talks once Bartilo's Colosseum
         -- Quest is done, which the Third World quest does at 1500 anyway
         -- (the user's choice; V2 itself still does it if needed).
+        -- Config GetRace = "Cyborg": the Microchip (1000 fragments), Order,
+        -- the Core Brain, the trainer (RaceUpgrade.cyborg). The Race task
+        -- below then evolves the new race.
+        name = "GetCyborg", group = "Race", priority = 5, seas = { 2 }, minLevel = 1100, mode = RaceUpgrade.cyborg,
+        keys = { RaceCyborg = true },
+        ready = function()
+            if Tasks.raceWanted() ~= "Cyborg" then return false end
+            return (Player.data("Fragments") or 0) >= Tasks.CYBORG_FRAGMENTS or Common.has("Microchip")
+                or Common.has("Core Brain") or Enemies.findBoss("Order") ~= nil
+        end,
+        why = function()
+            if Tasks.raceWanted() == "Cyborg" then
+                return string.format("Microchip: %d/%d fragments", Player.data("Fragments") or 0, Tasks.CYBORG_FRAGMENTS)
+            end
+        end,
+        done = function() return Tasks.raceWanted() ~= "Cyborg" end,
+        maxTime = 2400,
+    },
+    {
+        -- Config GetRace = "Ghoul": 100 Ectoplasm, the Cursed Captain, the
+        -- Hellfire Torch, the trade (RaceUpgrade.ghoul).
+        name = "GetGhoul", group = "Race", priority = 5, seas = { 2 }, minLevel = 1000, mode = RaceUpgrade.ghoul,
+        keys = function() return { RaceGhoul = true, RaceGhoulHop = Config.get("Hop") == true } end,
+        ready = function() return Tasks.raceWanted() == "Ghoul" end,
+        done = function() return Tasks.raceWanted() ~= "Ghoul" end,
+        maxTime = 3600,
+    },
+    {
         name = "Race", priority = 5, seas = { 2 }, minLevel = 1500, mode = RaceUpgrade.v2v3,
         keys = { RaceV2V3 = true, RaceHumanAllBosses = true },
         ready = function()
             local beli = Player.data("Beli") or 0
+            -- The config's GetRace first: V2/V3 are for the new race.
+            if Tasks.raceWanted() then return false end
             if RaceUpgrade.version() <= 1 then
                 -- Jeremy (the Colosseum Quest) not up: the farms meanwhile.
                 if StackWorld.bartiloWaiting() then return false end
@@ -205,6 +248,7 @@ Tasks.LIST = {
             return beli >= 2000000
         end,
         why = function()
+            if Tasks.raceWanted() then return "getting the " .. Tasks.raceWanted() .. " race first" end
             if RaceUpgrade.version() <= 1 and StackWorld.bartiloWaiting() then
                 return "Colosseum quest: waiting for Jeremy"
             end

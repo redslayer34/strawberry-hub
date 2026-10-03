@@ -22,6 +22,7 @@ Config.DEFAULTS = {
     SkipLevel = true,        -- Teddy's skip under level 150 (Sky Bandits, God's Guards)
     RedeemCodes = true,      -- every code once per account, while levelling (2x experience)
     WalkOnWater = true,      -- an invisible floor on the sea, as in Banana / Vxeze
+    GetRace = "",            -- "Cyborg" or "Ghoul": get that race (Sea 2), then V2/V3 evolve it; "" keeps yours
     StatMode = "Teddy",      -- "Teddy" (Melee first, Defense 15/100, ...) or "Even" (split over Stats)
     Stats = { Melee = true, Defense = true },   -- only for StatMode = "Even"
     Skip = {

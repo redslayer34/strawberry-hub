@@ -4822,6 +4822,35 @@ do
     eq("race: never from Sea 3", KEngine.blocked(taskNamed("Race"), 3, 1600), "other sea")
 end
 
+-- GetRace: the configured race first (Cyborg: from 1000 fragments), then
+-- V2/V3 for it; nothing when the player already is that race.
+meleeSetup(4442272183, 1500, {}, { Alchemist = 0, Wenlocktoad = 0, CyborgTrainer = 0 }, 3000000)
+do
+    KConfig.reset(); KEngine.reset()
+    eq("get race: none by default", KTasks.raceWanted(), nil)
+    check("get race off: Cyborg task not ready", not taskNamed("GetCyborg").ready())
+    KConfig.load({ GetRace = "Cyborg" })
+    newInstance("StringValue", "Race", world.player.Data).Value = "Human"
+    local fragments = world.player.Data:FindFirstChild("Fragments") or newInstance("IntValue", "Fragments", world.player.Data)
+    fragments.Value = 200
+    eq("get race: Cyborg wanted", KTasks.raceWanted(), "Cyborg")
+    check("cyborg: waits for the Microchip's fragments", not taskNamed("GetCyborg").ready())
+    eq("cyborg: why", taskNamed("GetCyborg").why(), "Microchip: 200/1000 fragments")
+    eq("cyborg: fragments farmed for it", select(2, KTasks.fragmentReason()) >= 1000, true)
+    fragments.Value = 1200
+    check("cyborg: ready with 1000 fragments", taskNamed("GetCyborg").ready())
+    check("race V2/V3 waits for the new race", not taskNamed("Race").ready())
+    eq("race: says why", taskNamed("Race").why(), "getting the Cyborg race first")
+    world.player.Data.Race.Value = "Cyborg"
+    check("cyborg: done once the race is Cyborg", taskNamed("GetCyborg").done())
+    eq("then nothing wanted", KTasks.raceWanted(), nil)
+    KConfig.load({ GetRace = "Ghoul" })
+    check("ghoul: ready when wanted", taskNamed("GetGhoul").ready())
+    KConfig.load({ GetRace = "Ghoul", Skip = { Race = true } })
+    eq("Skip.Race: no race change", KTasks.raceWanted(), nil)
+    KConfig.reset()
+end
+
 -- Soul Reaper is left alive (and not summoned) during CDK's evil trials 4 / 5.
 lateSetup({}, { getColors = colours(true), CDKQuest = function() return { Good = 4, Evil = -5 } end })
 do
