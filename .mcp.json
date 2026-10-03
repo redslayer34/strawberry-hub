@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "strawberry": {
+      "command": "node",
+      "args": ["mcp/src/server.js"]
+    }
+  }
+}

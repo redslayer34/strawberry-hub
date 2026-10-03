@@ -8,7 +8,23 @@ l'arbre du jeu, lancer **Cobalt** (remote spy) et lire ses logs, charger et suiv
 Claude Code ──stdio──> mcp/src/server.js ──HTTP (port 7777, token)──> bridge.lua dans Arceus X
 ```
 
-## Installation (une fois)
+## Installation rapide (recommandée)
+
+Dans **PowerShell** (de préférence « Exécuter en tant qu'administrateur », pour ouvrir le port) :
+
+```powershell
+irm https://raw.githubusercontent.com/redslayer34/strawberry-hub/claude/repo-exploration-ez26bn/mcp/install.ps1 | iex
+```
+
+Il installe Node.js si besoin (winget), met le MCP dans `%USERPROFILE%\StrawberryMCP`, fait
+`npm install`, copie `Cobalt.luau` depuis Téléchargements/Bureau s'il le trouve, ouvre le port
+7777 (réseau privé), déclare le MCP dans Claude Code (`claude mcp add --scope user strawberry`)
+et affiche la ligne à lancer dans Arceus X. Relancer la commande = mise à jour (token et Cobalt
+gardés). Ligne Arceus X à nouveau : `npm run loader` dans `%USERPROFILE%\StrawberryMCP`.
+
+Dans le repo cloné, `.mcp.json` déclare aussi le MCP pour Claude Code lancé à la racine du repo.
+
+## Installation manuelle
 
 1. Installe **Node.js 20+** : https://nodejs.org (version LTS).
 2. Récupère le repo (branche `claude/repo-exploration-ez26bn`), puis dans un terminal :
