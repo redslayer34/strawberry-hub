@@ -207,6 +207,10 @@ function Enemies.knownNames()
     if spawns then
         for _, node in ipairs(spawns:GetChildren()) do add(node.Name) end
     end
+    local replicated = Enemies.replicatedSpawns()
+    if replicated then
+        for _, node in ipairs(replicated:GetChildren()) do add(node.Name) end
+    end
     local enemies = folder()
     if enemies then
         for _, model in ipairs(enemies:GetChildren()) do add(model.Name) end
@@ -225,6 +229,12 @@ end
 local spawnCache = {}
 local missCache = {}
 Enemies.MISS_RETRY = 5
+
+-- ReplicatedStorage's copy of every mob spawn point, or nil.
+Enemies.REPLICATED_SPAWNS = "FortBuilderReplicatedSpawnPositionsFolder"
+function Enemies.replicatedSpawns()
+    return game:GetService("ReplicatedStorage"):FindFirstChild(Enemies.REPLICATED_SPAWNS)
+end
 
 local function scan(list, name, into, seen)
     for _, node in ipairs(list) do
@@ -246,6 +256,11 @@ function Enemies.spawnPoints(name)
     local origin = workspace:FindFirstChild("_WorldOrigin")
     local spawns = origin and origin:FindFirstChild("EnemySpawns")
     if spawns then scan(spawns:GetChildren(), name, points, seen) end
+
+    -- Every mob spawn, replicated whatever streaming does (the 3tn Kaitun
+    -- reads it): finds the Shandas on the Upper Skylands from anywhere.
+    local replicated = #points == 0 and Enemies.replicatedSpawns()
+    if replicated then scan(replicated:GetChildren(), name, points, seen) end
 
     if #points == 0 and getnilinstances then
         local ok, list = pcall(getnilinstances)

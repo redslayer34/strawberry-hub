@@ -514,6 +514,14 @@ do
     eq("nil-parented spawn parts are found", Enemies.spawnPoints("Ghost")[1], hidden)
     Enemies.MISS_RETRY = 5
     getnilinstances = nil
+
+    -- ReplicatedStorage's copy of the spawns: found when streaming has not
+    -- loaded the mob's island (the Shandas on the Upper Skylands).
+    local replicated = folder("FortBuilderReplicatedSpawnPositionsFolder", game:GetService("ReplicatedStorage"))
+    local shanda = part("Shanda", Vector3.new(-5975, 5469, 1800), replicated)
+    eq("replicated spawn found", Enemies.spawnPoints("Shanda")[1], shanda)
+    check("replicated spawn listed in known names", table.concat(Enemies.knownNames(), ","):find("Shanda", 1, true) ~= nil)
+    replicated.Parent = nil
 end
 
 ---------------------------------------------------------------------------
