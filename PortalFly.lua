@@ -63,8 +63,8 @@ layout.Padding = UDim.new(0, 3)
 layout.Parent = panel
 
 local status = Instance.new("TextLabel")
-status.Size = UDim2.new(0, 240, 0, 22)
-status.Position = UDim2.new(1, -250, 0, 36)
+status.Size = UDim2.new(0, 240, 0, 44)
+status.Position = UDim2.new(1, -250, 0, 14)
 status.BackgroundColor3 = Color3.fromRGB(200, 40, 70)
 status.TextColor3 = Color3.new(1, 1, 1)
 status.TextSize = 12
@@ -208,6 +208,17 @@ local function describe(value)
     return tostring(value)
 end
 
+-- GetUnlockables: the game checks it before a portal (first answer: a
+-- table with DefeatedIndraTrueForm / FlamingoAccess; second: the level).
+local function access()
+    local commF = game:GetService("ReplicatedStorage").Remotes.CommF_
+    local ok, unlocks, level = pcall(function() return commF:InvokeServer("GetUnlockables") end)
+    if not ok then return "GetUnlockables failed" end
+    local t = type(unlocks) == "table" and unlocks or {}
+    return string.format("Indra %s, Flamingo %s, level %s, streaming %s", tostring(t.DefeatedIndraTrueForm),
+        tostring(t.FlamingoAccess), tostring(level), tostring(workspace.StreamingEnabled))
+end
+
 -- The game's way: requestEntrance(arg), then the character is put on the
 -- answer when it is a Vector3.
 local function enter(name, arg)
@@ -217,7 +228,8 @@ local function enter(name, arg)
     if ok and typeof(answer) == "Vector3" and hrp and hrp.Parent then
         hrp.CFrame = CFrame.new(answer)
     end
-    status.Text = string.format("%s: requestEntrance(%s) -> %s", name, describe(arg), ok and describe(answer) or "error")
+    status.Text = string.format("%s: requestEntrance(%s) -> %s  [%s]", name, describe(arg),
+        ok and describe(answer) or "error", access())
     print("[PortalFly] " .. status.Text)
 end
 
@@ -262,6 +274,7 @@ row("Stop flight", Color3.fromRGB(120, 30, 30), function()
     status.Text = "Flight stopped"
 end)
 row("Scan the map for portals", Color3.fromRGB(40, 120, 60), scan)
+row("Check portal access", Color3.fromRGB(40, 90, 120), function() status.Text = access() end)
 for _, spot in ipairs(SPOTS[sea] or {}) do
     row(spot[1], Color3.fromRGB(70, 70, 70), function() flyNear(spot[1], spot[2]) end)
 end
