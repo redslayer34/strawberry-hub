@@ -42,6 +42,8 @@ test("the client script comes with host, port and token filled in", async () => 
   assert.ok(source.includes('token = "secret"'));
   assert.ok(source.includes(`port = "${bridge.port}"`));
   assert.ok(!source.includes("{{"));
+  assert.equal(Number(response.headers.get("content-length")), Buffer.byteLength(source));
+  assert.equal(response.headers.get("transfer-encoding"), null);
 });
 
 test("Cobalt is served from COBALT_PATH", async () => {

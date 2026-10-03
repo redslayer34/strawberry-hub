@@ -171,9 +171,15 @@ export class Bridge {
 
   async handle(req, res) {
     const url = new URL(req.url, "http://bridge");
+    // Always a Content-Length: without it Node answers in chunks, and some
+    // executors' HttpGet (Arceus X) read a chunked answer as empty.
     const send = (status, body, type = "application/json") => {
-      res.writeHead(status, { "content-type": type });
-      res.end(type === "application/json" && typeof body !== "string" ? JSON.stringify(body) : body);
+      const text = type === "application/json" && typeof body !== "string" ? JSON.stringify(body) : String(body);
+      res.writeHead(status, {
+        "content-type": type.startsWith("text/") ? `${type}; charset=utf-8` : type,
+        "content-length": Buffer.byteLength(text),
+      });
+      res.end(text);
     };
     if (!this.authorized(req, url)) return send(403, { error: "bad token" });
 
@@ -203,7 +209,7 @@ export class Bridge {
           if (done) return;
           done = true;
           this.waiters = this.waiters.filter((waiter) => waiter !== deliver);
-          res.writeHead(204);
+          res.writeHead(204, { "content-length": 0 });
           res.end();
         }, this.pollWait ?? POLL_WAIT);
         const deliver = (next) => {
