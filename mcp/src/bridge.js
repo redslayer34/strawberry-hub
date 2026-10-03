@@ -40,7 +40,16 @@ export class Ring {
   }
 }
 
-// The PC's IPv4 LAN addresses (MuMu reaches the PC through one of them).
+// The PC's IPv4 LAN addresses (MuMu reaches the PC through one of them),
+// the home network first (192.168.1.x...), virtual adapters (VirtualBox's
+// 192.168.56.x) next, self-assigned 169.254.x.x (no network) last.
+export function addressRank(address) {
+  if (address.startsWith("169.254.")) return 3;
+  if (address.startsWith("192.168.56.")) return 1;
+  if (address.startsWith("192.168.") || address.startsWith("10.")) return 0;
+  return 2;
+}
+
 export function lanAddresses() {
   const out = [];
   for (const list of Object.values(os.networkInterfaces())) {
@@ -48,7 +57,7 @@ export function lanAddresses() {
       if (nic.family === "IPv4" && !nic.internal) out.push(nic.address);
     }
   }
-  return out;
+  return out.sort((a, b) => addressRank(a) - addressRank(b));
 }
 
 // The token, created once and kept next to the server.

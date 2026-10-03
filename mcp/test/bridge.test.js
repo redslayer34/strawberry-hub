@@ -6,6 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Bridge, Ring, luaPathFor } from "./helpers.js";
+import { addressRank } from "../src/bridge.js";
 
 let bridge;
 let base;
@@ -102,4 +103,9 @@ test("the ring keeps the newest entries", () => {
 test("the loader line points at the bridge", () => {
   assert.equal(bridge.loader("10.0.0.5"),
     `loadstring(game:HttpGet("http://10.0.0.5:${bridge.port}/bridge.lua?token=secret"))()`);
+});
+
+test("the home network address comes before virtual and self-assigned ones", () => {
+  const sorted = ["169.254.83.107", "192.168.56.1", "192.168.1.145"].sort((a, b) => addressRank(a) - addressRank(b));
+  assert.deepEqual(sorted, ["192.168.1.145", "192.168.56.1", "169.254.83.107"]);
 });
