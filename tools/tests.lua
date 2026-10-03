@@ -2708,6 +2708,7 @@ end
 itemsSetup(7449423635, 2000, {}, { TushitaProgress = function(what) if what == nil then return { OpenedDoor = false } end end })
 do
     Settings.set("ItemTushita", true)
+    check("island not loaded, no rip_indra: tushita waits (no back and forth)", not Swords.tushita.enabled())
     local island = folder("IslandModel", folder("Waterfall", folder("Map", workspace)))
     part("Hitbox", Vector3.new(30, 0, 0), island)
     check("no rip_indra: tushita waits", not Swords.tushita.enabled())

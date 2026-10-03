@@ -142,8 +142,13 @@ Swords.tushita = Mode({
     want = function()
         if Common.owns("Tushita") then return false end
         if tushitaProgress().OpenedDoor then return Enemies.findBoss("Longma") ~= nil end
+        if Common.has("Holy Torch") then return true end
+        -- The torch is only out while rip_indra is up. An island not loaded
+        -- is not a reason to go there: flying in loaded it, showed no torch,
+        -- the farm flew away, it unloaded... (back and forth in the video).
         local hitbox = tushitaHitbox()
-        return not hitbox or hitbox:FindFirstChild("TouchInterest") ~= nil or Common.has("Holy Torch")
+        if hitbox then return hitbox:FindFirstChild("TouchInterest") ~= nil end
+        return Enemies.findBoss("rip_indra True Form") ~= nil
     end,
     idleStatus = "Owned, or waiting for rip_indra / Longma",
     tick = function(mode)
