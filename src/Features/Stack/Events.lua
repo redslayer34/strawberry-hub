@@ -93,15 +93,21 @@ end
 local fruit = { name = "Fruit" }
 Events.fruit = fruit
 
-Events.FRUIT_GIVE_UP = 60      -- seconds on one fruit that cannot be picked up
+Events.FRUIT_GIVE_UP = 60          -- seconds on one fruit that cannot be picked up
+Events.FRUIT_REACHED_GIVE_UP = 8   -- seconds touching one that stays on the ground
 local ignoredFruits = setmetatable({}, { __mode = "k" })
-local chasing, chasingSince
+local chasing, chasingSince, reachedSince
 
+-- A fruit on the ground. One marked "Ignored" (on it or its Handle: the
+-- gacha's reward model, display copies) cannot be taken: Banana and Vxeze
+-- skip those too.
 function Events.groundFruit()
     for _, child in ipairs(workspace:GetChildren()) do
-        if (child:IsA("Tool") or child:IsA("Model")) and child.Name:find("Fruit", 1, true)
-            and child:FindFirstChild("Handle") and not ignoredFruits[child] then
-            return child
+        if (child:IsA("Tool") or child:IsA("Model")) and child.Name:find("Fruit", 1, true) and not ignoredFruits[child] then
+            local handle = child:FindFirstChild("Handle")
+            if handle and not child:FindFirstChild("Ignored") and not handle:FindFirstChild("Ignored") then
+                return child
+            end
         end
     end
     return nil
@@ -121,15 +127,20 @@ function fruit.tick(mode)
     if not found then return "No fruit" end
     -- A fruit that never comes (out of reach, someone else's): left alone,
     -- since this event runs above every farm.
-    if found ~= chasing then chasing, chasingSince = found, os.clock() end
-    if os.clock() - chasingSince > Events.FRUIT_GIVE_UP then
+    if found ~= chasing then chasing, chasingSince, reachedSince = found, os.clock(), nil end
+    local handle = found.Handle
+    local reached = Common.near(handle.Position, 5)
+    if reached then reachedSince = reachedSince or os.clock() end
+    -- A real fruit is picked up on touch: one still there after a while of
+    -- touching it, or never reached, is not for us.
+    if os.clock() - chasingSince > Events.FRUIT_GIVE_UP
+        or (reachedSince and os.clock() - reachedSince > Events.FRUIT_REACHED_GIVE_UP) then
         ignoredFruits[found] = true
-        chasing = nil
+        chasing, reachedSince = nil, nil
         return "Leaving " .. found.Name .. " (cannot pick it up)"
     end
-    local handle = found.Handle
     Common.goTo(handle.CFrame)
-    if Common.near(handle.Position, 5) then
+    if reached then
         Common.touch(handle)
         local humanoid = Player.humanoid()
         if humanoid then humanoid.Jump = true end

@@ -1933,6 +1933,31 @@ do
     StackCommon.HOP_AFTER = 15
 end
 
+-- Fruits that cannot be taken: marked Ignored (the gacha's reward model),
+-- or still on the ground after a while of touching them.
+stackSetup()
+do
+    Settings.set("StackFruit", true)
+    local StackEvents = require("Features.Stack.Events")
+    local shown = tool("Rocket Fruit", workspace)
+    newInstance("BoolValue", "Ignored", shown.Handle)
+    eq("Ignored fruit: not a ground fruit", StackEvents.groundFruit(), nil)
+    check("Ignored fruit: stack stays off", not StackEvents.fruit.want())
+    shown.Parent = nil
+
+    local stuck = tool("Kilo Fruit", workspace)
+    stuck.Handle.Position = Vector3.new(2, 0, 0)
+    local giveUp = StackEvents.FRUIT_REACHED_GIVE_UP
+    StackEvents.FRUIT_REACHED_GIVE_UP = -1
+    local fake = {}
+    local first = StackEvents.fruit.tick(fake)
+    local second = StackEvents.fruit.tick(fake)
+    check("touched and still there: left alone", tostring(first):find("Leaving", 1, true) ~= nil
+        or tostring(second):find("Leaving", 1, true) ~= nil, tostring(first) .. " / " .. tostring(second))
+    eq("then no ground fruit", StackEvents.groundFruit(), nil)
+    StackEvents.FRUIT_REACHED_GIVE_UP = giveUp
+end
+
 -- Pirate raid: raiders near the castle, not the excluded ones.
 stackSetup()
 do
