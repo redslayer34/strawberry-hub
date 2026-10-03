@@ -102,20 +102,44 @@ function Fruits.roll()
     local box = bannerBox()
     local commF = Services.commF()
     if not commF then return false end
-    local ok, _, level = pcall(function() return commF:InvokeServer("Cousin", "Check", box) end)
-    if not (ok and type(level) == "number") then level = Player.level() end
-    if (level or 0) < 50 then return false end
+    local ok, money, level, price = pcall(function() return commF:InvokeServer("Cousin", "Check", box) end)
+    if not ok then money, level, price = nil, nil, nil end
+    if type(level) ~= "number" then level = Player.level() end
+    Fruits.answers = { box = box, money = money, price = price }
+    if (level or 0) < 50 then
+        Fruits.answers.result = "level < 50"
+        return false
+    end
     local time = Services.invoke("Cousin", "CheckTime", box)
+    Fruits.answers.time = time
     if type(time) == "number" and time > 0 then serverLeft = { seconds = time, at = os.time() } end
-    if Services.invoke("Cousin", box) == 1 then
+    local result = Services.invoke("Cousin", box)
+    Fruits.answers.result = result
+    if result == 1 then
         rolled()
         return true
     end
     return false
 end
 
+-- The Cousin's last answers, short, for the screen: why no spin happens.
+local function short(value)
+    if type(value) == "number" and value >= 1e6 then
+        return (string.format("%.1fM", value / 1e6):gsub("%.0M", "M"))
+    elseif type(value) == "number" and value >= 1e3 then
+        return (string.format("%.0fk", value / 1e3))
+    end
+    return tostring(value)
+end
+function Fruits.rollInfo()
+    local a = Fruits.answers
+    if not a then return nil end
+    return string.format("Beli %s / %s, time %s, roll %s%s", short(a.money), short(a.price), tostring(a.time),
+        tostring(a.result), a.box ~= "DLCBoxData" and (", " .. tostring(a.box)) or "")
+end
+
 -- Test hook.
-function Fruits.resetRoll() lastRollAt, serverLeft = nil, nil end
+function Fruits.resetRoll() lastRollAt, serverLeft, Fruits.answers = nil, nil, nil end
 
 -- Closes the spin animation's window (Teddy: the close button, then
 -- hidden). Never holds the next roll back.

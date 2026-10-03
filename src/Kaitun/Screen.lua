@@ -308,9 +308,11 @@ function Screen.lines()
         Time = "Time: " .. clock(session) .. "  •  Total: " .. clock(totalBefore + session),
         Spin = safe(function()
             local left = Fruits.nextRollIn()
-            if left == nil then return "Next fruit spin: unknown yet" end
-            if left <= 0 then return "Next fruit spin: now" end
-            return "Next fruit spin: " .. clock(left)
+            local info = Fruits.rollInfo()
+            info = info and ("  (" .. info .. ")") or ""
+            if left == nil then return "Next fruit spin: unknown yet" .. info end
+            if left <= 0 then return "Next fruit spin: now" .. info end
+            return "Next fruit spin: " .. clock(left) .. info
         end),
         Task = safe(function()
             local task = status.task and (status.task .. (status.detail and (" (" .. status.detail .. ")") or ""))

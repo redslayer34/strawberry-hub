@@ -4848,6 +4848,7 @@ do
         if action == "Cousin" then return allowed and 1 or 0 end
     end
     check("spin: not allowed yet", not FruitsModule.roll())
+    eq("spin: the answers shown", FruitsModule.rollInfo(), "Beli 1M / 50k, time 3000, roll 0")
     local left = FruitsModule.nextRollIn()
     check("spin: the server's time left", left and left <= 3000 and left > 2990, tostring(left))
     allowed = true
