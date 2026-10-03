@@ -1,8 +1,8 @@
 --=============================================================================
 -- FRUITS — gacha roll, storing, fruit sniper, awakening (background loop)
 --=============================================================================
---    Random fruit   the Cousin's gacha: rolled when the server says the
---                   player may (level 50, enough money, cooldown over)
+--    Random fruit   the Cousin's gacha (v30: Net RF/GachaNetworkRF), once
+--                   every 2 h from level 50
 --    Store fruit    every fruit tool held goes to the fruit storage (once
 --                   per tool), with an optional webhook report by rarity
 --    Sniper         buys a wanted fruit when the stock has it on sale and
@@ -44,22 +44,31 @@ end
 -- Random fruit (Cousin)
 ---------------------------------------------------------------------------
 
+-- The box to buy: the event banner's when one is on, else the Cousin's
+-- own gacha (v30: "ZiolesGacha", seen with a remote spy on a hand spin).
+Fruits.GACHA_BOX = "ZiolesGacha"
+Fruits.GACHA_REMOTE = "RF/GachaNetworkRF"
+
 local function bannerBox()
     local banner = Services.module("Controllers.BannerClient")
     if type(banner) == "table" and banner.TryGetBannerItemIfActiveAsync then
         local ok, item = pcall(banner.TryGetBannerItemIfActiveAsync)
         if ok and type(item) == "table" and item.BoxName then return item.BoxName end
     end
-    return "DLCBoxData"
+    return nil
 end
 
--- When the next roll is allowed: the Cousin rolls once every ROLL_COOLDOWN.
 -- The time of the last roll is kept per account in the workspace (os.time,
--- survives a rejoin); CheckTime answering a number of seconds wins.
+-- survives a rejoin). After a roll nothing is bought for ROLL_COOLDOWN (the
+-- Cousin's 2 h; the spin costs Beli and must never be bought in a loop).
+-- A refused one is tried again after RETRY_EVERY.
 Fruits.ROLL_COOLDOWN = 7200
-Fruits.ROLL_EVERY = 10        -- seconds between two roll tries
+Fruits.ROLL_EVERY = 10        -- seconds between two looks at the roll
+Fruits.RETRY_EVERY = 60       -- seconds after a refused roll
 local lastRollAt          -- os.time() of the last roll, or false (unknown)
-local serverLeft          -- { seconds, at = os.time() } from CheckTime
+local serverLeft          -- { seconds, at = os.time() } from CheckTime (old remote)
+local lastTry             -- os.clock() of the last refused try
+local boxTurn = 0         -- which box is tried (banner, then the Cousin's)
 
 local function rollFile()
     local player = Services.player()
@@ -78,7 +87,7 @@ end
 
 local function rolled()
     lastRollAt = os.time()
-    serverLeft = nil
+    serverLeft, lastTry = nil, nil
     pcall(function()
         if not writefile then return end
         if makefolder and isfolder and not isfolder("StrawberryHub") then makefolder("StrawberryHub") end
@@ -94,52 +103,121 @@ function Fruits.nextRollIn()
     return nil
 end
 
--- Tries a roll. Check / CheckTime only feed the countdown: the roll itself
--- is asked for anyway, as Teddy does (the server refuses one too early or
--- too poor; a gate on their answers kept the roll from ever happening).
--- Returns true when a fruit was rolled.
-function Fruits.roll()
-    local box = bannerBox()
-    local commF = Services.commF()
-    if not commF then return false end
-    local ok, money, level, price = pcall(function() return commF:InvokeServer("Cousin", "Check", box) end)
-    if not ok then money, level, price = nil, nil, nil end
-    if type(level) ~= "number" then level = Player.level() end
-    Fruits.answers = { box = box, money = money, price = price }
-    if (level or 0) < 50 then
-        Fruits.answers.result = "level < 50"
-        return false
+-- A server answer, short (tables as key=value).
+local function describe(value)
+    if type(value) ~= "table" then return tostring(value) end
+    local parts = {}
+    for key, inner in pairs(value) do
+        parts[#parts + 1] = tostring(key) .. "=" .. (type(inner) == "table" and "{..}" or tostring(inner))
+        if #parts >= 4 then break end
     end
-    local time = Services.invoke("Cousin", "CheckTime", box)
-    Fruits.answers.time = time
-    if type(time) == "number" and time > 0 then serverLeft = { seconds = time, at = os.time() } end
-    local result = Services.invoke("Cousin", box)
-    Fruits.answers.result = result
-    if result == 1 then
-        rolled()
-        return true
+    table.sort(parts)
+    return "{" .. table.concat(parts, " ") .. "}"
+end
+
+local function fruitCount()
+    local count, player = 0, Services.player()
+    for _, container in ipairs({ player and player:FindFirstChild("Backpack"), Player.character() }) do
+        for _, tool in ipairs(container and container:GetChildren() or {}) do
+            if tool:IsA("Tool") and tool.Name:find("Fruit", 1, true) then count = count + 1 end
+        end
+    end
+    return count
+end
+
+local function spinnerOpen()
+    local player = Services.player()
+    local window = player and Services.find(player, "PlayerGui.SpinnerWindow")
+    if not window then return false end
+    local ok, shown = pcall(function()
+        if window:IsA("ScreenGui") then return window.Enabled end
+        return window.Visible
+    end)
+    return ok and shown == true
+end
+
+-- An answer that says no by itself.
+local function refused(result)
+    if result == nil or result == false or type(result) == "string" then return true end
+    if type(result) == "number" then return result ~= 1 end
+    if type(result) == "table" then
+        return result.Success == false or result.success == false or result.Error ~= nil or result.error ~= nil
     end
     return false
 end
 
--- The Cousin's last answers, short, for the screen: why no spin happens.
-local function short(value)
-    if type(value) == "number" and value >= 1e6 then
-        return (string.format("%.1fM", value / 1e6):gsub("%.0M", "M"))
-    elseif type(value) == "number" and value >= 1e3 then
-        return (string.format("%.0fk", value / 1e3))
+-- The new gacha (v30): Net RF/GachaNetworkRF { Context = "Purchase",
+-- BoxName = box }. A roll is taken as done when the Beli went down, a
+-- fruit came in, or the spin window opened; or the answer says so.
+local function purchase(remote, box)
+    local beli, fruits, spinner = Player.data("Beli") or 0, fruitCount(), spinnerOpen()
+    local ok, result = pcall(function()
+        return remote:InvokeServer({ Context = "Purchase", BoxName = box })
+    end)
+    if not ok then result = nil end
+    Fruits.answers = { box = box, result = describe(result) }
+    for _ = 1, 6 do
+        if (Player.data("Beli") or 0) < beli or fruitCount() > fruits or (spinnerOpen() and not spinner) then
+            return true
+        end
+        task.wait(0.5)
     end
-    return tostring(value)
+    return result == true or result == 1 or (type(result) == "table" and (result.Success == true or result.success == true))
+        or (result ~= nil and not refused(result))
 end
+
+-- The old Cousin remote (before v30), for a game that still has it.
+local function cousin(box)
+    local time = Services.invoke("Cousin", "CheckTime", box)
+    if type(time) == "number" and time > 0 then serverLeft = { seconds = time, at = os.time() } end
+    local result = Services.invoke("Cousin", box)
+    Fruits.answers = { box = box, result = describe(result), time = time }
+    return result == 1
+end
+
+-- Tries a roll when one may be due. Returns true when a fruit was rolled.
+function Fruits.roll()
+    if (Player.level() or 0) < 50 then
+        Fruits.answers = { result = "level < 50" }
+        return false
+    end
+    local last = lastRoll()
+    if last and os.time() - last < Fruits.ROLL_COOLDOWN then return false end
+    if lastTry and os.clock() - lastTry < Fruits.RETRY_EVERY then return false end
+    local banner = bannerBox()
+    local boxes = { Fruits.GACHA_BOX }
+    if banner and banner ~= "DLCBoxData" and banner ~= Fruits.GACHA_BOX then table.insert(boxes, 1, banner) end
+    boxTurn = boxTurn % #boxes + 1
+    local box = boxes[boxTurn]
+    local remote = Common.net(Fruits.GACHA_REMOTE)
+    local done
+    if remote then
+        done = purchase(remote, box)
+    else
+        done = cousin(banner or "DLCBoxData")
+    end
+    if done then
+        rolled()
+        return true
+    end
+    lastTry = os.clock()
+    return false
+end
+
+-- The last answers, short, for the screen: why no spin happens.
 function Fruits.rollInfo()
     local a = Fruits.answers
     if not a then return nil end
-    return string.format("Beli %s / %s, time %s, roll %s%s", short(a.money), short(a.price), tostring(a.time),
-        tostring(a.result), a.box ~= "DLCBoxData" and (", " .. tostring(a.box)) or "")
+    local text = "roll " .. tostring(a.result)
+    if a.box then text = text .. ", " .. tostring(a.box) end
+    if a.time ~= nil then text = text .. ", time " .. tostring(a.time) end
+    return text
 end
 
 -- Test hook.
-function Fruits.resetRoll() lastRollAt, serverLeft, Fruits.answers = nil, nil, nil end
+function Fruits.resetRoll()
+    lastRollAt, serverLeft, lastTry, boxTurn, Fruits.answers = nil, nil, nil, 0, nil
+end
 
 -- Closes the spin animation's window (Teddy: the close button, then
 -- hidden). Never holds the next roll back.

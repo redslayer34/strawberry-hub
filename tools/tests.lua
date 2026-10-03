@@ -2390,42 +2390,64 @@ local function batchBSetup(place, level)
     Raids.reset()
 end
 
--- Random fruit: rolled only when the Cousin allows it.
+-- Random fruit (v30): the Net gacha remote, once per cooldown.
+local function gachaRemote(answer)
+    local remote = newInstance("RemoteFunction", "RF/GachaNetworkRF", folder("Net", folder("Modules", game:GetService("ReplicatedStorage"))))
+    local beli = world.player.Data:FindFirstChild("Beli") or newInstance("IntValue", "Beli", world.player.Data)
+    beli.Value = 5000000
+    remote.OnInvoke = function(request)
+        if answer == "pay" then beli.Value = beli.Value - 1000000 return nil end
+        return answer
+    end
+    return remote
+end
+
 batchBSetup()
 do
-    local level = 40
-    world.commF.OnInvoke = function(action, what)
-        if action == "Cousin" and what == "Check" then return 5000000, level, 1000000 end
-        if action == "Cousin" and what == "CheckTime" then return true end
-        if action == "Cousin" then return 1 end
-    end
+    Fruits.resetRoll()
+    local remote = gachaRemote("pay")
+    world.player.Data.Level.Value = 40
     check("below level 50: no roll", not Fruits.roll())
-    level = 60
-    check("allowed: rolled", Fruits.roll())
-    local rolls = 0
-    for _, call in ipairs(world.commF.Invoked) do
-        if call[1] == "Cousin" and call[2] == "DLCBoxData" then rolls = rolls + 1 end
-    end
-    eq("one roll with the default box", rolls, 1)
+    eq("below level 50: nothing bought", #(remote.Invoked or {}), 0)
+    world.player.Data.Level.Value = 60
+    check("allowed: rolled (the Beli went down)", Fruits.roll())
+    local request = remote.Invoked and remote.Invoked[1] and remote.Invoked[1][1]
+    eq("purchase context", request and request.Context, "Purchase")
+    eq("the Cousin's box", request and request.BoxName, "ZiolesGacha")
+    check("right after: no second purchase", not Fruits.roll())
+    eq("one purchase only", #remote.Invoked, 1)
+    remote.Parent = nil
+    Fruits.resetRoll()
+end
+
+-- A refused roll: shown, and tried again only after a while.
+batchBSetup()
+do
+    Fruits.resetRoll()
+    world.player.Data.Level.Value = 900
+    local remote = gachaRemote("Cooldown")
+    check("refused: no roll", not Fruits.roll())
+    eq("refused: the answer shown", Fruits.rollInfo(), "roll Cooldown, ZiolesGacha")
+    check("refused: not asked again at once", not Fruits.roll())
+    eq("refused: one try", #remote.Invoked, 1)
+    remote.Parent = nil
+    Fruits.resetRoll()
 end
 
 -- An open spin window never holds the next roll back.
 batchBSetup()
 do
-    world.commF.OnInvoke = function(action, what)
-        if action == "Cousin" and what == "Check" then return 5000000, 900, 1000000 end
-        if action == "Cousin" then return 0 end
-    end
+    Fruits.resetRoll()
+    world.player.Data.Level.Value = 900
+    local remote = gachaRemote("pay")
     local gui = world.player:FindFirstChild("PlayerGui") or newInstance("Folder", "PlayerGui", world.player)
     newInstance("ScreenGui", "SpinnerWindow", gui).Enabled = true
     Settings.set("FruitRandom", true)
     Fruits.step()
-    local rolls = 0
-    for _, call in ipairs(world.commF.Invoked) do
-        if call[1] == "Cousin" and call[2] == "DLCBoxData" then rolls = rolls + 1 end
-    end
-    eq("spin window open: still rolls", rolls, 1)
+    eq("spin window open: still rolls", #(remote.Invoked or {}), 1)
     Settings.set("FruitRandom", false)
+    remote.Parent = nil
+    Fruits.resetRoll()
 end
 
 -- Store fruit: once per tool, reported when the rarity is wanted.
@@ -4840,18 +4862,19 @@ setup()
 do
     local FruitsModule = require("Features.Fruits")
     FruitsModule.resetRoll()
+    world.player.Data.Level.Value = 900
     eq("spin: unknown at first", FruitsModule.nextRollIn(), nil)
-    local allowed = false
+    -- A game without the Net gacha: the old Cousin remote and its time.
     world.commF.OnInvoke = function(action, arg)
-        if action == "Cousin" and arg == "Check" then return 1000000, 900, 50000 end
-        if action == "Cousin" and arg == "CheckTime" then return allowed or 3000 end
-        if action == "Cousin" then return allowed and 1 or 0 end
+        if action == "Cousin" and arg == "CheckTime" then return 3000 end
+        if action == "Cousin" then return 0 end
     end
     check("spin: not allowed yet", not FruitsModule.roll())
-    eq("spin: the answers shown", FruitsModule.rollInfo(), "Beli 1M / 50k, time 3000, roll 0")
+    eq("spin: the answers shown", FruitsModule.rollInfo(), "roll 0, DLCBoxData, time 3000")
     local left = FruitsModule.nextRollIn()
     check("spin: the server's time left", left and left <= 3000 and left > 2990, tostring(left))
-    allowed = true
+    FruitsModule.resetRoll()
+    world.commF.OnInvoke = function(action) if action == "Cousin" then return 1 end end
     check("spin: rolled", FruitsModule.roll())
     left = FruitsModule.nextRollIn()
     check("spin: two hours from now", left and left > 7190, tostring(left))
