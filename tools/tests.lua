@@ -1639,48 +1639,55 @@ do
     near("leaves from the dock", plan.dock, Router.DOCK)
 end
 
--- Sea 1 entrances, Teddy's way: called from anywhere, no door to reach.
+-- Sea 1 portals, the game's way: fly to the portal, requestEntrance(far
+-- side), then the character goes where the server answers.
 setup()
 do
     game.PlaceId = 2753915549
     local town = Vector3.new(-655, 7, 1436)
     local city = Vector3.new(61100, 12, 1800)
-    eq("to the Underwater City: entrance", Router.plan(town, city).name, "Underwater City entrance")
+    local plan = Router.plan(town, city)
+    eq("to the Underwater City: entrance", plan.name, "Underwater City entrance")
+    near("from its portal", plan.dock, Vector3.new(4050, 6, -1815))
     eq("out of the Underwater City: exit", Router.plan(city, town).name, "Underwater City exit")
     eq("inside the city: fly", Router.plan(city, city + Vector3.new(0, 0, 1000)).kind, "direct")
-    check("to the Upper Sky: no entrance (flies)", Router.plan(town, Vector3.new(-7894, 5545, -380)).kind ~= "entrance")
-    eq("to the Sky: entrance", Router.plan(town, Vector3.new(-4607, 872, -1667)).name, "Sky entrance")
+    local upper = Vector3.new(-7894, 5545, -380)
+    check("Upper Sky portal not loaded: flies", Router.plan(town, upper).kind ~= "entrance")
+    local map = workspace:FindFirstChild("Map") or folder("Map", workspace)
+    local sky = folder("Sky", map)
+    local skyPortal = part("Entrance", Vector3.new(-4600, 880, -1600), sky)
+    local upperPlan = Router.plan(town, upper)
+    eq("Upper Sky portal loaded: entrance", upperPlan.name, "Upper Sky entrance")
+    near("from the Sky portal", upperPlan.dock, skyPortal.Position)
     eq("on the ground: no entrance", Router.plan(town, Vector3.new(-1100, 10, 3800)).kind ~= "entrance", true)
-    eq("already in the Sky: fly", Router.plan(Vector3.new(-4970, 717, -2622), Vector3.new(-4607, 872, -1667)).kind,
-        "direct")
 
+    -- Far from the portal: fly to it first.
+    local handled, aim = Router.update(town, upper, 300)
+    check("first to the portal", not handled and aim ~= nil and (aim - skyPortal.Position).Magnitude < 1)
     local asked
     world.commF.OnInvoke = function(name, dest)
         if name == "requestEntrance" then
             asked = dest
-            world.hrp.Position = dest   -- the server moves the character
+            return dest   -- the server answers where to go
         end
-        return true
     end
-    check("entrance taken at once", Router.update(town, city))
-    stepTasks()
-    check("requestEntrance called with the city", asked ~= nil and (asked - Router.ENTRANCES[1].dest).Magnitude < 1)
+    world.hrp.Position = skyPortal.Position
+    check("at the portal: taken", Router.update(skyPortal.Position, upper, 300))
     for _ = 1, 8 do stepTasks() end
-    eq("moved by the server and kept there: arrived", Router.lastTrip(), "Underwater City entrance")
+    near("asked for the far side", asked, Vector3.new(-6023.58, 5469.72, 2203.31))
+    check("put on the answer by the client", world.hrp.Position.Y > 5000, tostring(world.hrp.Position))
+    eq("arrived", Router.lastTrip(), "Upper Sky entrance")
 
-    -- The server does not move the character: paused, fly instead.
+    -- The server answers nothing: paused, fly instead.
     world.commF.OnInvoke = function() return nil end
     Router.reset()
-    world.hrp.Position = town
-    Router.update(town, Vector3.new(-4607, 872, -1667))
-    for _ = 1, 8 do
-        stepTasks()
-        world.hrp.Position = town
-    end
-    eq("put back: says so", Router.lastTrip(), "Sky entrance put back")
-    check("put back: not tried again", Router.plan(town, Vector3.new(-4607, 872, -1667)).kind ~= "entrance")
-    eq("already on the Upper Skylands: fly", Router.plan(Vector3.new(-7800, 5550, -300), Vector3.new(-7894, 5545, -380)).kind,
-        "direct")
+    local door = Vector3.new(4050, 6, -1815)
+    world.hrp.Position = door
+    Router.update(door, city, 300)
+    for _ = 1, 8 do stepTasks() end
+    eq("refused: says so", Router.lastTrip(), "Underwater City entrance refused")
+    check("refused: not tried again", Router.plan(town, city).kind ~= "entrance")
+    sky:Destroy()
 end
 
 -- Leaving the Temple of Time uses the game's way back.

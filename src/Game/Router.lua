@@ -8,9 +8,9 @@
 --    templeIn    Sea 3: into the temple, through the "Mysterious Force" NPC
 --                (race V4 progress Begin / Teleport), as Vxeze Hub does
 --    submarine   Sea 3: the only way to and from the Submerged Island
---    entrance    Sea 1 (Banana Cat Hub): into and out of the Underwater
---                City, up to the Sky (not the Upper Sky), from wherever the
---                character is: requestEntrance(dest), the server moves it
+--    entrance    Sea 1: the Underwater City and Upper Sky portals, the
+--                game's way: at the portal, requestEntrance(far side),
+--                then the character goes where the server answers
 --
 --  Then every way that fits is given an estimated time and the one that
 --  arrives first is taken; flying is a way too:
@@ -100,32 +100,43 @@ Router.WORKER = Vector3.new(-16269.4082, 23.9799957, 1371.66235)
 Router.DOCK = Vector3.new(11427.9189, -2156.36401, 9726.24023)
 Router.TIKI = Vector3.new(-16456.5, 530.3, 436.2)
 
--- Sea 1 entrances. The destinations are Banana Cat Hub's (3nn): the game
--- sends the character there when requestEntrance(dest) is asked, from
--- anywhere. Teddy's Upper Sky point (-6023, 5469, 2203) is out of date
--- (the user stayed stuck with it) and placing the character there by hand
--- got it put back: the server moves it, nothing else. `to(goal)` says
--- whether the goal is behind it, `inside(here)` whether the character
--- already is.
+-- Sea 1 portals, the game's own way (PlayerScripts.AnimateEntrance, seen
+-- by the user): at the portal, requestEntrance(the far side's point); the
+-- server answers a Vector3 and the CLIENT puts the character there. Asked
+-- from afar and without the move (what the hub did, after Teddy / Banana)
+-- it does nothing. `source` is the portal, `arg` the far side's point:
+-- map paths (Map, else MapStash) with the values seen in game as
+-- fallbacks. `to(goal)` says whether the goal is behind it, `inside(here)`
+-- whether the character already is.
 local function v(x, y, z) return Vector3.new(x, y, z) end
 local UNDERWATER = v(61163.8515625, 11.759522438049316, 1819.7841796875)
 local function underwater(position)
     return position.X > 55000 or (position - UNDERWATER).Magnitude < 3000
 end
-local SKY = v(-4607.82275390625, 872.5422973632812, -1667.556884765625)
+Router.UPPER_SKY_Y = 4000      -- above it: the Upper Skylands (SkyArea2)
 Router.ENTRANCES = {
-    { name = "Underwater City entrance", dest = UNDERWATER, arrived = 2000,
-        to = function(goal) return goal.X > 55000 or (goal - UNDERWATER).Magnitude < 4000 end,
-        inside = underwater },
-    { name = "Underwater City exit", dest = v(3876.280517578125, 35.10614013671875, -1939.3201904296875), arrived = 2000,
-        to = function(goal) return goal.X <= 55000 and (goal - UNDERWATER).Magnitude >= 4000 end,
+    { name = "Underwater City entrance",
+        source = { "TeleportSpawn/Entrance", v(4050, 6, -1815) },
+        arg = { "TeleportSpawn/EntrancePoint", UNDERWATER },
+        to = function(goal) return underwater(goal) end, inside = underwater },
+    { name = "Underwater City exit",
+        source = { "TeleportSpawn/Exit", v(61170, 1, 1952) },
+        arg = { "TeleportSpawn/ExitPoint", v(3864.6885, 6.74402, -1926.2141) },
+        to = function(goal) return not underwater(goal) end,
         inside = function(here) return not underwater(here) end },
-    -- No Upper Sky entrance: it kept the Shanda quest from working (the
-    -- user's tests, Teddy's point then Banana's); the character flies up.
-    { name = "Sky entrance", dest = SKY, arrived = 3000,
-        to = function(goal) return goal.Y >= 200 and goal.Y < 4000 and (goal - SKY).Magnitude < 3000 end,
-        inside = function(here) return here.Y >= 200 and (here - SKY).Magnitude <= 3000 end },
+    -- The Sky portal (break the clouds first): Skylands <-> Upper Skylands.
+    { name = "Upper Sky entrance",
+        source = { "Sky/Entrance" },
+        arg = { "SkyArea2/EntrancePoint", v(-6023.57666015625, 5469.7197265625, 2203.308349609375) },
+        to = function(goal) return goal.Y >= Router.UPPER_SKY_Y end,
+        inside = function(here) return here.Y >= Router.UPPER_SKY_Y end },
+    { name = "Upper Sky exit",
+        source = { "SkyArea2/Exit" },
+        arg = { "Sky/ExitPoint", v(-4166.60986328125, 1093.697998046875, -347.16226196289062) },
+        to = function(goal) return goal.Y < Router.UPPER_SKY_Y end,
+        inside = function(here) return here.Y < Router.UPPER_SKY_Y end },
 }
+Router.ENTRANCE_REACH = 6       -- studs from the portal where it is asked
 Router.ENTRANCE_TRIES = 3
 Router.ENTRANCE_EVERY = 0.5     -- seconds between two asks, watching for the move
 Router.ENTRANCE_CONFIRM = 1.5   -- seconds the server has to put the character back
@@ -417,13 +428,34 @@ function Router.templeProgress()
     return templeProgress.value
 end
 
+-- A portal part (Map, else MapStash) by its path, or nil.
+local function mapPart(path)
+    for _, top in ipairs({ workspace:FindFirstChild("Map"), Services.replicated():FindFirstChild("MapStash") }) do
+        local node = top
+        for name in string.gmatch(path, "[^/]+") do node = node and node:FindFirstChild(name) end
+        if node and node:IsA("BasePart") then return node end
+    end
+    return nil
+end
+
+-- A { path, fallback } spec's position now.
+local function specPoint(spec)
+    local part = spec and mapPart(spec[1])
+    return part and part.Position or (spec and spec[2])
+end
+Router.entrancePoint = specPoint
+
+-- Taken only when the portal is there and going through it is shorter
+-- than flying (the flight to the portal plus from its far side).
 local function entrancePlan(here, goal)
     for _, entrance in ipairs(Router.ENTRANCES) do
-        local inside
-        if entrance.inside then inside = entrance.inside(here)
-        else inside = (here - entrance.dest).Magnitude <= entrance.arrived end
-        if not inside and entrance.to(goal) and usable(entrance.name) and not padPaused(entrance.name) then
-            return { kind = "entrance", name = entrance.name, entrance = entrance }
+        if not entrance.inside(here) and entrance.to(goal) and usable(entrance.name)
+            and not padPaused(entrance.name) then
+            local source, arg = specPoint(entrance.source), specPoint(entrance.arg)
+            if source and arg and (source - here).Magnitude + (goal - arg).Magnitude < (goal - here).Magnitude then
+                return { kind = "entrance", name = entrance.name, entrance = entrance, arg = arg,
+                    dock = source, dockRadius = Router.ENTRANCE_REACH }
+            end
         end
     end
     return nil
@@ -631,15 +663,14 @@ function actions.pad(plan)
     lastTrip = pad.name .. " did not open"
 end
 
--- Teddy's way: call the entrance and stand on its far side, a few times,
--- until the server keeps the character there.
+-- The game's way: at the portal, requestEntrance(its far side's point),
+-- then the character goes where the server answers. Confirmed only once
+-- the server had time to put it back.
 local entranceUsed = {}   -- [name] = os.clock() of the last arrival
 
 local function insideOf(entrance)
     local here = Player.position()
-    if not here then return false end
-    if entrance.inside then return entrance.inside(here) end
-    return (here - entrance.dest).Magnitude <= entrance.arrived
+    return here ~= nil and entrance.inside(here)
 end
 
 function actions.entrance(plan)
@@ -654,27 +685,31 @@ function actions.entrance(plan)
         lastTrip = plan.name .. " does not hold"
         return
     end
+    local answer
     for _ = 1, Router.ENTRANCE_TRIES do
         local hrp = Player.hrp()
         if not hrp then break end
-        pcall(function() hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0) end)
-        pcall(Services.invoke, "requestEntrance", entrance.dest)
+        answer = Services.invoke("requestEntrance", specPoint(entrance.arg) or plan.arg)
+        if typeof(answer) == "Vector3" and hrp.Parent then
+            pcall(function()
+                hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                hrp.CFrame = CFrame.new(answer)
+            end)
+        end
         task.wait(Router.ENTRANCE_EVERY)
         if insideOf(entrance) then break end
     end
-    -- Placing the character there proves nothing: only still being there
-    -- once the server had time to put it back does.
     task.wait(Router.ENTRANCE_CONFIRM)
     local arrived = insideOf(entrance)
     if arrived then
         entranceUsed[plan.name] = os.clock()
         recordResult(plan.name, true, "arrived")
     else
-        pausePad(plan.name, Router.ENTRANCE_PAUSE, "put back by the server, flying instead")
+        pausePad(plan.name, Router.ENTRANCE_PAUSE, "no way through (answer " .. tostring(answer) .. "), flying instead")
     end
-    lastTrip = plan.name .. (arrived and "" or " put back")
-    Router.log(string.format("%s: %s, now at %s", plan.name, arrived and "arrived" or "put back",
-        xyz(Player.position())))
+    lastTrip = plan.name .. (arrived and "" or " refused")
+    Router.log(string.format("%s: %s (answer %s), now at %s", plan.name, arrived and "arrived" or "refused",
+        tostring(answer), xyz(Player.position())))
 end
 
 function actions.gateway(plan)

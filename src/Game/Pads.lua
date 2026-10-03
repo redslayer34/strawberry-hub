@@ -3,7 +3,9 @@
 --=============================================================================
 --  A portal is a door: the character must stand on it (`stand`) for the
 --  server to send it on (`dest`). Standing there, Vxeze calls
---  requestEntrance(dest) again and again; a few doors work by touching a
+--  requestEntrance(dest) again and again, and the character is put on the
+--  Vector3 the server answers (the game's own AnimateEntrance does exactly
+--  that); a few doors work by touching a
 --  part instead (`touch`). Some need an item in the inventory (`requires`):
 --  the rip_indra doors the Valkyrie Helm, the Castle <-> Tiki door the
 --  Feathered Visage. Calling requestEntrance from anywhere else answers nil,
@@ -119,7 +121,17 @@ function Pads.use(pad)
         end
         return nil
     end
-    return Services.invoke("requestEntrance", pad.arg or pad.dest)
+    -- The game's way (AnimateEntrance): the server answers where to go,
+    -- and the client puts the character there.
+    local answer = Services.invoke("requestEntrance", pad.arg or pad.dest)
+    local hrp = Player.hrp()
+    if typeof(answer) == "Vector3" and hrp and hrp.Parent then
+        pcall(function()
+            hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            hrp.CFrame = CFrame.new(answer)
+        end)
+    end
+    return answer
 end
 
 -- The cheapest way from `from` to `goal` through up to `depth` doors that
