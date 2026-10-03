@@ -1,5 +1,7 @@
 -- Temporary: a small panel that flies you NEAR each portal of the sea
--- (about 15 studs away, never into it). Walk in yourself.
+-- (about 15 studs away, never into it), and orange USE buttons that go
+-- through a portal the game's own way (requestEntrance, then the client
+-- puts the character on the answer).
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
@@ -155,6 +157,106 @@ local function scan()
     status.Text = "Scan: " .. #scanned .. " portal-like parts"
 end
 
+-- The game's own portals (PlayerScripts.AnimateEntrance): touching a
+-- portal asks requestEntrance(arg), and the CLIENT moves the character to
+-- the Vector3 the server answers. arg is the far side's point (or a name
+-- for the Hydra boss doors). Parts may sit in ReplicatedStorage.MapStash
+-- when not streamed in.
+local function find(path)
+    for _, top in ipairs({ workspace:FindFirstChild("Map"),
+        game:GetService("ReplicatedStorage"):FindFirstChild("MapStash") }) do
+        local node = top
+        for name in string.gmatch(path, "[^/]+") do
+            node = node and node:FindFirstChild(name)
+        end
+        if node then return node end
+    end
+    return nil
+end
+local function pos(path) local part = find(path) return part and part.Position end
+local function ahead(path)
+    local part = find(path)
+    return part and (part.CFrame * V(0, 0, -6))
+end
+local PORTALS = {
+    [1] = {
+        { "Underwater City in", "TeleportSpawn/Entrance", function() return pos("TeleportSpawn/EntrancePoint") end },
+        { "Underwater City out", "TeleportSpawn/Exit", function() return pos("TeleportSpawn/ExitPoint") end },
+        { "Sky in (clouds broken)", "Sky/Entrance", function() return pos("SkyArea2/EntrancePoint") end },
+        { "Sky out", "SkyArea2/Exit", function() return pos("Sky/ExitPoint") end },
+    },
+    [2] = {
+        { "Flamingo in", "Dressrosa/FlamingoEntrance", function() return ahead("Dressrosa/FlamingoExit") end },
+        { "Flamingo out", "Dressrosa/FlamingoExit", function() return ahead("Dressrosa/FlamingoEntrance") end },
+        { "Ghost Ship in (lvl 1000)", "GhostShip/Teleport", function() return pos("GhostShipInterior/TeleportSpawn") end },
+        { "Ghost Ship out", "GhostShipInterior/Teleport", function() return pos("GhostShip/TeleportSpawn") end },
+    },
+    [3] = {
+        { "Mansion -> Castle", "Turtle/MapTeleportB/Hitbox", function() return pos("Boat Castle/MapTeleportA/Hitbox") end },
+        { "Castle -> Mansion", "Boat Castle/MapTeleportA/Hitbox", function() return pos("Turtle/MapTeleportB/Hitbox") end },
+        { "Castle -> Hydra", "Boat Castle/MapTeleportB/Hitbox", function() return pos("Waterfall/MapTeleportA/Hitbox") end },
+        { "Hydra -> Castle", "Waterfall/MapTeleportA/Hitbox", function() return pos("Boat Castle/MapTeleportB/Hitbox") end },
+        { "Turtle boss door (1950)", "Turtle/Entrance/Door/BossDoor/Hitbox", function() return "WaterfallBossHitbox" end },
+        { "Hydra boss door back", "Waterfall/BossRoom/Door/BossDoor/Hitbox", function() return "TurtleEntranceBoss" end },
+    },
+}
+
+local function describe(value)
+    if typeof(value) == "Vector3" then
+        return string.format("(%d, %d, %d)", value.X, value.Y, value.Z)
+    end
+    return tostring(value)
+end
+
+-- The game's way: requestEntrance(arg), then the character is put on the
+-- answer when it is a Vector3.
+local function enter(name, arg)
+    local hrp = root()
+    local commF = game:GetService("ReplicatedStorage").Remotes.CommF_
+    local ok, answer = pcall(function() return commF:InvokeServer("requestEntrance", arg) end)
+    if ok and typeof(answer) == "Vector3" and hrp and hrp.Parent then
+        hrp.CFrame = CFrame.new(answer)
+    end
+    status.Text = string.format("%s: requestEntrance(%s) -> %s", name, describe(arg), ok and describe(answer) or "error")
+    print("[PortalFly] " .. status.Text)
+end
+
+-- Flies next to the portal, then enters it the game's way.
+local function use(portal)
+    local part = find(portal[2])
+    local arg = portal[3]()
+    if not part or arg == nil then
+        status.Text = portal[1] .. ": not loaded (go closer first)"
+        return
+    end
+    stopFlight()
+    local hrp = root()
+    if not hrp then return end
+    -- Beside it (8 studs), not on it: only our call takes the portal.
+    local flat = V(hrp.Position.X - part.Position.X, 0, hrp.Position.Z - part.Position.Z)
+    local side = flat.Magnitude > 1 and flat.Unit or V(0, 0, 1)
+    local goal = CFrame.new(part.Position + side * 8 + V(0, 3, 0))
+    local distance = (hrp.Position - goal.Position).Magnitude
+    status.Text = string.format("Going into %s (%d studs)", portal[1], distance)
+    local hold = Instance.new("BodyVelocity")
+    hold.MaxForce = V(9e9, 9e9, 9e9)
+    hold.Velocity = V()
+    hold.Parent = hrp
+    local noclip = RunService.Stepped:Connect(function()
+        for _, piece in ipairs(player.Character and player.Character:GetDescendants() or {}) do
+            if piece:IsA("BasePart") then piece.CanCollide = false end
+        end
+    end)
+    local tween = TweenService:Create(hrp, TweenInfo.new(distance / SPEED, Enum.EasingStyle.Linear), { CFrame = goal })
+    flight = { tween = tween, noclip = noclip, hold = hold }
+    tween.Completed:Connect(function(state)
+        if state ~= Enum.PlaybackState.Completed then return end
+        stopFlight()
+        enter(portal[1], portal[3]() or arg)
+    end)
+    tween:Play()
+end
+
 row("Stop flight", Color3.fromRGB(120, 30, 30), function()
     stopFlight()
     status.Text = "Flight stopped"
@@ -162,6 +264,9 @@ end)
 row("Scan the map for portals", Color3.fromRGB(40, 120, 60), scan)
 for _, spot in ipairs(SPOTS[sea] or {}) do
     row(spot[1], Color3.fromRGB(70, 70, 70), function() flyNear(spot[1], spot[2]) end)
+end
+for _, portal in ipairs(PORTALS[sea] or {}) do
+    row("USE " .. portal[1], Color3.fromRGB(150, 90, 20), function() use(portal) end)
 end
 row("Close", Color3.fromRGB(50, 50, 50), function() env.StrawberryPortalFly() end)
 
