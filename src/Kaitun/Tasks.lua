@@ -194,7 +194,7 @@ Tasks.LIST = {
         -- Quest is done, which the Third World quest does at 1500 anyway
         -- (the user's choice; V2 itself still does it if needed).
         name = "Race", priority = 5, seas = { 2 }, minLevel = 1500, mode = RaceUpgrade.v2v3,
-        keys = { RaceV2V3 = true },
+        keys = { RaceV2V3 = true, RaceHumanAllBosses = true },
         ready = function()
             local beli = Player.data("Beli") or 0
             if RaceUpgrade.version() <= 1 then
@@ -213,6 +213,10 @@ Tasks.LIST = {
             end
         end,
         done = function() return RaceUpgrade.version() >= 3 end,
+        -- Human V3: another server until Jeremy, Orbitus and Diamond are
+        -- all up, then the 3 in a row.
+        hop = function() return RaceUpgrade.humanHop() end,
+        hopAfter = 15,
         maxTime = 2400,
     },
     {

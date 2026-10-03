@@ -13,6 +13,8 @@ return function(Window)
     local upgrade = tab:AddSection("Upgrade Race")
     Bind.toggle(upgrade, "RaceV2V3", "Auto Race V2 - V3",
         "Sea 2. V2: flowers (500k). V3 (2M): your race's quest (Fishman: a sea beast, by boat).")
+    Bind.toggle(upgrade, "RaceHumanAllBosses", "Human V3: Wait For The 3 Bosses",
+        "Starts only once Jeremy, Orbitus and Diamond are all up on the server.")
     Bind.toggle(upgrade, "RaceDraco", "Auto Draco V2 - V3",
         "Dragon Wizard: Fire Flowers for V2, a Terrorshark at sea for V3.")
     Bind.toggle(upgrade, "AutoV3", "Auto Race V3", "Uses your race's V3 ability every 3 seconds.")

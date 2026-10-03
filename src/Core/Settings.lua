@@ -172,6 +172,7 @@ Settings.DEFAULTS = {
 
     -- Races
     RaceV2V3 = false,
+    RaceHumanAllBosses = false,
     RaceCyborg = false,
     RaceCyborgFist = false,
     RaceCyborgHop = false,

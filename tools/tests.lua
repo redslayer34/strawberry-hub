@@ -2909,6 +2909,25 @@ do
     eq("Jeremy fought", RaceUpgrade.v2v3.target, jeremy)
 end
 
+-- Human V3 with RaceHumanAllBosses: waits (and hops) until all 3 are up.
+raceSetup(4442272183, "Human", { Alchemist = -2, Wenlocktoad = 1 })
+do
+    Settings.set("RaceV2V3", true)
+    Settings.set("RaceHumanAllBosses", true)
+    mob("Jeremy", Vector3.new(0, 0, 10))
+    eq("version 2", RaceUpgrade.version(), 2)
+    RaceUpgrade.v2v3.tick()
+    eq("not all up: no fight", RaceUpgrade.v2v3.target, nil)
+    check("not all up: waits", tostring(RaceUpgrade.v2v3.status):find("Orbitus, Diamond not up", 1, true),
+        RaceUpgrade.v2v3.status)
+    check("hop reason", RaceUpgrade.humanHop() ~= nil)
+    mob("Orbitus", Vector3.new(0, 0, 400))
+    mob("Diamond", Vector3.new(0, 0, 800))
+    eq("all up: no hop", RaceUpgrade.humanHop(), nil)
+    RaceUpgrade.v2v3.tick()
+    check("all up: fights", RaceUpgrade.v2v3.target ~= nil, RaceUpgrade.v2v3.status)
+end
+
 -- Cyborg: bought once the trainer allows it.
 raceSetup(4442272183, "Human", { CyborgTrainer = true })
 do

@@ -164,6 +164,25 @@ local function holdsFruit()
     return false
 end
 
+-- The Human bosses still to kill that this server does not have.
+function Upgrade.humanMissing()
+    local missing = {}
+    for _, name in ipairs(Upgrade.HUMAN_BOSSES) do
+        if not humanDone[name] and not Enemies.findBoss(name) then missing[#missing + 1] = name end
+    end
+    return missing
+end
+
+-- Human V3 not started yet and one of the 3 bosses missing here: the
+-- reason to hop (RaceHumanAllBosses: start only with all 3 up).
+function Upgrade.humanHop()
+    if Player.data("Race") ~= "Human" or Upgrade.version() ~= 2 then return nil end
+    if humanTarget or next(humanDone) then return nil end
+    local missing = Upgrade.humanMissing()
+    if #missing == 0 then return nil end
+    return "Human V3: " .. table.concat(missing, ", ") .. " not up"
+end
+
 local function v3(mode)
     local step = Common.invoke("Wenlocktoad", "1")
     if step == 0 or step == 2 then
@@ -183,6 +202,13 @@ local function v3(mode)
         -- A boss that was being fought and is gone again counts as killed.
         if humanTarget and not Enemies.findBoss(humanTarget) then
             humanDone[humanTarget], humanTarget = true, nil
+        end
+        if Settings.get("RaceHumanAllBosses") and not humanTarget and not next(humanDone) then
+            local missing = Upgrade.humanMissing()
+            if #missing > 0 then
+                Movement.stop()
+                return "Human V3: waiting for the 3 bosses (" .. table.concat(missing, ", ") .. " not up)"
+            end
         end
         for _, name in ipairs(Upgrade.HUMAN_BOSSES) do
             if not humanDone[name] then
