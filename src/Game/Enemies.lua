@@ -155,17 +155,40 @@ end
 -- workspace.Enemies (not the copy parked in ReplicatedStorage), not a
 -- secret quest's copy, not engaged by another player, not given up on by
 -- the damage watchdog, and not found absent a moment ago.
+local seenAt = {}   -- [boss name] = { at = os.clock(), position } last found up
+
 function Enemies.bossUp(name)
     if Enemies.absent(name) then return nil end
     local enemies = folder()
     if not enemies then return nil end
     local wanted = bossName(name)
+    local busy = false
     for _, model in ipairs(enemies:GetChildren()) do
-        if bossName(model.Name) == wanted and Enemies.isAlive(model) and Enemies.farmable(model) then
-            return model
+        if bossName(model.Name) == wanted and Enemies.isAlive(model) then
+            if Enemies.farmable(model) then
+                seenAt[wanted] = { at = os.clock(), position = model.HumanoidRootPart.Position }
+                return model
+            end
+            busy = true
         end
     end
+    if busy then seenAt[wanted] = nil end
     return nil
+end
+
+-- Up now, or seen up within SEEN_FOR seconds while the player is now too
+-- far from that spot to see it: a boss whose quest giver is far from it
+-- (Wysper on the Upper Skylands, his giver on the lower ones) is out of
+-- streaming range at the giver. Near the spot and not there: gone.
+Enemies.SEEN_FOR = 90
+Enemies.SEEN_NEAR = 1000
+function Enemies.bossUpOrSeen(name)
+    if Enemies.bossUp(name) then return true end
+    if Enemies.absent(name) then return false end
+    local seen = seenAt[bossName(name)]
+    if not seen or os.clock() - seen.at > Enemies.SEEN_FOR then return false end
+    local here = Player.position()
+    return here == nil or (here - seen.position).Magnitude >= Enemies.SEEN_NEAR
 end
 
 -- Every mob name the world knows about right now (spawn points and live
@@ -253,7 +276,7 @@ end
 -- Test hook.
 function Enemies.reset()
     spawnCache, missCache = {}, {}
-    absentUntil = {}
+    absentUntil, seenAt = {}, {}
 end
 
 return Enemies

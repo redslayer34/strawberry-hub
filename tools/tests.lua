@@ -4379,6 +4379,16 @@ do
     eq("boss quest: below the level's mob quest -> not worth it", Quests.bossQuest(980), nil)
     boss.Parent = rs
     eq("boss quest: a model kept in ReplicatedStorage does not count", Quests.bossQuest(960), nil)
+    -- Seen up a moment ago, now far away (Wysper above, his giver below):
+    -- still worth taking his quest at the giver.
+    boss.Parent = workspace.Enemies
+    Quests.bossQuest(960)
+    boss.Parent = rs
+    world.hrp.Position = Vector3.new(0, 0, 5000)
+    local far = Quests.bossQuest(960)
+    eq("boss quest: seen up, now out of range -> taken", far and far.questName, "BossQuest")
+    world.hrp.Position = Vector3.new(0, 0, 0)
+    eq("boss quest: back near and not there -> gone", Quests.bossQuest(960), nil)
 end
 
 setup()

@@ -336,7 +336,7 @@ function Quests.bossQuest(level)
                 if type(quest) == "table" and type(quest.Task) == "table" then
                     local mob, count = next(quest.Task)
                     if mob and count == 1 and required <= level and required >= floor
-                        and required > bestLevel and Enemies.bossUp(mob) ~= nil then
+                        and required > bestLevel and Enemies.bossUpOrSeen(mob) then
                         best = {
                             questName = questName,
                             id = id,
