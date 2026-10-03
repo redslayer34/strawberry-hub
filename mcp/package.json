@@ -1,0 +1,17 @@
+{
+  "name": "strawberry-mcp",
+  "version": "1.0.0",
+  "description": "MCP server bridging Claude Code to a Roblox executor (Strawberry Hub), with the Cobalt remote spy",
+  "type": "module",
+  "main": "src/server.js",
+  "bin": { "strawberry-mcp": "src/server.js" },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.0",
+    "zod": "^3.25.0"
+  }
+}

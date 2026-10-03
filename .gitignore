@@ -4,3 +4,8 @@ build/
 # tools/test.py imports tools/pack.py as a module.
 __pycache__/
 *.pyc
+
+# Strawberry MCP: dependencies, the bridge token, the user's own Cobalt copy.
+mcp/node_modules/
+mcp/.bridge-token
+mcp/Cobalt.luau

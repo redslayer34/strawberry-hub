@@ -51,7 +51,8 @@ for _, name in ipairs({ "StrawberryHub", "StrawberryKaitunHub" }) do
     if type(previous) == "table" and type(previous.Unload) == "function" then pcall(previous.Unload) end
 end
 
-local hub = { Version = VERSION, Settings = Settings }
+-- Require: the bundle's modules, for the MCP bridge (hub_status).
+local hub = { Version = VERSION, Settings = Settings, Require = require }
 env.StrawberryHub = hub
 
 local function guard(label, fn, ...)

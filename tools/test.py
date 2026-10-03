@@ -44,6 +44,12 @@ SUITES = {
         "stubs": ["stubs.lua", "fakefluent.lua", "smokeprelude.lua", "kaitunprelude.lua"],
         "entry": 'SMOKE_KAITUN = require("kaitun")',
     },
+    # The MCP bridge's in-game client (mcp/lua/bridge.lua), run in test mode.
+    "bridge": {
+        "file": "bridgetests.lua",
+        "stubs": ["stubs.lua", "bridgeprelude.lua"],
+        "extra": ["../mcp/lua/bridge.lua"],
+    },
 }
 
 
@@ -60,6 +66,8 @@ def lua_binary() -> str:
 def run(name: str, spec: dict, bundle: str, binary: str) -> int:
     parts = [(TOOLS / stub).read_text(encoding="utf-8") for stub in spec["stubs"]]
     parts.append(bundle.replace(ENTRY_LINE, spec.get("entry", "-- entry skipped for tests")))
+    for extra in spec.get("extra", []):
+        parts.append((TOOLS / extra).read_text(encoding="utf-8"))
     parts.append((TOOLS / spec["file"]).read_text(encoding="utf-8"))
 
     out = ROOT / "build" / f"test-{name}.lua"

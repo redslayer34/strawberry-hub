@@ -50,7 +50,7 @@ local config = Config.load(env.StrawberryKaitun)
 -- A server hop starts the Kaitun again (not the hub), with this config.
 local hubLoader = Server.LOADER
 Server.LOADER = Config.loader()
-local kaitun = { Version = VERSION, Settings = Settings, Config = config, Engine = Engine }
+local kaitun = { Version = VERSION, Settings = Settings, Config = config, Engine = Engine, Require = require }
 env.StrawberryKaitunHub = kaitun
 
 local function guard(label, fn, ...)
