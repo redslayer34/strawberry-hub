@@ -57,6 +57,7 @@ end
 -- The time of the last roll is kept per account in the workspace (os.time,
 -- survives a rejoin); CheckTime answering a number of seconds wins.
 Fruits.ROLL_COOLDOWN = 7200
+Fruits.ROLL_EVERY = 10        -- seconds between two roll tries
 local lastRollAt          -- os.time() of the last roll, or false (unknown)
 local serverLeft          -- { seconds, at = os.time() } from CheckTime
 
@@ -93,16 +94,19 @@ function Fruits.nextRollIn()
     return nil
 end
 
--- Rolls once when allowed. Returns true when a fruit was rolled.
+-- Tries a roll. Check / CheckTime only feed the countdown: the roll itself
+-- is asked for anyway, as Teddy does (the server refuses one too early or
+-- too poor; a gate on their answers kept the roll from ever happening).
+-- Returns true when a fruit was rolled.
 function Fruits.roll()
     local box = bannerBox()
     local commF = Services.commF()
     if not commF then return false end
-    local ok, money, level, price = pcall(function() return commF:InvokeServer("Cousin", "Check", box) end)
-    if not ok or (level or 0) < 50 or (money or 0) < (price or math.huge) then return false end
+    local ok, _, level = pcall(function() return commF:InvokeServer("Cousin", "Check", box) end)
+    if not (ok and type(level) == "number") then level = Player.level() end
+    if (level or 0) < 50 then return false end
     local time = Services.invoke("Cousin", "CheckTime", box)
     if type(time) == "number" and time > 0 then serverLeft = { seconds = time, at = os.time() } end
-    if time ~= true then return false end
     if Services.invoke("Cousin", box) == 1 then
         rolled()
         return true
@@ -113,16 +117,21 @@ end
 -- Test hook.
 function Fruits.resetRoll() lastRollAt, serverLeft = nil, nil end
 
+-- Closes the spin animation's window (Teddy: the close button, then
+-- hidden). Never holds the next roll back.
 local function closeSpinner()
     local player = Services.player()
     local window = player and Services.find(player, "PlayerGui.SpinnerWindow")
-    local close = window and Services.find(window, "AboveSpinner.Navigation.CloseButton")
-    if window and window.Enabled and close and close.Visible then
+    if not window then return end
+    local close = Services.find(window, "AboveSpinner.Navigation.CloseButton")
+    if close and close.Visible then
         local spinner = Services.module("Controllers.UI.Spinner")
         if type(spinner) == "table" and spinner.Close then pcall(spinner.Close, spinner) end
-        return true
+        pcall(function()
+            if firesignal and close.Activated then firesignal(close.Activated) end
+        end)
+        pcall(function() window.Visible = false end)
     end
-    return window ~= nil and window.Enabled == true
 end
 
 ---------------------------------------------------------------------------
@@ -199,8 +208,9 @@ end
 ---------------------------------------------------------------------------
 
 function Fruits.step()
-    if Settings.get("FruitRandom") and not closeSpinner() and Common.every("FruitRoll", 5) then
-        Fruits.roll()
+    if Settings.get("FruitRandom") then
+        closeSpinner()
+        if Common.every("FruitRoll", Fruits.ROLL_EVERY) then Fruits.roll() end
     end
     if Settings.get("FruitStore") and Common.every("FruitStore", Fruits.STORE_EVERY) then
         Fruits.storeNext()

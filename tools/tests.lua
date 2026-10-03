@@ -2409,6 +2409,25 @@ do
     eq("one roll with the default box", rolls, 1)
 end
 
+-- An open spin window never holds the next roll back.
+batchBSetup()
+do
+    world.commF.OnInvoke = function(action, what)
+        if action == "Cousin" and what == "Check" then return 5000000, 900, 1000000 end
+        if action == "Cousin" then return 0 end
+    end
+    local gui = world.player:FindFirstChild("PlayerGui") or newInstance("Folder", "PlayerGui", world.player)
+    newInstance("ScreenGui", "SpinnerWindow", gui).Enabled = true
+    Settings.set("FruitRandom", true)
+    Fruits.step()
+    local rolls = 0
+    for _, call in ipairs(world.commF.Invoked) do
+        if call[1] == "Cousin" and call[2] == "DLCBoxData" then rolls = rolls + 1 end
+    end
+    eq("spin window open: still rolls", rolls, 1)
+    Settings.set("FruitRandom", false)
+end
+
 -- Store fruit: once per tool, reported when the rarity is wanted.
 batchBSetup()
 do
@@ -4826,7 +4845,7 @@ do
     world.commF.OnInvoke = function(action, arg)
         if action == "Cousin" and arg == "Check" then return 1000000, 900, 50000 end
         if action == "Cousin" and arg == "CheckTime" then return allowed or 3000 end
-        if action == "Cousin" then return 1 end
+        if action == "Cousin" then return allowed and 1 or 0 end
     end
     check("spin: not allowed yet", not FruitsModule.roll())
     local left = FruitsModule.nextRollIn()
