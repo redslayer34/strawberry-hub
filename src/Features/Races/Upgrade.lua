@@ -72,6 +72,9 @@ local search = Fight.newSearch()
 local chests = ChestHunt.new()
 local humanDone = {}
 local humanTarget
+-- Fishman V3: the beast being fought, and until when its kill is checked.
+local fishBeast, fishCheckUntil
+Upgrade.FISH_CHECK = 30       -- seconds the turn-in is tried after a kill
 local fistGiven = false
 
 function Upgrade.version()
@@ -236,7 +239,26 @@ local function v3(mode)
         return "Cyborg V3: holding a fruit"
     end
     if race == "Fishman" then
+        -- The beast fought is gone: the quest may be done. Ask the server
+        -- afresh (not the 5 s cache) and turn in, before any other beast.
+        if fishBeast and not (fishBeast.Parent and Events.alive(fishBeast)) then
+            fishBeast, fishCheckUntil = nil, os.clock() + Upgrade.FISH_CHECK
+            Common.forget()
+        end
+        if fishCheckUntil and os.clock() < fishCheckUntil then
+            Boat.stop()
+            Movement.stop()
+            if Common.every("FishTurnIn", 2) then
+                local fresh = Services.invoke("Wenlocktoad", "1")
+                Upgrade.fishAnswer = fresh
+                if fresh == 2 or fresh == 1 then Services.invoke("Wenlocktoad", "3") end
+                if fresh == -2 or fresh == 2 then Common.forget() end
+            end
+            return "Fishman V3: sea beast down, turning in the quest (step " .. tostring(Upgrade.fishAnswer) .. ")"
+        end
+        fishCheckUntil = nil
         local beast = Events.anySeaBeast()
+        if beast then fishBeast = beast end
         if beast then return "Fishman V3: " .. Events.fight(mode, beast) end
         -- Piranhas, sharks or ships on the boat: those first (Banana).
         local threat = Events.threat()
@@ -463,6 +485,7 @@ Upgrade.draco = Mode({
 function Upgrade.reset()
     search:reset()
     chests:reset()
+    fishBeast, fishCheckUntil = nil, nil
     humanDone, humanTarget, fistGiven, dracoQuest, dracoShark = {}, nil, false, nil, nil
 end
 

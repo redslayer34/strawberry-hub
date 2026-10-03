@@ -3247,6 +3247,26 @@ do
         RaceUpgrade.v2v3.status)
 end
 
+-- Fishman V3: the beast down -> the quest is turned in, no second beast.
+do
+    local answers = { Alchemist = -2, Wenlocktoad = 1 }
+    raceSetup(4442272183, "Fishman", answers)
+    Settings.set("RaceV2V3", true)
+    local first = seaBeast(world.hrp.Position + Vector3.new(100, 0, 0), "40,000/60,000")
+    RaceUpgrade.v2v3.tick()
+    eq("fights the beast", RaceUpgrade.v2v3.status, "Fishman V3: Fighting a sea beast")
+    first.Parent = nil
+    seaBeast(world.hrp.Position + Vector3.new(200, 0, 0), "40,000/60,000")
+    answers.Wenlocktoad = 2
+    RaceUpgrade.v2v3.tick()
+    local turned = false
+    for _, call in ipairs(calls(world.commF, "Wenlocktoad")) do
+        if call[2] == "3" then turned = true end
+    end
+    check("turned in after the kill", turned, RaceUpgrade.v2v3.status)
+    check("no second beast", RaceUpgrade.v2v3.status ~= "Fishman V3: Fighting a sea beast", RaceUpgrade.v2v3.status)
+end
+
 ---------------------------------------------------------------------------
 -- Batch F: the remaining Banana features
 ---------------------------------------------------------------------------
