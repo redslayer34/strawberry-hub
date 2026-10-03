@@ -4,8 +4,8 @@
 --    Rainbow Haki  the Horned Man's five boss quests (HornedMan Bet)
 --    Yama          30 Elite Hunters, then the sealed katana on Waterfall
 --                  island: kill its Ghosts, click it
---    Tushita       while rip_indra is up, touch the Waterfall hitbox for the
---                  Holy Torch, light the 5 torches, then kill Longma
+--    Tushita       while rip_indra is up, the Holy Torch at the Hydra
+--                  waterfall door, the 5 torches in order, then Longma
 --    TTK           Oroshi, Saishi and Shizu to 300 mastery (bone mobs), then
 --                  the Mysterious Man
 --    Yoru Mini     rip_indra True Form: an Elite Hunter's God's Chalice (or
@@ -29,7 +29,6 @@ local Swords = {}
 
 Swords.RAINBOW_BOSSES = { "Stone", "Hydra Leader", "Kilo Admiral", "Captain Elephant", "Beautiful Pirate" }
 Swords.WATERFALL = Vector3.new(5251.900390625, 17.18115234375, 453.6025390625)
-Swords.TUSHITA_GATE = Vector3.new(5677.541015625, 28.533447265625, 357.9483642578125)
 Swords.YAMA_ELITES = 30
 Swords.TTK_SWORDS = { "Oroshi", "Saishi", "Shizu" }
 Swords.TTK_MASTERY = 300
@@ -125,14 +124,52 @@ Swords.yama = Mode({
 -- Tushita
 ---------------------------------------------------------------------------
 
+-- The wiki and the sources (Teddy's Tushita, Banana's GetTushita):
+--   1. rip_indra True Form summoned and left alive (the torch is only out
+--      then; Longma drops Tushita only for a puzzle done that way);
+--   2. the Holy Torch, at the Hydra Island waterfall door (Teddy stands on
+--      TORCH_SPOT; Banana touches the Waterfall hitbox, even from the nil
+--      instances when the island is not loaded);
+--   3. the five torches of the Floating Turtle, in order, within 5 minutes:
+--      TushitaProgress("Torch", n) for each one still unlit
+--      (TushitaProgress().Torches);
+--   4. the gate opens (Map.Turtle.TushitaGate gone, OpenedDoor): Longma.
+Swords.TORCH_SPOT = Vector3.new(5712.98681640625, 18.041336059570312, 253.65997314453125)
+Swords.TORCH_HITBOX = Vector3.new(5713.5376, 38.383118, 255.2017)
+
 local function tushitaHitbox()
-    return Services.find(workspace, "Map.Waterfall.IslandModel")
-        and workspace.Map.Waterfall.IslandModel:FindFirstChild("Hitbox", true)
+    local island = Services.find(workspace, "Map.Waterfall.IslandModel")
+    local hitbox = island and island:FindFirstChild("Hitbox", true)
+    if hitbox then return hitbox end
+    -- Banana: out of streaming range the hitbox sits in the nil instances.
+    local ok, found = pcall(function()
+        for _, node in ipairs(getnilinstances and getnilinstances() or {}) do
+            if node.Name == "Hitbox" and node:IsA("BasePart")
+                and (node.Position - Swords.TORCH_HITBOX).Magnitude < 1 then
+                return node
+            end
+        end
+    end)
+    return ok and found or nil
 end
 
 local function tushitaProgress()
     local progress = Common.invoke("TushitaProgress")
     return type(progress) == "table" and progress or {}
+end
+
+-- The Floating Turtle gate is open: OpenedDoor, or (Teddy) the TushitaGate
+-- gone from a loaded Turtle.
+local function gateOpen(progress)
+    if progress.OpenedDoor then return true end
+    local turtle = Services.find(workspace, "Map.Turtle")
+    return turtle ~= nil and turtle:FindFirstChild("TushitaGate") == nil and progress.OpenedDoor == nil
+        and next(progress) ~= nil
+end
+
+local function ripIndraUp()
+    local boss, inWorld = Enemies.findBoss("rip_indra True Form")
+    return boss ~= nil and inWorld == true
 end
 
 Swords.tushita = Mode({
@@ -141,39 +178,49 @@ Swords.tushita = Mode({
     sea = 3,
     want = function()
         if Common.owns("Tushita") then return false end
-        if tushitaProgress().OpenedDoor then return Enemies.findBoss("Longma") ~= nil end
+        local progress = tushitaProgress()
+        if gateOpen(progress) then return Enemies.findBoss("Longma") ~= nil end
         if Common.has("Holy Torch") then return true end
-        -- The torch is only out while rip_indra is up. An island not loaded
-        -- is not a reason to go there: flying in loaded it, showed no torch,
-        -- the farm flew away, it unloaded... (back and forth in the video).
+        -- Only while rip_indra is up (an island merely not loaded is no
+        -- reason to fly there: back and forth in the user's video).
+        if ripIndraUp() then return true end
         local hitbox = tushitaHitbox()
-        if hitbox then return hitbox:FindFirstChild("TouchInterest") ~= nil end
-        return Enemies.findBoss("rip_indra True Form") ~= nil
+        return hitbox ~= nil and hitbox:FindFirstChild("TouchInterest") ~= nil
     end,
     idleStatus = "Owned, or waiting for rip_indra / Longma",
     tick = function(mode)
-        if tushitaProgress().OpenedDoor then
+        mode.target = nil
+        local progress = tushitaProgress()
+        if gateOpen(progress) then
             local longma, inWorld = Enemies.findBoss("Longma")
             if longma then return Common.fight(mode, longma, inWorld) end
             Movement.stop()
             return "Waiting for Longma"
         end
-        local hitbox = tushitaHitbox()
-        if not hitbox then
-            Common.goTo(Swords.TUSHITA_GATE)
-            return "Going to the Tushita gate"
-        end
         if Common.has("Holy Torch") then
             Common.equip("Holy Torch")
             Movement.stop()
-            if Common.every("TushitaTorches", 3) then
-                for torch = 1, 5 do Services.invoke("TushitaProgress", "Torch", torch) end
+            if Common.every("TushitaTorches", 2) then
+                -- Teddy: each torch still unlit, in order.
+                local torches = type(progress.Torches) == "table" and progress.Torches or nil
+                for torch = 1, 5 do
+                    if not torches or not torches[torch] then
+                        Services.invoke("TushitaProgress", "Torch", torch)
+                    end
+                end
                 Common.forget()
             end
-            return "Lighting the torches"
+            local lit = 0
+            for torch = 1, 5 do
+                if type(progress.Torches) == "table" and progress.Torches[torch] then lit = lit + 1 end
+            end
+            return "Lighting the torches (" .. lit .. "/5, 5 minutes)"
         end
-        Common.goTo(hitbox.CFrame)
-        if Common.near(hitbox.Position, 8) then Common.touch(hitbox) end
+        -- The Holy Torch at the waterfall door, while rip_indra is up.
+        local hitbox = tushitaHitbox()
+        if hitbox and Common.near(hitbox.Position, 25) then Common.touch(hitbox) end
+        Common.goTo(Swords.TORCH_SPOT)
+        if not Common.near(Swords.TORCH_SPOT, 25) then return "Going to the Hydra waterfall door" end
         return "Taking the Holy Torch"
     end,
 })

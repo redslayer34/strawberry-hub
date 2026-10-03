@@ -2704,6 +2704,35 @@ do
     fireclickdetector = nil
 end
 
+-- Tushita the wiki's / Teddy's way: rip_indra up -> the waterfall door;
+-- with the torch, only the unlit torches; the gate open -> Longma.
+itemsSetup(7449423635, 2100, {}, { TushitaProgress = function(what)
+    if what == nil then return { OpenedDoor = false, Torches = { true, true, false, false, false } } end
+end })
+do
+    Settings.set("ItemTushita", true)
+    check("no rip_indra: waits", not Swords.tushita.enabled())
+    mob("rip_indra True Form", Vector3.new(-5500, 314, -2855))
+    check("rip_indra up: tushita on", Swords.tushita.enabled())
+    Swords.tushita.tick()
+    eq("goes to the waterfall door", Swords.tushita.status, "Going to the Hydra waterfall door")
+    tool("Holy Torch")
+    require("Features.Stack.Common").reset()
+    Swords.tushita.tick()
+    local lit = {}
+    for _, call in ipairs(world.commF.Invoked or {}) do
+        if call[1] == "TushitaProgress" and call[2] == "Torch" then lit[#lit + 1] = call[3] end
+    end
+    eq("only the unlit torches, in order", table.concat(lit, ","), "3,4,5")
+end
+itemsSetup(7449423635, 2100, {}, { TushitaProgress = function(what) if what == nil then return { OpenedDoor = true } end end })
+do
+    Settings.set("ItemTushita", true)
+    check("gate open, no Longma: waits", not Swords.tushita.enabled())
+    mob("Longma", Vector3.new(0, 0, 30))
+    check("gate open, Longma: tushita on", Swords.tushita.enabled())
+end
+
 -- Tushita: waits without rip_indra, lights the torches with the Holy Torch.
 itemsSetup(7449423635, 2000, {}, { TushitaProgress = function(what) if what == nil then return { OpenedDoor = false } end end })
 do
