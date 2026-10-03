@@ -68,12 +68,11 @@ if (Test-Path $cobalt) {
 }
 
 # 5. Firewall (MuMu reaches the PC over the network)
-Step "Firewall: port $Port (private network)"
+Step "Firewall: port $Port (every network profile: MuMu's adapter is often 'Public')"
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if ($admin) {
-    if (-not (Get-NetFirewallRule -DisplayName "Strawberry MCP" -ErrorAction SilentlyContinue)) {
-        New-NetFirewallRule -DisplayName "Strawberry MCP" -Direction Inbound -Protocol TCP -LocalPort $Port -Action Allow -Profile Private | Out-Null
-    }
+    Remove-NetFirewallRule -DisplayName "Strawberry MCP" -ErrorAction SilentlyContinue
+    New-NetFirewallRule -DisplayName "Strawberry MCP" -Direction Inbound -Protocol TCP -LocalPort $Port -Action Allow -Profile Any | Out-Null
     Ok "rule 'Strawberry MCP' in place"
 } else {
     Warn "not run as administrator: Windows will ask to allow Node the first time (choose Private networks),"
