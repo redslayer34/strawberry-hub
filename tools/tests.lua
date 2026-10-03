@@ -3577,6 +3577,9 @@ do
     eq("no webhook without a url", sea3.WebhookUrl, nil)
     KConfig.load({ WebhookUrl = "https://example.invalid/hook" })
     eq("own webhook used", KEngine.background(3, 2000).WebhookUrl, "https://example.invalid/hook")
+    eq("walk on water by default", sea3.PvpWaterWalk, true)
+    KConfig.load({ WalkOnWater = false })
+    eq("walk on water off by config", KEngine.background(3, 2000).PvpWaterWalk, false)
     KConfig.reset()
 
     local keys, name = KEngine.idle(2, 1000)

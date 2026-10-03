@@ -154,10 +154,15 @@ function Pvp.platform()
     return platform
 end
 
+-- Only the water floor (the Kaitun: no aim hook).
+function Pvp.startWaterWalk()
+    Loop.start("WaterWalk", 0.1, Pvp.waterStep)
+end
+
 function Pvp.start()
     pcall(Pvp.installGunAim)
     Loop.start("PvpAim", 0.05, Pvp.aimStep)
-    Loop.start("WaterWalk", 0.1, Pvp.waterStep)
+    Pvp.startWaterWalk()
 end
 
 function Pvp.destroy()
