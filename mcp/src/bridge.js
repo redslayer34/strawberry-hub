@@ -60,6 +60,13 @@ export function lanAddresses() {
   return out.sort((a, b) => addressRank(a) - addressRank(b));
 }
 
+// The executor line. It downloads with request() (the executor's own HTTP):
+// game:HttpGet can go through Roblox's HTTP, which answers nothing for a
+// LAN address (the user's Arceus X got an empty string).
+export function loaderLine(host, port, token) {
+  return `loadstring((request or http_request)({Url="http://${host}:${port}/bridge.lua?token=${token}",Method="GET"}).Body)()`;
+}
+
 // The token, created once and kept next to the server.
 export function loadToken(file) {
   try {
@@ -114,7 +121,7 @@ export class Bridge {
   // The line to run in the executor.
   loader(address) {
     const host = address || lanAddresses()[0] || "127.0.0.1";
-    return `loadstring(game:HttpGet("http://${host}:${this.port}/bridge.lua?token=${this.token}"))()`;
+    return loaderLine(host, this.port, this.token);
   }
 
   // The in-game client with its placeholders filled in.

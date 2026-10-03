@@ -104,7 +104,7 @@ test("the ring keeps the newest entries", () => {
 
 test("the loader line points at the bridge", () => {
   assert.equal(bridge.loader("10.0.0.5"),
-    `loadstring(game:HttpGet("http://10.0.0.5:${bridge.port}/bridge.lua?token=secret"))()`);
+    `loadstring((request or http_request)({Url="http://10.0.0.5:${bridge.port}/bridge.lua?token=secret",Method="GET"}).Body)()`);
 });
 
 test("the home network address comes before virtual and self-assigned ones", () => {

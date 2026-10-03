@@ -27,7 +27,7 @@ test("the server lists its tools and answers without a game", async () => {
     const status = await client.callTool({ name: "roblox_status", arguments: {} });
     assert.equal(JSON.parse(status.content[0].text).connected, false);
     const loader = await client.callTool({ name: "get_loader", arguments: { address: "192.168.1.20" } });
-    assert.match(loader.content[0].text, /^loadstring\(game:HttpGet\("http:\/\/192\.168\.1\.20:\d+\/bridge\.lua\?token=\w+"\)\)\(\)$/);
+    assert.match(loader.content[0].text, /^loadstring\(\(request or http_request\)\(\{Url="http:\/\/192\.168\.1\.20:\d+\/bridge\.lua\?token=\w+",Method="GET"\}\)\.Body\)\(\)$/);
     const exec = await client.callTool({ name: "execute_lua", arguments: { code: "return 1", timeout: 1 } });
     assert.equal(exec.isError, true);
     assert.match(exec.content[0].text, /no game connected/);

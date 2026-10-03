@@ -46,7 +46,7 @@ Dans le repo cloné, `.mcp.json` déclare aussi le MCP pour Claude Code lancé �
 
 1. Dans Claude Code, demande « donne-moi le loader » (outil `get_loader`). Il répond une ligne comme :
    ```lua
-   loadstring(game:HttpGet("http://192.168.1.20:7777/bridge.lua?token=..."))()
+   loadstring((request or http_request)({Url="http://192.168.1.20:7777/bridge.lua?token=...",Method="GET"}).Body)()
    ```
 2. Exécute cette ligne dans **Arceus X**. Une notification « Strawberry MCP — Connected » apparaît.
 3. `roblox_status` doit dire `connected: true`.

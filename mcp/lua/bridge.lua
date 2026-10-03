@@ -4,7 +4,7 @@
 --  Served by the MCP server (GET /bridge.lua) with its address and token
 --  filled in, and run in the executor:
 --
---      loadstring(game:HttpGet("http://<PC IP>:7777/bridge.lua?token=..."))()
+--      loadstring((request or http_request)({Url="http://<PC IP>:7777/bridge.lua?token=...",Method="GET"}).Body)()
 --
 --  It long-polls the server for commands (request / http_request), runs each
 --  one in its own thread and posts the answer back. The console (LogService)
@@ -34,6 +34,12 @@ local SEAS = {
 local function service(name)
     local ok, found = pcall(function() return game:GetService(name) end)
     return ok and found or nil
+end
+
+local function httpRequest(options)
+    local fn = request or http_request or (syn and syn.request) or (http and http.request)
+    if not fn then error("this executor has no request function", 0) end
+    return fn(options)
 end
 
 ---------------------------------------------------------------------------
@@ -426,7 +432,9 @@ end
 
 function ops.cobalt()
     if not cobaltLogs() then
-        local source = game:HttpGet(BASE .. "/cobalt?token=" .. CONFIG.token)
+        local response = httpRequest({ Url = BASE .. "/cobalt?token=" .. CONFIG.token, Method = "GET" })
+        local source = response and response.Body or ""
+        if source == "" then error("Cobalt download failed (HTTP " .. tostring(response and response.StatusCode) .. ")", 0) end
         if source:sub(1, 2) == "--" and source:find("not found", 1, true) then error(source, 0) end
         local fn, err = loadstring(source, "=Cobalt")
         if not fn then error("Cobalt does not compile: " .. tostring(err), 0) end
@@ -511,12 +519,6 @@ function Bridge.session()
         cobalt = cobaltLogs() ~= nil,
         watching = Bridge.watching == true,
     }
-end
-
-local function httpRequest(options)
-    local fn = request or http_request or (syn and syn.request) or (http and http.request)
-    if not fn then error("this executor has no request function", 0) end
-    return fn(options)
 end
 
 local function json(data) return service("HttpService"):JSONEncode(data) end

@@ -4,7 +4,7 @@
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { lanAddresses, loadToken } from "./bridge.js";
+import { lanAddresses, loaderLine, loadToken } from "./bridge.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const token = loadToken(path.join(root, ".bridge-token"));
@@ -16,6 +16,6 @@ if (addresses.length === 0) {
 }
 for (const address of addresses) {
   console.log(`[${address}]`);
-  console.log(`loadstring(game:HttpGet("http://${address}:${port}/bridge.lua?token=${token}"))()`);
+  console.log(loaderLine(address, port, token));
   console.log("");
 }
