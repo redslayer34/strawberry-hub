@@ -11,6 +11,7 @@
 --                                                  quest givers of THIS sea
 --=============================================================================
 
+local Data = require("Game.Data")
 local Enemies = require("Game.Enemies")
 local Services = require("Core.Services")
 
@@ -259,6 +260,16 @@ function Quests.best(level)
     return best
 end
 
+-- Two quest mobs live close enough to be farmed in turn (their known
+-- spots within PAIR_RANGE, or unknown). God's Guard (lower Skylands) and
+-- Shanda (Upper Skylands) share a giver but not a place: switching between
+-- them was a trip up and down the sky each quest.
+Quests.PAIR_RANGE = 2000
+function Quests.near(a, b)
+    local pa, pb = Data.MOB_SPOTS[a], Data.MOB_SPOTS[b]
+    return not (pa and pb) or (pa - pb).Magnitude <= Quests.PAIR_RANGE
+end
+
 -- "Double quest": the best quest, then the other mob quests of the same
 -- giver the level allows, best first (Military Soldier and Military Spy,
 -- Toga Warrior and Gladiator...). Taking the other one while the first
@@ -278,7 +289,8 @@ function Quests.pair(level)
                 local quest = list[id]
                 if id ~= best.id and type(quest) == "table" and type(quest.Task) == "table" then
                     local mob, count = next(quest.Task)
-                    if mob and type(count) == "number" and count > 1 and required <= level then
+                    if mob and type(count) == "number" and count > 1 and required <= level
+                        and Quests.near(best.mob, mob) then
                         out[#out + 1] = {
                             questName = best.questName,
                             id = id,

@@ -693,7 +693,16 @@ do
     world.guide.Data.QuestData = { Task = { Zombie = 8 } }
     LevelFarm.tick()
     goal = Movement.goal()
-    near("no spawn loaded: waits above the quest giver", goal.Position, Vector3.new(1000, 70, 1000))
+    local zombieSpot = require("Game.Data").MOB_SPOTS.Zombie
+    near("no spawn loaded: goes where the mob lives", goal.Position, Vector3.new(zombieSpot.X, goal.Position.Y, zombieSpot.Z))
+    require("Game.Data").MOB_SPOTS.Zombie = nil
+    LevelFarm.tick()
+    goal = Movement.goal()
+    near("unknown spot: waits above the quest giver", goal.Position, Vector3.new(1000, 70, 1000))
+    require("Game.Data").MOB_SPOTS.Zombie = zombieSpot
+    check("Shanda and God's Guard live apart: no double quest between them",
+        not require("Game.Quests").near("God's Guard", "Shanda"))
+    check("Royal Squad and Royal Soldier: together", require("Game.Quests").near("Royal Squad", "Royal Soldier"))
 
     local zombie = mob("Zombie", Vector3.new(1100, 5, 1000))
     LevelFarm.tick()

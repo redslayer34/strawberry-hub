@@ -12,6 +12,7 @@
 --  panel closes and the next tick picks up a new quest.
 --=============================================================================
 
+local Data = require("Game.Data")
 local Enemies = require("Game.Enemies")
 local Fight = require("Features.Fight")
 local IslandLoader = require("Game.IslandLoader")
@@ -125,8 +126,17 @@ local function hunt(name)
         LevelFarm.status = "Looking for " .. name
         return
     end
-    -- No spawn part streamed in yet. Quest mobs live around their quest
-    -- giver, so waiting above it brings them into streaming range.
+    -- No spawn part streamed in yet: where the mob is known to live
+    -- (Teddy's table) brings it into streaming range. The Shandas live on
+    -- the Upper Skylands, far from their giver on the lower ones.
+    local spot = Data.MOB_SPOTS[name]
+    if spot then
+        Movement.to(CFrame.new(spot) * CFrame.new(0, Fight.SPAWN_HEIGHT, 0))
+        IslandLoader.focus(spot)
+        LevelFarm.status = "Looking for " .. name .. " where it lives"
+        return
+    end
+    -- Else around its quest giver.
     local plan
     for _, quest in ipairs(Quests.pair(Player.level())) do
         if quest.mob == name then plan = quest end
