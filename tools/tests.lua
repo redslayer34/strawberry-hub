@@ -73,6 +73,7 @@ local MODULES = {
     "Features.Races.V4", "Game.Boat", "Features.Sea.Events", "Features.Sea.Islands", "Features.Sea.Volcano",
     "Features.TyrantFarm", "Features.Helpers", "Features.SafeSpot", "Features.Scout",
     "Kaitun.Config", "Kaitun.Tasks", "Kaitun.Engine", "Kaitun.Screen",
+    "Volcano.Config", "Volcano.Engine", "Volcano.Screen",
     "Features.Items.Melee", "Features.Items.Electric", "Features.SkipLevel", "Features.Codes", "UI.Logo",
 }
 for _, name in ipairs(MODULES) do
@@ -2246,6 +2247,15 @@ do
     eq("dragon hunter fights the enforcer", Dragon.hunter.target, enforcer)
 end
 
+-- Dragon Hunter not streamed in: off to Hydra Island (it used to wait forever).
+otherSetup(7449423635)
+do
+    Settings.set("OtherDragonHunter", true)
+    Dragon.hunter.tick()
+    eq("no dragon hunter: to Hydra Island", Dragon.hunter.status, "Going to Hydra Island for the Dragon Hunter")
+    near("flying to Waterfall", Movement.goal().Position, Dragon.WATERFALL)
+end
+
 -- Fishing: cast at the saved spot, catch when a fish bites.
 otherSetup()
 do
@@ -3293,6 +3303,95 @@ do
     Volcano.magnet.tick()
     eq("crafting", Volcano.magnet.status, "Crafting the Volcanic Magnet")
     eq("craft sent", craft.Invoked and craft.Invoked[1][2], "Volcanic Magnet")
+end
+
+-- Strawberry Volcano: its config, the hub settings it sets, Sea 3, the counts.
+local VolcanoConfig = require("Volcano.Config")
+local VolcanoEngine = require("Volcano.Engine")
+local VolcanoScreen = require("Volcano.Screen")
+
+do
+    VolcanoConfig.reset()
+    local merged = VolcanoConfig.merge({ Weapon = "Sword", SkillWeapons = { Gun = false }, Speed = "fast" })
+    eq("volcano config: weapon", merged.Weapon, "Sword")
+    eq("volcano config: skill weapons merged", merged.SkillWeapons.Gun, false)
+    eq("volcano config: other skills kept", merged.SkillWeapons.Melee, true)
+    eq("volcano config: a wrong type falls back", merged.Speed, 300)
+    eq("volcano config: defaults", VolcanoConfig.merge(nil).CraftMagnet, true)
+    check("volcano loader: this script", VolcanoConfig.loader():find("StrawberryVolcano.lua", 1, true) ~= nil)
+
+    local keys = VolcanoEngine.keys({ CraftMagnet = false, Weapon = "Gun", Boat = "Titanic" })
+    eq("volcano keys: fully on", keys.VolcanoFully, true)
+    eq("volcano keys: no magnet craft", keys.VolcanoSkipMagnet, true)
+    eq("volcano keys: bones kept", keys.VolcanoSkipBones, false)
+    eq("volcano keys: unknown weapon -> Melee", keys.VolcanoGolemWeapon, "Melee")
+    eq("volcano keys: the farm weapon too", keys.Weapon, "Melee")
+    eq("volcano keys: unknown boat -> Guardian", keys.SeaBoat, "Guardian")
+    eq("volcano keys: no webhook without a url", keys.WebhookPrehistoric, nil)
+    local hooked = VolcanoEngine.keys({ WebhookUrl = "https://example.invalid/hook", Weapon = "Sword" })
+    eq("volcano keys: webhook with a url", hooked.WebhookPrehistoric, true)
+    eq("volcano keys: the url", hooked.WebhookUrl, "https://example.invalid/hook")
+    eq("volcano keys: sword kept", hooked.VolcanoGolemWeapon, "Sword")
+    for key in pairs(hooked) do
+        check("volcano keys: known setting " .. key, Settings.DEFAULTS[key] ~= nil)
+    end
+end
+
+-- Sea 2: off to Sea 3, once a minute; the settings go back on stop.
+seaSetup(4442272183)
+do
+    VolcanoConfig.reset()
+    VolcanoEngine.reset()
+    VolcanoEngine.tick()
+    eq("volcano: Sea 2 travels", VolcanoEngine.status().step, "Travelling to Sea 3")
+    eq("volcano: TravelZou sent", #calls(world.commF, "TravelZou"), 1)
+    VolcanoEngine.tick()
+    eq("volcano: once a minute", #calls(world.commF, "TravelZou"), 1)
+    eq("volcano: settings applied", Settings.get("VolcanoFully"), true)
+    VolcanoEngine.stop()
+    eq("volcano: stop puts the settings back", Settings.get("VolcanoFully"), false)
+end
+itemsSetup(4442272183, 1000)
+do
+    VolcanoEngine.reset()
+    VolcanoEngine.tick()
+    check("volcano: under 1500 says Sea 3", VolcanoEngine.status().step:find("Sea 3", 1, true) ~= nil,
+        VolcanoEngine.status().step)
+    eq("volcano: no travel under 1500", #calls(world.commF, "TravelZou"), 0)
+    VolcanoEngine.stop()
+end
+
+-- Sea 3: the island and its event are counted when they change.
+seaSetup(nil, {
+    { Name = "Scrap Metal", Type = "Material", Count = 4 },
+    { Name = "Dragon Egg", Type = "Material", Count = 2 },
+    { Name = "Dinosaur Bones", Type = "Material", Count = 7 },
+})
+do
+    VolcanoEngine.reset()
+    VolcanoEngine.tick()
+    local status = VolcanoEngine.status()
+    eq("volcano: no island yet", status.island, "not here")
+    check("volcano: magnet materials", status.magnet:find("Scrap Metal 4/10", 1, true) ~= nil, status.magnet)
+    eq("volcano: eggs read", status.eggs, 2)
+    eq("volcano: bones read", status.bones, 7)
+    local island = folder("PrehistoricIsland", folder("Map", workspace))
+    folder("Core", island)
+    local timer = hud("PrehistoricRaidTimer", true)
+    VolcanoEngine.tick()
+    eq("volcano: island counted", VolcanoEngine.status().islands, 1)
+    eq("volcano: event running", VolcanoEngine.status().island, "event running")
+    timer.Visible = false
+    VolcanoEngine.tick()
+    eq("volcano: event counted", VolcanoEngine.status().events, 1)
+    eq("volcano: island still here", VolcanoEngine.status().island, "here")
+    check("volcano: logged", VolcanoEngine.status().log[1]:find("event over", 1, true) ~= nil,
+        VolcanoEngine.status().log[1])
+    local lines = VolcanoScreen.lines()
+    eq("volcano panel: counts", lines.Counts, "Islands 1  ·  Events 1")
+    eq("volcano panel: eggs", lines.Eggs, "Dragon Eggs: 2  (+0)")
+    eq("volcano panel: bones", lines.Bones, "Dino Bones: 7")
+    VolcanoEngine.stop()
 end
 
 -- Dojo Red belt: a Terrorshark at sea, counted once it is down.

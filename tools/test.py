@@ -44,6 +44,11 @@ SUITES = {
         "stubs": ["stubs.lua", "fakefluent.lua", "smokeprelude.lua", "kaitunprelude.lua"],
         "entry": 'SMOKE_KAITUN = require("kaitun")',
     },
+    "smoke-volcano": {
+        "file": "volcanosmoke.lua",
+        "stubs": ["stubs.lua", "fakefluent.lua", "smokeprelude.lua", "volcanoprelude.lua"],
+        "entry": 'SMOKE_VOLCANO = require("volcano")',
+    },
     # The MCP bridge's in-game client (mcp/lua/bridge.lua), run in test mode.
     "bridge": {
         "file": "bridgetests.lua",

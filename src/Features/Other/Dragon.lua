@@ -250,8 +250,9 @@ function Dragon.hunterStep(mode)
     if not hunterTask then
         local npc = World.npcPosition("Dragon Hunter")
         if not npc then
-            Movement.stop()
-            return "Dragon Hunter not loaded (go to Hydra Island)"
+            -- Hydra Island streams it in (it used to wait here forever).
+            Common.goTo(Dragon.WATERFALL)
+            return "Going to Hydra Island for the Dragon Hunter"
         end
         Common.goTo(CFrame.new(npc) * CFrame.new(0, 0, 4))
         if Common.near(npc, 8) and Common.every("DragonHunterAsk", 2) then

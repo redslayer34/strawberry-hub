@@ -32,9 +32,14 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
 DIST = ROOT / "StrawberryHub.lua"
-# Every distributed script: (entry module, packed file). The hub and the
-# Kaitun share all their modules; each build only ships what its entry uses.
-TARGETS = [("main", DIST), ("kaitun", ROOT / "StrawberryKaitun.lua")]
+# Every distributed script: (entry module, packed file). The hub, the
+# Kaitun and the Volcano script share all their modules; each build only
+# ships what its entry uses.
+TARGETS = [
+    ("main", DIST),
+    ("kaitun", ROOT / "StrawberryKaitun.lua"),
+    ("volcano", ROOT / "StrawberryVolcano.lua"),
+]
 KEY = "str4wb3rry_hub_k3y_2026"
 ENTRY = "main"
 

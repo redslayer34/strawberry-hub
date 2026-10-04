@@ -55,13 +55,14 @@ local function copy(value)
     return out
 end
 
--- The defaults with `user` laid over them. Unknown keys are kept (harmless)
--- and wrong types fall back to the default.
-function Config.merge(user)
-    local out = copy(Config.DEFAULTS)
+-- `defaults` with `user` laid over them. Unknown keys are kept (harmless)
+-- and wrong types fall back to the default. (The Volcano script's config
+-- merges the same way.)
+function Config.mergeOver(defaults, user)
+    local out = copy(defaults)
     if type(user) ~= "table" then return out end
     for key, value in pairs(user) do
-        local default = Config.DEFAULTS[key]
+        local default = defaults[key]
         if type(default) == "table" and type(value) == "table" then
             for inner, innerValue in pairs(value) do out[key][inner] = innerValue end
         elseif default == nil or type(default) == type(value) then
@@ -69,6 +70,10 @@ function Config.merge(user)
         end
     end
     return out
+end
+
+function Config.merge(user)
+    return Config.mergeOver(Config.DEFAULTS, user)
 end
 
 local current = copy(Config.DEFAULTS)

@@ -16,6 +16,35 @@ Optional, before the loader: `getgenv().StrawberryTeam = "Marines"` (default: Pi
 Settings are saved automatically (`StrawberryHub/BloxFruits/settings/autosave.json`)
 and loaded on the next run.
 
+## Strawberry Volcano (Prehistoric Island)
+
+A standalone script that does the Prehistoric Island over and over, with no window:
+it crafts the Volcanic Magnet (10 Scrap Metal, 15 Blaze Ember from the Dragon Hunter), sails out
+until the island spawns, runs the volcano event (Lava Golems, erupting rocks), collects the
+dragon eggs and dino bones, resets, and starts again. It is the hub's "Fully Prehistoric Island"
+(Banana's flow) with a small status panel (`RightControl` hides it). Sea 3, level 1500.
+
+```lua
+getgenv().StrawberryVolcano = {
+    Weapon = "Melee",        -- golems and the magnet's mobs: "Melee", "Sword" or "Blox Fruit"
+    SkillWeapons = { Melee = true, Sword = true, ["Blox Fruit"] = true, Gun = true },  -- skills on the rocks
+    CraftMagnet = true,      -- false: bring your own Volcanic Magnet
+    CollectBones = true,
+    Boat = "Guardian",
+    Speed = 300,             -- flying speed
+    BoatSpeed = 350,
+    Team = "Pirates",
+    WalkOnWater = true,
+    FpsBoost = false,
+    BlackScreen = false,
+    WebhookUrl = "",         -- your own webhook: a message when the island spawns
+    ShowScreen = true,
+}
+loadstring(game:HttpGet("https://raw.githubusercontent.com/redslayer34/strawberry-hub/claude/repo-exploration-ez26bn/StrawberryVolcano.lua"))()
+```
+
+Anything left out keeps its default. Loading it unloads the hub or the Kaitun, and the other way round.
+
 ## Features
 
 The hub is being rewritten in steps, each tested in game before the next.
@@ -46,6 +75,8 @@ Everything comes from the game's own data, nothing is guessed:
 ```
 src/
 ├── main.lua              entry point: game ready → engine → interface → Unload
+├── kaitun.lua            entry point of StrawberryKaitun.lua (Kaitun/)
+├── volcano.lua           entry point of StrawberryVolcano.lua (Volcano/)
 ├── Core/                 Services, Settings, Loop, Player
 ├── Game/                 Quests, Enemies, Movement, Combat, Bring, Mastery, AimHook, World, Server, Data
 ├── Features/             Farm (one mode at a time), Travel, Fight, MobFarm, the farm modes, Stats, PlayerTweaks

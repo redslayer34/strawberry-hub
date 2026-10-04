@@ -45,8 +45,8 @@ local env = (getgenv and getgenv()) or _G
 
 -- Running the loader twice must not leave two hubs fighting over the
 -- character: the previous one is unloaded first.
--- The same goes for a running Kaitun.
-for _, name in ipairs({ "StrawberryHub", "StrawberryKaitunHub" }) do
+-- The same goes for a running Kaitun or Volcano script.
+for _, name in ipairs({ "StrawberryHub", "StrawberryKaitunHub", "StrawberryVolcanoHub" }) do
     local previous = env[name]
     if type(previous) == "table" and type(previous.Unload) == "function" then pcall(previous.Unload) end
 end

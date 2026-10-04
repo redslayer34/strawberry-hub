@@ -8,8 +8,8 @@
 --      getgenv().StrawberryKaitun = { Team = "Pirates", Skip = { CDK = true } }
 --
 --  It shares every module with the hub, so a fix in the hub fixes the
---  Kaitun too. Running it unloads a hub or a Kaitun already running: two of
---  them would fight over the character.
+--  Kaitun too. Running it unloads a hub, a Kaitun or a Volcano script
+--  already running: two of them would fight over the character.
 --=============================================================================
 
 local AimHook = require("Game.AimHook")
@@ -41,7 +41,7 @@ local VERSION = "1.0.0"
 
 local env = (getgenv and getgenv()) or _G
 
-for _, name in ipairs({ "StrawberryKaitunHub", "StrawberryHub" }) do
+for _, name in ipairs({ "StrawberryKaitunHub", "StrawberryHub", "StrawberryVolcanoHub" }) do
     local previous = env[name]
     if type(previous) == "table" and type(previous.Unload) == "function" then pcall(previous.Unload) end
 end
