@@ -77,6 +77,7 @@ return function(Window)
     Bind.toggle(volcano, "VolcanoBones", "Auto Collect Dino Bones")
     Bind.toggle(volcano, "VolcanoSkipMagnet", "Fully: Skip The Magnet")
     Bind.toggle(volcano, "VolcanoSkipBones", "Fully: Skip The Bones")
+    Bind.toggle(volcano, "VolcanoSkipEggs", "Fully: Skip The Dragon Eggs")
     Bind.toggle(volcano, "VolcanoFully", "Fully Prehistoric Island", "Magnet, find, event, eggs, bones, reset.")
 
     local drive = tab:AddSection("Drive")

@@ -250,6 +250,7 @@ Settings.DEFAULTS = {
     VolcanoFully = false,
     VolcanoSkipMagnet = false,
     VolcanoSkipBones = false,
+    VolcanoSkipEggs = false,
     VolcanoGolemWeapon = "Melee",
 
     -- ESP

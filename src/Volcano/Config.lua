@@ -26,6 +26,7 @@ Config.DEFAULTS = {
     -- The skills that plug the erupting rocks.
     SkillWeapons = { Melee = true, Sword = true, ["Blox Fruit"] = true, Gun = true },
     CraftMagnet = true,      -- false: bring your own Volcanic Magnet
+    CollectEggs = true,      -- the Dragon Eggs after the event
     CollectBones = true,     -- the Dino Bones after the event
     WalkOnWater = true,
     FpsBoost = false,

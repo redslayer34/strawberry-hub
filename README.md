@@ -29,6 +29,7 @@ getgenv().StrawberryVolcano = {
     Weapon = "Melee",        -- golems and the magnet's mobs: "Melee", "Sword" or "Blox Fruit"
     SkillWeapons = { Melee = true, Sword = true, ["Blox Fruit"] = true, Gun = true },  -- skills on the rocks
     CraftMagnet = true,      -- false: bring your own Volcanic Magnet
+    CollectEggs = true,      -- the Dragon Eggs after the event
     CollectBones = true,
     Boat = "Guardian",
     Speed = 300,             -- flying speed

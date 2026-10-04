@@ -3305,6 +3305,20 @@ do
     eq("craft sent", craft.Invoked and craft.Invoked[1][2], "Volcanic Magnet")
 end
 
+-- Fully: the dragon eggs are collected unless skipped.
+for _, skip in ipairs({ false, true }) do
+    seaSetup()
+    Settings.set("VolcanoFully", true)
+    Settings.set("VolcanoSkipEggs", skip)
+    world.player:SetAttribute("CurrentLocation", "Prehistoric Island")
+    local center = folder("Core", folder("PrehistoricIsland", folder("Map", workspace)))
+    local egg = newInstance("Model", "DragonEgg", folder("SpawnedDragonEggs", center))
+    newInstance("ProximityPrompt", "ProximityPrompt", part("Molten", Vector3.new(30, 0, 0), egg))
+    Volcano.fully.tick()
+    eq("fully: egg " .. (skip and "skipped" or "collected"),
+        Volcano.fully.status == "Collecting a dragon egg", not skip)
+end
+
 -- Strawberry Volcano: its config, the hub settings it sets, Sea 3, the counts.
 local VolcanoConfig = require("Volcano.Config")
 local VolcanoEngine = require("Volcano.Engine")
@@ -3324,6 +3338,8 @@ do
     eq("volcano keys: fully on", keys.VolcanoFully, true)
     eq("volcano keys: no magnet craft", keys.VolcanoSkipMagnet, true)
     eq("volcano keys: bones kept", keys.VolcanoSkipBones, false)
+    eq("volcano keys: eggs kept", keys.VolcanoSkipEggs, false)
+    eq("volcano keys: eggs off", VolcanoEngine.keys({ CollectEggs = false }).VolcanoSkipEggs, true)
     eq("volcano keys: unknown weapon -> Melee", keys.VolcanoGolemWeapon, "Melee")
     eq("volcano keys: the farm weapon too", keys.Weapon, "Melee")
     eq("volcano keys: unknown boat -> Guardian", keys.SeaBoat, "Guardian")

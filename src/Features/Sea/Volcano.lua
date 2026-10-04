@@ -309,7 +309,7 @@ Volcano.fully = Mode({
             return Volcano.findStep() or "Island found"
         end
         Boat.stop()
-        local collected = Volcano.collectStep(true, not Settings.get("VolcanoSkipBones"))
+        local collected = Volcano.collectStep(not Settings.get("VolcanoSkipEggs"), not Settings.get("VolcanoSkipBones"))
         if collected then return collected end
         if resetWhenDone() then return "Island done: resetting" end
         return Volcano.eventStep(mode)

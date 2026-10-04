@@ -63,6 +63,7 @@ function Engine.keys(config)
         Weapon = weapon,
         VolcanoSkipMagnet = get("CraftMagnet") == false,
         VolcanoSkipBones = get("CollectBones") == false,
+        VolcanoSkipEggs = get("CollectEggs") == false,
         SeaBoat = boat,
         SeaBoatSpeed = tonumber(get("BoatSpeed")) or 350,
         SeaSkillWeapons = get("SkillWeapons"),
@@ -172,7 +173,8 @@ function Engine.start()
     pcall(function()
         require("Game.Router").listener = function(text) note("travel: " .. text) end
     end)
-    note("started: craft, find, event, eggs" .. (Config.get("CollectBones") == false and "" or ", bones")
+    note("started: craft, find, event" .. (Config.get("CollectEggs") == false and "" or ", eggs")
+        .. (Config.get("CollectBones") == false and "" or ", bones")
         .. ", reset, again")
     Engine.tick()
     Loop.start("Volcano", Engine.EVERY, Engine.tick)
