@@ -1,32 +1,67 @@
 --=============================================================================
--- VOLCANO SCREEN — what the Volcano script is doing, over the game
+-- VOLCANO SCREEN — the Kaitun panel, for the Prehistoric Island
 --=============================================================================
---  The Kaitun panel's look, smaller and lighter so the island stays in
---  view: name, running time, the current step, then boxes for the island,
---  the magnet and the loot. Clicks go through to the game and RightControl
---  hides or shows it. Plain Instances: nothing to download.
+--  The same look as the Kaitun's (Kaitun/Screen): the whole screen gets a
+--  tint with the information centred on it: logo, name, running time and
+--  total time, the current step, then boxes for the magnet (and what it
+--  still needs), the island, the eggs and bones, and the counts. Clicks go
+--  through to the game and RightControl hides or shows it. Plain
+--  Instances: nothing to download.
+--
+--  The total running time is kept per account in the executor's workspace,
+--  so it carries on across rejoins and restarts.
 --=============================================================================
 
 local Engine = require("Volcano.Engine")
+local Logo = require("UI.Logo")
 local Loop = require("Core.Loop")
 local Services = require("Core.Services")
 
 local Screen = {}
 
 Screen.EVERY = 1
+Screen.SAVE_EVERY = 30
 Screen.TOGGLE_KEY = "RightControl"
-Screen.TINT = 0.78             -- background transparency of the full-screen tint
+Screen.TINT = 0.55             -- background transparency of the full-screen tint
+Screen.FOLDER = "StrawberryHub"
 
 local RED = Color3.fromRGB(230, 46, 76)
 local PINK = Color3.fromRGB(255, 128, 150)
 local SOFT = Color3.fromRGB(255, 205, 214)
 local TEXT = Color3.fromRGB(250, 240, 242)
 local MUTED = Color3.fromRGB(205, 170, 178)
+local GOOD = Color3.fromRGB(140, 230, 150)
 local BOX = Color3.fromRGB(28, 14, 20)
 local TINT = Color3.fromRGB(16, 6, 10)
 
 local gui, labels, connections, dots = nil, {}, {}, {}
 local startedAt, tick = os.clock(), 0
+local totalBefore, lastSave = 0, os.clock()
+
+---------------------------------------------------------------------------
+-- Total time (per account, in the workspace)
+---------------------------------------------------------------------------
+
+local function timeFile()
+    local player = Services.player()
+    return Screen.FOLDER .. "/volcano_time_" .. tostring(player and player.UserId or 0) .. ".txt"
+end
+
+local function loadTotal()
+    local ok, seconds = pcall(function()
+        if not (isfile and readfile and isfile(timeFile())) then return 0 end
+        return tonumber(readfile(timeFile())) or 0
+    end)
+    return ok and seconds or 0
+end
+
+local function saveTotal()
+    pcall(function()
+        if not writefile then return end
+        if makefolder and isfolder and not isfolder(Screen.FOLDER) then makefolder(Screen.FOLDER) end
+        writefile(timeFile(), tostring(math.floor(totalBefore + os.clock() - startedAt)))
+    end)
+end
 
 local function clock(seconds)
     seconds = math.max(0, math.floor(seconds))
@@ -43,11 +78,11 @@ local function corner(parent, radius)
     c.Parent = parent
 end
 
-local function stroke(parent, color)
+local function stroke(parent, color, thickness, transparency)
     local s = Instance.new("UIStroke")
     s.Color = color
-    s.Thickness = 1
-    s.Transparency = 0.45
+    s.Thickness = thickness or 1
+    s.Transparency = transparency or 0
     s.Parent = parent
 end
 
@@ -57,7 +92,7 @@ local function text(parent, name, y, height, size, color, font, width)
     label.Name = name
     label.AnchorPoint = Vector2.new(0.5, 0)
     label.Position = UDim2.new(0.5, 0, 0, y)
-    label.Size = UDim2.new(0, width or 620, 0, height)
+    label.Size = UDim2.new(0, width or 640, 0, height)
     label.BackgroundTransparency = 1
     label.Font = font or Enum.Font.Arcade
     label.TextSize = size
@@ -76,20 +111,20 @@ local function box(parent, name, x, y, width)
     frame.Name = name .. "Box"
     frame.AnchorPoint = Vector2.new(0.5, 0)
     frame.Position = UDim2.new(0.5, x, 0, y)
-    frame.Size = UDim2.new(0, width, 0, 32)
+    frame.Size = UDim2.new(0, width, 0, 34)
     frame.BackgroundColor3 = BOX
     frame.BackgroundTransparency = 0.25
     frame.BorderSizePixel = 0
     frame.Parent = parent
     corner(frame, UDim.new(0, 8))
-    stroke(frame, RED)
+    stroke(frame, RED, 1, 0.45)
     local label = Instance.new("TextLabel")
     label.Name = name
     label.Size = UDim2.new(1, -12, 1, 0)
     label.Position = UDim2.new(0, 6, 0, 0)
     label.BackgroundTransparency = 1
     label.Font = Enum.Font.Arcade
-    label.TextSize = 14
+    label.TextSize = 15
     label.TextColor3 = SOFT
     label.TextTruncate = Enum.TextTruncate.AtEnd
     label.Text = ""
@@ -101,7 +136,7 @@ end
 function Screen.build()
     Screen.destroy()
     labels, dots = {}, {}
-    startedAt = os.clock()
+    totalBefore, startedAt, lastSave = loadTotal(), os.clock(), os.clock()
 
     gui = Instance.new("ScreenGui")
     gui.Name = "StrawberryVolcano"
@@ -125,7 +160,7 @@ function Screen.build()
     center.Name = "Center"
     center.AnchorPoint = Vector2.new(0.5, 0.5)
     center.Position = UDim2.new(0.5, 0, 0.5, 0)
-    center.Size = UDim2.new(0, 640, 0, 300)
+    center.Size = UDim2.new(0, 660, 0, 470)
     center.BackgroundTransparency = 1
     center.Parent = tint
     -- Smaller screens (phones): the block shrinks to fit.
@@ -133,29 +168,74 @@ function Screen.build()
     scale.Parent = center
     pcall(function()
         local size = workspace.CurrentCamera.ViewportSize
-        scale.Scale = math.clamp(math.min(size.X / 680, size.Y / 320), 0.55, 1.2)
+        scale.Scale = math.clamp(math.min(size.X / 700, size.Y / 480), 0.55, 1.2)
     end)
 
-    text(center, "Title", 0, 40, 32, PINK).Text = "🌋 Strawberry Volcano"
+    -- Logo: a white disc with the strawberry, red ring.
+    local logo = Instance.new("Frame")
+    logo.Name = "Logo"
+    logo.AnchorPoint = Vector2.new(0.5, 0)
+    logo.Position = UDim2.new(0.5, 0, 0, 0)
+    logo.Size = UDim2.new(0, 104, 0, 104)
+    logo.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    logo.BorderSizePixel = 0
+    logo.Parent = center
+    corner(logo, UDim.new(1, 0))
+    stroke(logo, RED, 3)
+    local image = Logo.asset()
+    if image then
+        local berry = Instance.new("ImageLabel")
+        berry.Name = "Berry"
+        berry.AnchorPoint = Vector2.new(0.5, 0)
+        berry.Position = UDim2.new(0.5, 0, 0.08, 0)
+        berry.Size = UDim2.new(0.56, 0, 0.56, 0)
+        berry.BackgroundTransparency = 1
+        berry.Image = image
+        berry.ScaleType = Enum.ScaleType.Fit
+        pcall(function() berry.ResampleMode = Enum.ResamplerMode.Pixelated end)
+        berry.Parent = logo
+    else
+        local berry = Instance.new("TextLabel")
+        berry.Name = "Berry"
+        berry.Size = UDim2.new(1, 0, 0.7, 0)
+        berry.BackgroundTransparency = 1
+        berry.Text = "🌋"
+        berry.TextSize = 54
+        berry.Font = Enum.Font.GothamBold
+        berry.TextColor3 = RED
+        berry.Parent = logo
+    end
+    local small = Instance.new("TextLabel")
+    small.Name = "LogoName"
+    small.Position = UDim2.new(0, 0, 0.66, 0)
+    small.Size = UDim2.new(1, 0, 0.22, 0)
+    small.BackgroundTransparency = 1
+    small.Text = "Strawberry"
+    small.TextSize = 13
+    small.Font = Enum.Font.GothamBold
+    small.TextColor3 = RED
+    small.Parent = logo
+
+    text(center, "Title", 116, 40, 34, PINK).Text = "🌋 Strawberry Volcano"
 
     local bar = Instance.new("Frame")
     bar.Name = "Underline"
     bar.AnchorPoint = Vector2.new(0.5, 0)
-    bar.Position = UDim2.new(0.5, 0, 0, 42)
+    bar.Position = UDim2.new(0.5, 0, 0, 160)
     bar.Size = UDim2.new(0, 240, 0, 3)
     bar.BackgroundColor3 = RED
     bar.BorderSizePixel = 0
     bar.Parent = center
     corner(bar, UDim.new(1, 0))
 
-    text(center, "Running", 54, 22, 18, SOFT)
-    text(center, "Time", 76, 16, 13, MUTED)
+    text(center, "Running", 174, 24, 20, SOFT)
+    text(center, "Time", 198, 18, 14, MUTED)
 
     for index = 1, 3 do
         local dot = Instance.new("Frame")
         dot.Name = "Dot" .. index
         dot.AnchorPoint = Vector2.new(0.5, 0)
-        dot.Position = UDim2.new(0.5, (index - 2) * 16, 0, 96)
+        dot.Position = UDim2.new(0.5, (index - 2) * 16, 0, 222)
         dot.Size = UDim2.new(0, 8, 0, 8)
         dot.BackgroundColor3 = RED
         dot.BorderSizePixel = 0
@@ -164,15 +244,18 @@ function Screen.build()
         dots[index] = dot
     end
 
-    text(center, "Step", 112, 36, 15, TEXT, Enum.Font.GothamBold)
+    text(center, "Step", 238, 34, 15, TEXT, Enum.Font.GothamBold)
 
-    box(center, "Island", -160, 156, 300)
-    box(center, "Counts", 160, 156, 300)
-    box(center, "Magnet", 0, 196, 620)
-    box(center, "Eggs", -160, 236, 300)
-    box(center, "Bones", 160, 236, 300)
+    box(center, "Magnet", -107, 280, 414)
+    box(center, "Island", 214, 280, 200)
+    box(center, "Missing", -107, 322, 414)
+    box(center, "Counts", 214, 322, 200)
+    box(center, "Eggs", -214, 364, 200)
+    box(center, "Bones", 0, 364, 200)
+    box(center, "Sea", 214, 364, 200)
 
-    text(center, "Last", 278, 16, 12, MUTED, Enum.Font.Gotham)
+    text(center, "Last", 410, 16, 12, MUTED, Enum.Font.Gotham)
+    text(center, "Log", 428, 30, 11, MUTED, Enum.Font.Gotham)
 
     local input = Services.get("UserInputService")
     connections[#connections + 1] = input.InputBegan:Connect(function(event, processed)
@@ -206,20 +289,40 @@ function Screen.lines()
         screenError = tostring(status)
         status = { log = {} }
     end
+    local session = os.clock() - startedAt
     local lines = {
         Running = "Volcano Running" .. string.rep(".", tick % 3 + 1),
-        Time = "Time: " .. clock(os.clock() - startedAt),
+        Time = "Time: " .. clock(session) .. "  •  Total: " .. clock(totalBefore + session),
         Step = safe(function() return status.step or "Starting" end),
+        Magnet = safe(function()
+            if status.magnetHeld then return "Volcanic Magnet: YES" end
+            return string.format("Magnet: NO  ·  Scrap %d/10  ·  Ember %d/15", status.scrap or 0, status.embers or 0)
+        end),
         Island = safe(function() return "Island: " .. tostring(status.island or "?") end),
+        Missing = safe(function()
+            if status.magnetHeld then return "Missing: nothing, magnet ready" end
+            local missing = status.missing or {}
+            if #missing == 0 then return "Missing: nothing, crafting" end
+            return "Missing: " .. table.concat(missing, " + ")
+        end),
         Counts = safe(function()
-            return string.format("Islands %d  ·  Events %d", status.islands or 0, status.events or 0)
+            return string.format("Islands %d · Events %d", status.islands or 0, status.events or 0)
         end),
-        Magnet = safe(function() return "Volcanic Magnet: " .. tostring(status.magnet or "?") end),
         Eggs = safe(function()
-            return string.format("Dragon Eggs: %d  (+%d)", status.eggs or 0, status.eggsGained or 0)
+            return string.format("Eggs: %d (+%d)", status.eggs or 0, status.eggsGained or 0)
         end),
-        Bones = safe(function() return "Dino Bones: " .. tostring(status.bones or 0) end),
+        Bones = safe(function()
+            return string.format("Bones: %d (+%d)", status.bones or 0, status.bonesGained or 0)
+        end),
+        Sea = safe(function()
+            return string.format("Sea %s · Lv %s", tostring(status.sea or "?"), tostring(status.level or "?"))
+        end),
         Last = safe(function() return status.log[1] or "" end),
+        Log = safe(function()
+            local older = {}
+            for index = 2, math.min(#status.log, 4) do older[#older + 1] = status.log[index] end
+            return table.concat(older, "   ")
+        end),
     }
     if screenError then lines.Last = "screen error: " .. screenError end
     return lines
@@ -236,6 +339,12 @@ function Screen.update()
         for name, value in pairs(lines) do
             if labels[name] then labels[name].Text = value end
         end
+        -- Green once the magnet is in hand.
+        if labels.Magnet then labels.Magnet.TextColor3 = lines.Magnet:find("YES", 1, true) and GOOD or SOFT end
+    end
+    if os.clock() - lastSave >= Screen.SAVE_EVERY then
+        lastSave = os.clock()
+        saveTotal()
     end
 end
 
@@ -250,6 +359,7 @@ end
 
 function Screen.destroy()
     Loop.stop("VolcanoScreen")
+    if gui then saveTotal() end
     for _, connection in ipairs(connections) do pcall(function() connection:Disconnect() end) end
     connections = {}
     if gui then pcall(function() gui:Destroy() end) end

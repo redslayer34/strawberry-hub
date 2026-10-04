@@ -3404,9 +3404,13 @@ do
     check("volcano: logged", VolcanoEngine.status().log[1]:find("event over", 1, true) ~= nil,
         VolcanoEngine.status().log[1])
     local lines = VolcanoScreen.lines()
-    eq("volcano panel: counts", lines.Counts, "Islands 1  ·  Events 1")
-    eq("volcano panel: eggs", lines.Eggs, "Dragon Eggs: 2  (+0)")
-    eq("volcano panel: bones", lines.Bones, "Dino Bones: 7")
+    eq("volcano panel: counts", lines.Counts, "Islands 1 · Events 1")
+    eq("volcano panel: eggs", lines.Eggs, "Eggs: 2 (+0)")
+    eq("volcano panel: bones", lines.Bones, "Bones: 7 (+0)")
+    eq("volcano panel: no magnet", lines.Magnet, "Magnet: NO  ·  Scrap 4/10  ·  Ember 0/15")
+    eq("volcano panel: what it needs", lines.Missing, "Missing: 6 Scrap Metal + 15 Blaze Ember")
+    check("volcano panel: total time", lines.Time:find("Total", 1, true) ~= nil, lines.Time)
+    check("volcano panel: sea", lines.Sea:find("Sea 3", 1, true) ~= nil, lines.Sea)
     VolcanoEngine.stop()
 end
 

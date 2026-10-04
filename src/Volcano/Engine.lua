@@ -145,6 +145,7 @@ function Engine.track()
     local island = Volcano.island() ~= nil
     local running = Volcano.running() == true
     local eggs = Engine.eggs()
+    local bones = Engine.bones()
     local magnet = Common.item("Volcanic Magnet") ~= nil
     if island and last.island == false then
         counts.islands = counts.islands + 1
@@ -158,8 +159,12 @@ function Engine.track()
         counts.eggs = counts.eggs + (eggs - last.eggs)
         note("dragon egg collected (" .. eggs .. ")")
     end
-    if magnet and last.magnet == false then note("Volcanic Magnet crafted") end
-    last.island, last.running, last.eggs, last.magnet = island, running, eggs, magnet
+    if last.bones and bones > last.bones then counts.bones = counts.bones + (bones - last.bones) end
+    if magnet and last.magnet == false then
+        counts.magnets = counts.magnets + 1
+        note("Volcanic Magnet crafted")
+    end
+    last.island, last.running, last.eggs, last.bones, last.magnet = island, running, eggs, bones, magnet
 end
 
 function Engine.tick()
@@ -193,22 +198,35 @@ end
 
 function Engine.status()
     local island = Volcano.island() ~= nil
+    local held = Common.item("Volcanic Magnet") ~= nil
+    local scrap, embers = Common.itemCount("Scrap Metal"), Common.itemCount("Blaze Ember")
     local magnet
-    if Common.item("Volcanic Magnet") then
+    if held then
         magnet = "held"
     else
-        magnet = string.format("Scrap Metal %d/%d  ·  Blaze Ember %d/%d",
-            Common.itemCount("Scrap Metal"), Volcano.SCRAP, Common.itemCount("Blaze Ember"), Volcano.EMBERS)
+        magnet = string.format("Scrap Metal %d/%d  ·  Blaze Ember %d/%d", scrap, Volcano.SCRAP, embers, Volcano.EMBERS)
     end
+    -- What the next magnet still needs.
+    local missing = {}
+    if scrap < Volcano.SCRAP then missing[#missing + 1] = (Volcano.SCRAP - scrap) .. " Scrap Metal" end
+    if embers < Volcano.EMBERS then missing[#missing + 1] = (Volcano.EMBERS - embers) .. " Blaze Ember" end
     return {
         step = seaNote or Farm.status(),
         island = not island and "not here" or (Volcano.running() and "event running" or "here"),
         magnet = magnet,
+        magnetHeld = held,
+        scrap = scrap,
+        embers = embers,
+        missing = missing,
         eggs = Engine.eggs(),
         bones = Engine.bones(),
         islands = counts.islands,
         events = counts.events,
+        magnets = counts.magnets,
         eggsGained = counts.eggs,
+        bonesGained = counts.bones,
+        sea = Player.sea(),
+        level = Player.level(),
         log = log,
     }
 end
@@ -216,7 +234,7 @@ end
 -- Test hook.
 function Engine.reset()
     applied, log = {}, {}
-    counts = { islands = 0, events = 0, eggs = 0 }
+    counts = { islands = 0, events = 0, eggs = 0, bones = 0, magnets = 0 }
     last = {}
     lastTravel, seaNote = -math.huge, nil
 end
