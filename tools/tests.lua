@@ -3305,6 +3305,139 @@ do
     eq("craft sent", craft.Invoked and craft.Invoked[1][2], "Volcanic Magnet")
 end
 
+-- SecureHits: off = the usual two calls; on = RegisterHit with {} and the
+-- hidden check remote, only when the seed and the remote exist.
+do
+    eq("hit name xor", Combat.hitName(0):byte(1), Combat.xor(string.byte("R"), 1))
+    eq("hit name key from the clock", Combat.hitName(35):byte(1), Combat.xor(string.byte("R"), 4))
+    eq("xor", Combat.xor(909095, 84), 909095 ~ 84)
+end
+local function secureSetup()
+    setup({ level = 960 })
+    local target = mob("Bandit", Vector3.new(5, 0, 0))
+    return target
+end
+secureSetup()
+do
+    local net = rs.Modules.Net
+    local hit = net.ModuleValue.RemoteEvent(nil, "RegisterHit")
+    Combat.attack()
+    local fired = hit.Fired or {}
+    eq("secure off: one RegisterHit", #fired, 1)
+    eq("secure off: two arguments", fired[1] and fired[1].n or select("#", table.unpack(fired[1] or {})), 2)
+end
+secureSetup()
+do
+    Settings.set("SecureHits", true)
+    local net = rs.Modules.Net
+    local hit = net.ModuleValue.RemoteEvent(nil, "RegisterHit")
+    Combat.attack()
+    eq("secure, nothing there: RegisterHit still sent", #(hit.Fired or {}), 1)
+    local seed = newInstance("RemoteFunction", "seed", net)
+    seed.OnInvoke = function() return 42 end
+    local hidden = newInstance("RemoteEvent", "Signal", folder("Util", rs))
+    hidden:SetAttribute("Id", 5)
+    local realClock = Combat.clock
+    Combat.clock = function() return 35 end
+    Combat.attack()
+    stepTasks()
+    local sent = hidden.Fired and hidden.Fired[1]
+    check("secure on: hidden remote fired", sent ~= nil)
+    Combat.clock = realClock
+    eq("secure on: encoded name", sent and sent[1], Combat.hitName(35))
+    eq("secure on: the check value", sent and sent[2], (5 + 909090) ~ 84)
+    check("secure on: the hits", sent and type(sent[4]) == "table" and #sent[4] >= 1)
+    local last = hit.Fired[#hit.Fired]
+    eq("secure on: RegisterHit third argument", type(last[3]), "table")
+end
+
+-- Prehistoric marker without the island streamed in: off the boat and there.
+seaSetup()
+do
+    Settings.set("VolcanoFind", true)
+    local locations = folder("Locations", folder("_WorldOrigin", workspace))
+    local marker = part("Prehistoric Island", Vector3.new(5000, 0, 0), locations)
+    part("HeadTeleport", Vector3.new(5000, 100, 0), marker)
+    check("spotted", Volcano.spotted())
+    check("find still wanted", Volcano.find.enabled())
+    Volcano.find.tick()
+    eq("spotted: going there", Volcano.find.status, "Prehistoric Island spotted: going there")
+    near("behind the head teleport", Movement.goal().Position, Vector3.new(5000, 120, 40))
+    eq("boat stopped", Boat.goal(), nil)
+    marker:FindFirstChild("HeadTeleport").Parent = nil
+    Volcano.find.tick()
+    near("no head: 250 short, 60 up", Movement.goal().Position, Vector3.new(4750, 60, 0))
+end
+
+-- Fully with the marker only: no magnet crafting (it was spent).
+seaSetup(nil, {})
+do
+    Settings.set("VolcanoFully", true)
+    part("Prehistoric Island", Vector3.new(5000, 0, 0), folder("Locations", folder("_WorldOrigin", workspace)))
+    Volcano.fully.tick()
+    eq("fully: to the spotted island", Volcano.fully.status, "Prehistoric Island spotted: going there")
+end
+
+-- Rocks with the newer effect (VFXLayer.At0.Glow) are found too.
+seaSetup()
+do
+    local center = folder("Core", folder("PrehistoricIsland", folder("Map", workspace)))
+    local rock = newInstance("Model", "Rock", folder("VolcanoRocks", center))
+    rock.WorldPivot = CFrame.new(100, 273.5, 0)
+    local at0 = newInstance("Attachment", "At0", newInstance("Folder", "VFXLayer", rock))
+    local glow = newInstance("ParticleEmitter", "Glow", at0)
+    glow.Enabled = true
+    eq("glowing rock found", Volcano.rock(), rock)
+    glow.Enabled = false
+    eq("cold rock ignored", Volcano.rock(), nil)
+end
+
+-- Lava parts go, the trial door stays.
+seaSetup()
+do
+    local island = folder("PrehistoricIsland", folder("Map", workspace))
+    folder("Core", island)
+    local lava = part("LavaFlow", Vector3.new(0, 0, 0), island)
+    local trial = part("TrialTeleport", Vector3.new(0, 0, 0), island)
+    local touch = newInstance("TouchTransmitter", "TouchInterest", trial)
+    Volcano.stripLava()
+    check("lava part removed", lava.Parent == nil)
+    check("trial door kept", touch.Parent == trial and trial.Parent == island)
+end
+
+-- The trial door open after the event: done, reset once idle.
+seaSetup()
+do
+    Settings.set("VolcanoFully", true)
+    world.player:SetAttribute("CurrentLocation", "Prehistoric Island")
+    local island = folder("PrehistoricIsland", folder("Map", workspace))
+    folder("Core", island)
+    local trial = part("TrialTeleport", Vector3.new(0, 0, 0), island)
+    check("closed door: not done", not Volcano.trialOpen())
+    newInstance("TouchTransmitter", "TouchInterest", trial)
+    check("open door: done", Volcano.trialOpen())
+    Volcano.RESET_AFTER = 0
+    Volcano.fully.tick()
+    eq("reset after the trial door opened", Volcano.fully.status, "Island done: resetting")
+    eq("character reset", world.humanoid.Health, 0)
+    Volcano.RESET_AFTER = 10
+end
+
+-- The magnet craft alternates its two forms while the magnet is missing.
+seaSetup(nil, {
+    { Name = "Scrap Metal", Type = "Material", Count = 10 },
+    { Name = "Blaze Ember", Type = "Material", Count = 15 },
+})
+do
+    Settings.set("VolcanoMagnet", true)
+    local craft = newInstance("RemoteFunction", "RF/Craft", rs.Modules.Net)
+    Volcano.magnet.tick()
+    require("Features.Stack.Common").reset()
+    Volcano.magnet.tick()
+    eq("first form", craft.Invoked and craft.Invoked[1][1], "Craft")
+    eq("second form", craft.Invoked and craft.Invoked[2] and craft.Invoked[2][1], "PossibleHardcode")
+end
+
 -- Fully: the dragon eggs are collected unless skipped.
 for _, skip in ipairs({ false, true }) do
     seaSetup()

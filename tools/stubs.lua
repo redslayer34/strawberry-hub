@@ -88,7 +88,11 @@ CFramemt.__mul = function(a, b)
 end
 CFramemt.__add = function(a, b) return cframe(a.Position + b) end
 CFramemt.__eq = function(a, b) return a.Position == b.Position end
-CFramemt.__index = function() return nil end
+-- Translation-only CFrames: they always face -Z.
+CFramemt.__index = function(_, key)
+    if key == "LookVector" then return Vector3.new(0, 0, -1) end
+    return nil
+end
 CFrame = {
     new = function(x, y, z)
         if type(x) == "table" then return cframe(x) end

@@ -29,6 +29,7 @@ Config.DEFAULTS = {
     CollectEggs = true,      -- the Dragon Eggs after the event
     CollectBones = true,     -- the Dino Bones after the event
     WalkOnWater = true,
+    SecureHits = false,      -- the newer hubs' extra hit check (seed + hidden remote): test option
     FpsBoost = false,
     BlackScreen = false,
     WebhookUrl = "",         -- your own: a message when the island spawns

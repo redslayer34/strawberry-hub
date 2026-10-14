@@ -124,6 +124,30 @@ function Services.netRemote(name, viaModule)
     return remote
 end
 
+-- The game's hidden hit-check RemoteEvent (newer sources): the one with an
+-- "Id" attribute in one of these ReplicatedStorage folders. Returns it and
+-- its Id, or nil. Re-scanned when the cached one is gone.
+Services.HIT_FOLDERS = { "Util", "Common", "Remotes", "Assets", "FX" }
+
+function Services.hitRemote()
+    local cached = remotes["$hit"]
+    if cached and cached.Parent and cached:GetAttribute("Id") ~= nil then
+        return cached, cached:GetAttribute("Id")
+    end
+    remotes["$hit"] = nil
+    local replicated = Services.replicated()
+    for _, name in ipairs(Services.HIT_FOLDERS) do
+        local folder = replicated and replicated:FindFirstChild(name)
+        for _, child in ipairs(folder and folder:GetChildren() or {}) do
+            if child:IsA("RemoteEvent") and child:GetAttribute("Id") ~= nil then
+                remotes["$hit"] = child
+                return child, child:GetAttribute("Id")
+            end
+        end
+    end
+    return nil
+end
+
 -- Where the hub's own screen GUIs go: the executor's hidden container when
 -- it has one (the game cannot see it), CoreGui otherwise.
 function Services.guiParent()

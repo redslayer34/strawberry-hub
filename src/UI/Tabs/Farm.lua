@@ -113,6 +113,8 @@ return function(Window)
     local combat = tab:AddSection("Combat & Skills")
     Bind.slider(combat, "AttackDelay", "Attack Delay", 0, 0.5, 2,
         "Seconds between two attacks. 0 = every frame.")
+    Bind.toggle(combat, "SecureHits", "Secure Hits (test)",
+        "Also sends the hit check the newer hubs send (Net.seed + the hidden remote). Off: the usual two calls.")
     combat:AddParagraph({ Title = "Which skills", Content = "Used by the mastery farm, the sea events, the trees and the trials." })
     Bind.multiDropdown(combat, "SkillsMelee", "Melee Skills", { "Z", "X", "C" })
     Bind.multiDropdown(combat, "SkillsSword", "Sword Skills", { "Z", "X" })

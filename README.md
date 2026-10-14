@@ -36,6 +36,7 @@ getgenv().StrawberryVolcano = {
     BoatSpeed = 350,
     Team = "Pirates",
     WalkOnWater = true,
+    SecureHits = false,      -- test: the newer hubs' extra hit check
     FpsBoost = false,
     BlackScreen = false,
     WebhookUrl = "",         -- your own webhook: a message when the island spawns

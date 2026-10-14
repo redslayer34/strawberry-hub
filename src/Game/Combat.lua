@@ -15,6 +15,7 @@
 
 local Player = require("Core.Player")
 local Services = require("Core.Services")
+local Settings = require("Core.Settings")
 
 local Combat = {}
 
@@ -114,6 +115,61 @@ function Combat.gatherHits(range, includePlayers)
     return hits
 end
 
+---------------------------------------------------------------------------
+-- The newer hit check (SecureHits, off by default)
+---------------------------------------------------------------------------
+--  After RegisterAttack / RegisterHit, the newer sources ask the server for
+--  a seed (Modules.Net.seed) and fire the hidden RemoteEvent that carries an
+--  "Id" attribute with: "RE/RegisterHit" with each byte XOR a key from the
+--  server clock, bxor(Id + 909090, seed * 2), the first hit part and the
+--  hits. Kept behind a setting until a spy shows the game sends it too.
+
+local function xor(a, b)
+    if bit32 and bit32.bxor then return bit32.bxor(a, b) end
+    local result, place = 0, 1
+    while a > 0 or b > 0 do
+        if a % 2 ~= b % 2 then result = result + place end
+        a, b, place = math.floor(a / 2), math.floor(b / 2), place * 2
+    end
+    return result
+end
+Combat.xor = xor
+
+-- "RE/RegisterHit" encoded with the key of `now` (server seconds).
+function Combat.hitName(now)
+    local key = math.floor(now / 10 % 10) + 1
+    return (string.gsub("RE/RegisterHit", ".", function(char)
+        return string.char(xor(string.byte(char), key))
+    end))
+end
+
+-- The server clock (a test hook).
+function Combat.clock()
+    local ok, now = pcall(function() return workspace:GetServerTimeNow() end)
+    if ok and type(now) == "number" then return now end
+    return os.time()
+end
+
+local function seedRemote()
+    local net = Services.find(Services.replicated(), "Modules.Net")
+    return net and net:FindFirstChild("seed")
+end
+
+-- Sends the extra check aside (the seed is a server round trip).
+function Combat.secureHit(firstPart, hits)
+    local hidden, id = Services.hitRemote()
+    local seed = seedRemote()
+    if not (hidden and seed and tonumber(id)) then return false end
+    task.spawn(function()
+        local ok, value = pcall(seed.InvokeServer, seed)
+        value = ok and tonumber(value)
+        if not value then return end
+        pcall(hidden.FireServer, hidden, Combat.hitName(Combat.clock()),
+            xor(math.floor(tonumber(id) + 909090), math.floor(value * 2)), firstPart, hits)
+    end)
+    return true
+end
+
 -- Melee / sword blow on everything in range. Returns true if a hit was sent.
 function Combat.attack(range, includePlayers)
     if Player.stunned() then return false end
@@ -127,7 +183,14 @@ function Combat.attack(range, includePlayers)
 
     local first = table.remove(hits, 1)
     registerAttack:FireServer(0)
-    registerHit:FireServer(first[2], hits)
+    if Settings.get("SecureHits") then
+        registerHit:FireServer(first[2], hits, {})
+        local all = { first }
+        for _, pair in ipairs(hits) do all[#all + 1] = pair end
+        Combat.secureHit(first[2], all)
+    else
+        registerHit:FireServer(first[2], hits)
+    end
     return true
 end
 

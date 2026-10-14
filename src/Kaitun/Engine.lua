@@ -163,6 +163,7 @@ function Engine.background(sea, level, anchored)
         ScreenBlack = Config.get("BlackScreen") == true,
         ScreenBoostFps = Config.get("FpsBoost") == true,
         PvpWaterWalk = Config.get("WalkOnWater") ~= false,
+        SecureHits = Config.get("SecureHits") == true,
         StackFruit = true,
         ItemMeleeProgress = not Config.skipped("Godhuman"),
     }

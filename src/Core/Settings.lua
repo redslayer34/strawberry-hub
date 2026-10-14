@@ -319,6 +319,7 @@ Settings.DEFAULTS = {
 
     -- Combat
     AttackDelay = 0,
+    SecureHits = false,      -- the newer sources' extra hit check (seed + hidden remote)
 
     -- Movement
     TweenSpeed = 300,

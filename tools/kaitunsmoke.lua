@@ -39,6 +39,7 @@ eq("config: team", SMOKE_KAITUN.Config.Team, "Marines")
 eq("config: speed", SMOKE_KAITUN.Config.Speed, 250)
 eq("config: skip merged", SMOKE_KAITUN.Config.Skip.CDK, true)
 eq("config: other skips kept", SMOKE_KAITUN.Config.Skip.Yama, false)
+eq("config: secure hits off", SMOKE_KAITUN.Config.SecureHits, false)
 
 check("farm loop running", Loop.isRunning("Farm"))
 check("attack loop running", Loop.isRunning("Attack"))

@@ -74,6 +74,7 @@ function Engine.keys(config)
         AutoKen = true,
         LowHpEscape = true,
         PvpWaterWalk = get("WalkOnWater") ~= false,
+        SecureHits = get("SecureHits") == true,
         ScreenBlack = get("BlackScreen") == true,
         ScreenBoostFps = get("FpsBoost") == true,
     }
@@ -142,7 +143,8 @@ end
 ---------------------------------------------------------------------------
 
 function Engine.track()
-    local island = Volcano.island() ~= nil
+    -- The marker counts: the island has spawned even before it streams in.
+    local island = Volcano.island() ~= nil or Volcano.location() ~= nil
     local running = Volcano.running() == true
     local eggs = Engine.eggs()
     local bones = Engine.bones()
@@ -212,7 +214,8 @@ function Engine.status()
     if embers < Volcano.EMBERS then missing[#missing + 1] = (Volcano.EMBERS - embers) .. " Blaze Ember" end
     return {
         step = seaNote or Farm.status(),
-        island = not island and "not here" or (Volcano.running() and "event running" or "here"),
+        island = Volcano.running() and "event running" or (island and "here")
+            or (Volcano.location() and "spotted, going there") or "not here",
         magnet = magnet,
         magnetHeld = held,
         scrap = scrap,

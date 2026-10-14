@@ -46,9 +46,21 @@ Volcano.ROCK_OFFSETS = {
     [250] = CFrame.new(0, 40, 0), [454] = CFrame.new(-40, 0, 0),
 }
 Volcano.DEFAULT_OFFSET = CFrame.new(0, 40, 0)
+Volcano.LOCATION = "Prehistoric Island"
+Volcano.APPROACH_BACK = 40       -- studs behind the marker's head teleport
+Volcano.APPROACH_UP = 20
+Volcano.APPROACH_SHORT = 250     -- no head teleport: this far short of the marker
+Volcano.APPROACH_HIGH = 60
+-- The two ways the magnet craft has been sent: this hub's, then the one
+-- the newer sources use. Tried in turn while the magnet does not show up.
+Volcano.CRAFT_ARGS = {
+    { "Craft", "Volcanic Magnet", 1, {} },
+    { "PossibleHardcode", "Volcanic Magnet" },
+}
 
 local search = Fight.newSearch()
 local eventRan, idleSince, resetDone = false, nil, false
+local craftTry = 0
 
 ---------------------------------------------------------------------------
 -- The island
@@ -57,6 +69,45 @@ local eventRan, idleSince, resetDone = false, nil, false
 function Volcano.island()
     local map = workspace:FindFirstChild("Map")
     return map and map:FindFirstChild("PrehistoricIsland")
+end
+
+-- The island's marker in _WorldOrigin.Locations: there as soon as the
+-- island spawns, while Map.PrehistoricIsland only streams in up close.
+function Volcano.location()
+    local locations = Services.find(workspace, "_WorldOrigin.Locations")
+    return locations and locations:FindFirstChild(Volcano.LOCATION) or nil
+end
+
+-- Spawned, but not streamed in yet.
+function Volcano.spotted()
+    return Volcano.island() == nil and Volcano.location() ~= nil
+end
+
+-- A part's own CFrame, a model's pivot.
+local function frameOf(node)
+    if node:IsA("BasePart") then return node.CFrame end
+    return Common.pivot(node)
+end
+
+-- Where to fly to reach the marker: behind its head teleport, or short of
+-- the marker itself and above it (the newer sources' approach).
+function Volcano.approachSpot(marker)
+    local head = marker:FindFirstChild("HeadTeleport", true) or marker:FindFirstChild("Teleport_Head", true)
+        or marker:FindFirstChild("Head", true)
+    local headPivot = head and frameOf(head)
+    if headPivot then
+        return CFrame.new(headPivot.Position - headPivot.LookVector * Volcano.APPROACH_BACK
+            + Vector3.new(0, Volcano.APPROACH_UP, 0))
+    end
+    local pivot = frameOf(marker)
+    if not pivot then return nil end
+    local root = Player.hrp()
+    local position = pivot.Position
+    local away = root and (position - root.Position) or Vector3.new(0, 0, 0)
+    if away.Magnitude > Volcano.APPROACH_SHORT then
+        position = position - away.Unit * Volcano.APPROACH_SHORT
+    end
+    return CFrame.new(position + Vector3.new(0, Volcano.APPROACH_HIGH, 0))
 end
 
 local function core()
@@ -78,12 +129,17 @@ local function onIsland()
     return player ~= nil and player:GetAttribute("CurrentLocation") == "Prehistoric Island"
 end
 
--- Removes the lava's touch damage (the trial teleport keeps working).
+-- Removes the lava's touch damage and the lava parts themselves (the
+-- trial teleport keeps working).
 function Volcano.stripLava()
     local island = Volcano.island()
     if not island then return end
+    local trial = island:FindFirstChild("TrialTeleport")
     for _, node in ipairs(island:GetDescendants()) do
-        if node.Name == "TouchInterest" and node.Parent and node.Parent.Name ~= "TrialTeleport" then
+        local keep = trial and (node == trial or node:IsDescendantOf(trial))
+        if not keep and node.Name == "TouchInterest" and node.Parent then
+            pcall(function() node:Destroy() end)
+        elseif not keep and node:IsA("BasePart") and node.Name:lower():find("lava", 1, true) then
             pcall(function() node:Destroy() end)
         end
     end
@@ -110,8 +166,11 @@ function Volcano.rock()
     local rocks = core() and core():FindFirstChild("VolcanoRocks")
     local best, bestDistance = nil, math.huge
     for _, rock in ipairs(rocks and rocks:GetChildren() or {}) do
+        -- Erupting: VFXLayer.Specs (Banana) or VFXLayer.At0.Glow (newer).
         local specs = rock.Name == "Rock" and Services.find(rock, "VFXLayer.Specs")
-        local pivot = specs and specs.Enabled and Common.pivot(rock)
+        local glow = rock.Name == "Rock" and Services.find(rock, "VFXLayer.At0.Glow")
+        local erupting = (specs and specs.Enabled) or (glow and glow.Enabled)
+        local pivot = erupting and Common.pivot(rock)
         if pivot then
             local distance = Player.distanceTo(pivot.Position)
             if distance < bestDistance then best, bestDistance = rock, distance end
@@ -233,7 +292,8 @@ function Volcano.magnetStep(mode)
     end
     Movement.stop()
     if Common.every("CraftMagnet", 2) then
-        Common.netInvoke("RF/Craft", "Craft", "Volcanic Magnet", 1, {})
+        craftTry = craftTry % #Volcano.CRAFT_ARGS + 1
+        Common.netInvoke("RF/Craft", (table.unpack or unpack)(Volcano.CRAFT_ARGS[craftTry]))
         Common.forget()
     end
     return "Crafting the Volcanic Magnet"
@@ -242,6 +302,15 @@ end
 -- One step of finding the island, nil once it is here.
 function Volcano.findStep()
     if Volcano.island() then return nil end
+    local marker = Volcano.location()
+    local spot = marker and Volcano.approachSpot(marker)
+    if spot then
+        -- Spawned out of streaming range: off the boat and straight there,
+        -- instead of sailing past it.
+        Boat.stop()
+        Common.goTo(spot)
+        return "Prehistoric Island spotted: going there"
+    end
     return "Prehistoric: " .. Islands.sailOut()
 end
 
@@ -281,10 +350,20 @@ Volcano.event = Mode({
     end,
 })
 
+-- The trial door opened: the newer sources' sign the volcano is done. Only
+-- with no event running and nothing left to start.
+function Volcano.trialOpen()
+    local island = Volcano.island()
+    local trial = island and island:FindFirstChild("TrialTeleport")
+    if not (trial and trial:FindFirstChild("TouchInterest")) or Volcano.running() then return false end
+    local prompt = core() and core():FindFirstChild("ActivationPrompt")
+    return not (prompt and prompt:FindFirstChild("ProximityPrompt"))
+end
+
 -- Once the event is over and nothing is left to collect, the character is
 -- reset (the reference's way to leave the island and look for the next one).
 local function resetWhenDone()
-    if not eventRan or Volcano.running() or not onIsland() then
+    if not (eventRan or Volcano.trialOpen()) or Volcano.running() or not onIsland() then
         idleSince = nil
         return false
     end
@@ -303,7 +382,9 @@ Volcano.fully = Mode({
     tick = function(mode)
         if not Volcano.island() then
             resetDone = false
-            if not Settings.get("VolcanoSkipMagnet") and not Common.item("Volcanic Magnet") then
+            -- Once it has spawned, the magnet is spent: no crafting then.
+            if not Volcano.location() and not Settings.get("VolcanoSkipMagnet")
+                and not Common.item("Volcanic Magnet") then
                 return Volcano.magnetStep(mode)
             end
             return Volcano.findStep() or "Island found"
@@ -323,6 +404,7 @@ Volcano.fully = Mode({
 function Volcano.reset()
     search:reset()
     eventRan, idleSince, resetDone = false, nil, false
+    craftTry = 0
 end
 
 return Volcano
