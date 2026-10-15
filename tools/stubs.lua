@@ -22,6 +22,20 @@ math.clamp = math.clamp or function(x, lo, hi)
     return math.max(lo, math.min(hi, x))
 end
 loadstring = loadstring or load
+-- Luau's string.split (plain separator).
+string.split = string.split or function(text, separator)
+    local out, start = {}, 1
+    separator = separator or ","
+    while true do
+        local first, last = string.find(text, separator, start, true)
+        if not first then
+            out[#out + 1] = string.sub(text, start)
+            return out
+        end
+        out[#out + 1] = string.sub(text, start, first - 1)
+        start = last + 1
+    end
+end
 
 WARNINGS = {}
 warn = function(...)
@@ -99,6 +113,10 @@ CFrame = {
         if type(x) == "table" then return cframe(x) end
         return cframe(Vector3.new(x, y, z))
     end,
+    -- Rotations are dropped (translation-only CFrames).
+    Angles = function() return cframe(Vector3.new(0, 0, 0)) end,
+    fromOrientation = function() return cframe(Vector3.new(0, 0, 0)) end,
+    lookAt = function(position) return cframe(position) end,
 }
 
 -- UI value types -------------------------------------------------------------
@@ -195,7 +213,7 @@ local SIGNALS = {
 }
 
 local CLASS_PARENTS = {
-    Part = "BasePart", MeshPart = "BasePart",
+    Part = "BasePart", MeshPart = "BasePart", VehicleSeat = "BasePart", Seat = "BasePart",
     TextLabel = "GuiObject", TextButton = "GuiObject", Frame = "GuiObject",
 }
 
@@ -359,6 +377,9 @@ function methods:FireServer(...)
     local log = rawget(self, "Fired") or {}
     rawset(self, "Fired", log)
     log[#log + 1] = table.pack(...)
+    -- The simulator's fake server listens here.
+    local handler = rawget(self, "OnFire")
+    if handler then handler(...) end
 end
 function methods:InvokeServer(...)
     local log = rawget(self, "Invoked") or {}

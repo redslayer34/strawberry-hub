@@ -70,6 +70,31 @@ Everything comes from the game's own data, nothing is guessed:
 | Mob spawn points | `workspace._WorldOrigin.EnemySpawns` |
 | Attacking | `Modules.Net` `RE/RegisterAttack` then `RegisterHit`, hit parts via `Modules.CombatUtil` |
 
+## Simulator (find bugs without the game)
+
+`tools/sim.py` replays a real case against a fake Blox Fruits: an account profile, a strict fake server
+(it only moves forward when the step is really done), the character flying, boats, seats, hits, deaths,
+skill cooldowns and a virtual clock. The report lists every status the hub showed and the incidents
+(stuck, flapping, errors, remotes nobody answered).
+
+```bash
+python3 tools/sim.py --list            # the scenarios (tools/sim/scenarios/)
+python3 tools/sim.py guitar_puzzle     # one (report also in build/sim-guitar_puzzle.txt)
+python3 tools/sim.py all               # every one (also the "sim" suite of tools/test.py)
+```
+
+Subagents in `.claude/agents/` write and run scenarios for you (ask Claude Code to use one):
+
+| Agent | For |
+|---|---|
+| `sim-scenario-writer` | any feature or bug report: writes a new scenario and runs it |
+| `sim-soul-guitar` | the Soul Guitar chain and its puzzle |
+| `sim-leviathan` | spy, Frozen Dimension, the fight, the heart harpoon |
+| `sim-sea-events` | volcano / Prehistoric, Kitsune, Mirage, sea beasts, boats |
+| `sim-kaitun` | account profiles through the Kaitun engine (stuck tasks, loops) |
+| `sim-travel` | router, portals, respawn teleports, sea travel |
+| `sim-bug-hunter` | runs everything, groups the incidents, digs into the worst |
+
 ## Development
 
 `StrawberryHub.lua` is a **build artifact**. Edit `src/`, then re-pack.

@@ -49,6 +49,8 @@ SUITES = {
         "stubs": ["stubs.lua", "fakefluent.lua", "smokeprelude.lua", "volcanoprelude.lua"],
         "entry": 'SMOKE_VOLCANO = require("volcano")',
     },
+    # The game simulations (tools/sim/scenarios), each in its own process.
+    "sim": {"sim": True},
     # The MCP bridge's in-game client (mcp/lua/bridge.lua), run in test mode.
     "bridge": {
         "file": "bridgetests.lua",
@@ -69,6 +71,15 @@ def lua_binary() -> str:
 
 
 def run(name: str, spec: dict, bundle: str, binary: str) -> int:
+    if spec.get("sim"):
+        # Every game simulation (tools/sim.py); a FAIL fails the suite.
+        print(f"\n=== suite {name} ===")
+        result = subprocess.run([sys.executable, str(TOOLS / "sim.py"), "all"], capture_output=True, text=True)
+        lines = [line for line in result.stdout.splitlines() if line.startswith("RESULT") or "scenario(s) passed" in line]
+        print("\n".join(lines) or result.stdout[-2000:])
+        if result.stderr:
+            print(result.stderr[-2000:])
+        return result.returncode
     parts = [(TOOLS / stub).read_text(encoding="utf-8") for stub in spec["stubs"]]
     parts.append(bundle.replace(ENTRY_LINE, spec.get("entry", "-- entry skipped for tests")))
     for extra in spec.get("extra", []):
