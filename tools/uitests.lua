@@ -547,6 +547,32 @@ do
 end
 
 ---------------------------------------------------------------------------
+-- The window library reads only its own globals (a bare UIColor[...] raised
+-- on every dropdown click, so multi-select never changed a setting)
+---------------------------------------------------------------------------
+
+do
+    local source
+    for _, candidate in ipairs({ "src/UI/Library.lua", "../src/UI/Library.lua" }) do
+        local file = io.open(candidate, "r")
+        if file then
+            source = file:read("*a")
+            file:close()
+            break
+        end
+    end
+    if source then
+        local leaks = {}
+        for line in source:gmatch("[^\n]+") do
+            -- a bare global: not preceded by a letter, digit, _ or a dot
+            if line:find("[^%w_%.]UIColor%[") or line:find("^UIColor%[") then leaks[#leaks + 1] = line end
+        end
+        check("library: no bare UIColor global", #leaks == 0, leaks[1])
+        check("library: no bare Nousigi/T1 global",
+            not source:find("[^%w_%.]T1[^%w_]") and not source:find("getgenv%(%)%.Config"))
+    end
+end
+---------------------------------------------------------------------------
 -- Report
 ---------------------------------------------------------------------------
 

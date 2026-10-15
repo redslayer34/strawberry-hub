@@ -2409,7 +2409,7 @@ function Library:CreateWindow(Setting)
 							SampleItemBG.Name = "SampleItemBG"
 							SampleItemBG.Parent = SampleItem
 							SampleItemBG.AnchorPoint = Vector2.new(0.5, 0.5)
-							SampleItemBG.BackgroundColor3 = v and UIColor["Dropdown Selected Check Color"] or Color3.fromRGB(255, 255, 255)
+							SampleItemBG.BackgroundColor3 = v and getgenv().StrawberryUIColor["Dropdown Selected Check Color"] or Color3.fromRGB(255, 255, 255)
 							SampleItemBG.BackgroundTransparency = v and .5 or 1
 							SampleItemBG.BorderColor3 = Color3.fromRGB(27, 42, 53)
 							SampleItemBG.Position = UDim2.new(0.5, 0, 0.5, 0)
@@ -2438,7 +2438,7 @@ function Library:CreateWindow(Setting)
 							SampleItemCheck.Size = UDim2.new(0, 25, 0, 25)
 							SampleItemCheck.ZIndex = 2
 							SampleItemCheck.Image = "rbxassetid://3926305904"
-							SampleItemCheck.ImageColor3 = UIColor["Dropdown Selected Check Color"]
+							SampleItemCheck.ImageColor3 = getgenv().StrawberryUIColor["Dropdown Selected Check Color"]
 							SampleItemCheck.ImageRectOffset = Vector2.new(312, 4)
 							SampleItemCheck.ImageRectSize = Vector2.new(24, 24)
 							SampleItemCheck.ImageTransparency = v and 0 or 1
@@ -2498,7 +2498,7 @@ function Library:CreateWindow(Setting)
 								TweenService:Create(
 											SampleItemBG,
 											TweenInfo.new(getgenv().StrawberryUIColor["Tween Animation 1 Speed"]), {
-									BackgroundColor3 = v and UIColor["Dropdown Selected Check Color"] or Color3.fromRGB(255, 255, 255)
+									BackgroundColor3 = v and getgenv().StrawberryUIColor["Dropdown Selected Check Color"] or Color3.fromRGB(255, 255, 255)
 								}
 										):Play()
 								TweenService:Create(
@@ -2822,7 +2822,7 @@ function Library:CreateWindow(Setting)
 								SampleItemCheck.Size = UDim2.new(0, 25, 0, 25)
 								SampleItemCheck.ZIndex = 2
 								SampleItemCheck.Image = "rbxassetid://3926305904"
-								SampleItemCheck.ImageColor3 = UIColor["Dropdown Selected Check Color"]
+								SampleItemCheck.ImageColor3 = getgenv().StrawberryUIColor["Dropdown Selected Check Color"]
 								SampleItemCheck.ImageRectOffset = Vector2.new(312, 4)
 								SampleItemCheck.ImageRectSize = Vector2.new(24, 24)
 								SampleItemCheck.ImageTransparency = 1
@@ -2882,7 +2882,7 @@ function Library:CreateWindow(Setting)
 									TweenService:Create(
 												SampleItemBG,
 												TweenInfo.new(getgenv().StrawberryUIColor["Tween Animation 1 Speed"]), {
-										BackgroundColor3 = UIColor["Dropdown Selected Check Color"]
+										BackgroundColor3 = getgenv().StrawberryUIColor["Dropdown Selected Check Color"]
 									}
 											):Play()
 									TweenService:Create(
@@ -2901,7 +2901,7 @@ function Library:CreateWindow(Setting)
 								end)
 								if Sel.Value == v then
 									SampleItemBG.BackgroundTransparency = .5;
-									SampleItemBG.BackgroundColor3 = UIColor["Dropdown Selected Check Color"]
+									SampleItemBG.BackgroundColor3 = getgenv().StrawberryUIColor["Dropdown Selected Check Color"]
 									SampleItem.LayoutOrder = 0
 								end
 							end
