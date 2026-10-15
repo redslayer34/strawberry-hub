@@ -100,27 +100,33 @@ local function watchDamage(mob)
     local distance = Player.distanceTo(root.Position)
     local record = records[mob]
     if not record then
-        records[mob] = { last = now, near = 0, low = humanoid.Health, lowerAt = now, best = distance, closerAt = now }
+        records[mob] = { last = now, near = 0, low = humanoid.Health, noDrop = 0, best = distance, noCloser = 0 }
         return
     end
+    -- Time counts in steps of at most a second: a lag spike (the client
+    -- frozen 90 s) is one second here, not 90 -- it used to strike every
+    -- mob around at once and leave the farm with nothing to fight.
     local dt = math.min(now - record.last, 1)
     record.last = now
     if distance < record.best - Fight.PROGRESS then
-        record.best, record.closerAt = distance, now
+        record.best, record.noCloser = distance, 0
+    else
+        record.noCloser = record.noCloser + dt
     end
     -- Only the time spent next to it counts for the damage (not the flight).
     if distance > 40 then
-        record.lowerAt = now
+        record.noDrop = 0
         -- Far away the Router may be going round through a door: only a
         -- mob close by that cannot be reached counts.
-        if distance > Fight.NEAR_ENOUGH then record.closerAt = now end
-        if now - record.closerAt > Fight.NO_PROGRESS_AFTER then strike(mob, 60) end
+        if distance > Fight.NEAR_ENOUGH then record.noCloser = 0 end
+        if record.noCloser > Fight.NO_PROGRESS_AFTER then strike(mob, 60) end
         return
     end
-    record.closerAt = now
+    record.noCloser = 0
     record.near = record.near + dt
+    record.noDrop = record.noDrop + dt
     -- No drop for a while: a real click, as the player would.
-    if now - record.lowerAt >= Fight.NUDGE_AFTER and not Mastery.active(mob) then
+    if record.noDrop >= Fight.NUDGE_AFTER and not Mastery.active(mob) then
         Fight.nudging = true
         if not record.nudgedAt or now - record.nudgedAt >= Fight.NUDGE_EVERY then
             record.nudgedAt = now
@@ -129,9 +135,9 @@ local function watchDamage(mob)
     end
     local maxHealth = (humanoid.MaxHealth and humanoid.MaxHealth > 0) and humanoid.MaxHealth or 100
     if humanoid.Health <= record.low - maxHealth * Fight.REAL_DROP then
-        record.low, record.lowerAt = humanoid.Health, now
+        record.low, record.noDrop = humanoid.Health, 0
         strikes = {}
-    elseif now - record.lowerAt > Fight.NO_DAMAGE_AFTER then
+    elseif record.noDrop > Fight.NO_DAMAGE_AFTER then
         return strike(mob, 120)
     end
     -- A normal mob dies in seconds: one still up after this long is bugged

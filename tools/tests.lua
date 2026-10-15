@@ -5243,6 +5243,25 @@ do
     Fight.NO_DAMAGE_AFTER = after
 end
 
+-- A lag spike (the client frozen 90 s) is not 90 s without damage: the mob
+-- is not left alone (it used to strike every mob around at once).
+setup()
+do
+    local Fight = require("Features.Fight")
+    local realClock = os.clock
+    local now = 5000
+    os.clock = function() return now end
+    local guard = mob("God's Guard", Vector3.new(0, 0, 10))
+    local fake = {}
+    Fight.engage(fake, guard)
+    now = now + 90
+    Fight.engage(fake, guard)
+    now = now + 1
+    Fight.engage(fake, guard)
+    os.clock = realClock
+    eq("lag spike: the mob is still fought", Enemies.nearest("God's Guard"), guard)
+end
+
 -- The time left before the next fruit spin, shown under the Kaitun's time.
 setup()
 do

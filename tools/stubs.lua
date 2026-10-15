@@ -22,6 +22,8 @@ math.clamp = math.clamp or function(x, lo, hi)
     return math.max(lo, math.min(hi, x))
 end
 loadstring = loadstring or load
+-- Luau has math.atan2; some Lua 5.4 builds (Windows) do not.
+math.atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
 -- Luau's string.split (plain separator).
 string.split = string.split or function(text, separator)
     local out, start = {}, 1
