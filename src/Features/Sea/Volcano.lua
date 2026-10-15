@@ -53,14 +53,16 @@ Volcano.APPROACH_SHORT = 250     -- no head teleport: this far short of the mark
 Volcano.APPROACH_HIGH = 60
 -- The two ways the magnet craft has been sent: this hub's, then the one
 -- the newer sources use. Tried in turn while the magnet does not show up.
-Volcano.CRAFT_ARGS = {
-    { "Craft", "Volcanic Magnet", 1, {} },
-    { "PossibleHardcode", "Volcanic Magnet" },
-}
+-- The game's own calls (decompiled CraftWindow / DragonHunter dialogue):
+-- RF/Craft "Craft" crafts; "PossibleHardcode" only asks whether the recipe
+-- is unlocked -- the Volcanic Magnet needs the Dojo's Yellow belt
+-- (CraftUtil.PossibleHardcode: DragonQuest.Belts.Yellow).
+Volcano.CRAFT_ARGS = { "Craft", "Volcanic Magnet", 1, {} }
+Volcano.UNLOCK_EVERY = 30
 
 local search = Fight.newSearch()
 local eventRan, idleSince, resetDone = false, nil, false
-local craftTry = 0
+local unlocked, unlockedAt = nil, -math.huge
 
 ---------------------------------------------------------------------------
 -- The island
@@ -280,7 +282,23 @@ function Volcano.eventStep(mode)
 end
 
 -- One step of crafting the magnet. Returns the status.
+-- false only when the game says the recipe is locked; true or nil (no
+-- answer, an older game) let the crafting go on.
+function Volcano.magnetUnlocked()
+    local now = os.clock()
+    if now - unlockedAt < Volcano.UNLOCK_EVERY then return unlocked end
+    unlockedAt = now
+    local remote = Common.net("RF/Craft")
+    if not remote then unlocked = nil return nil end
+    local ok, answer = pcall(function() return remote:InvokeServer("PossibleHardcode", "Volcanic Magnet") end)
+    if ok and type(answer) == "boolean" then unlocked = answer else unlocked = nil end
+    return unlocked
+end
+
 function Volcano.magnetStep(mode)
+    if Volcano.magnetUnlocked() == false then
+        return "Magnet locked (Dojo Yellow belt needed): " .. Dragon.dojoStep(mode)
+    end
     local scrap = Common.itemCount("Scrap Metal")
     if scrap < Volcano.SCRAP then
         return string.format("Scrap Metal %d/%d: %s", scrap, Volcano.SCRAP,
@@ -292,8 +310,7 @@ function Volcano.magnetStep(mode)
     end
     Movement.stop()
     if Common.every("CraftMagnet", 2) then
-        craftTry = craftTry % #Volcano.CRAFT_ARGS + 1
-        Common.netInvoke("RF/Craft", (table.unpack or unpack)(Volcano.CRAFT_ARGS[craftTry]))
+        Common.netInvoke("RF/Craft", (table.unpack or unpack)(Volcano.CRAFT_ARGS))
         Common.forget()
     end
     return "Crafting the Volcanic Magnet"
@@ -404,7 +421,7 @@ Volcano.fully = Mode({
 function Volcano.reset()
     search:reset()
     eventRan, idleSince, resetDone = false, nil, false
-    craftTry = 0
+    unlocked, unlockedAt = nil, -math.huge
 end
 
 return Volcano

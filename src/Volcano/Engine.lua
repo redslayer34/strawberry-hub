@@ -210,6 +210,7 @@ function Engine.status()
     end
     -- What the next magnet still needs.
     local missing = {}
+    if not held and Volcano.magnetUnlocked() == false then missing[#missing + 1] = "the Dojo Yellow belt" end
     if scrap < Volcano.SCRAP then missing[#missing + 1] = (Volcano.SCRAP - scrap) .. " Scrap Metal" end
     if embers < Volcano.EMBERS then missing[#missing + 1] = (Volcano.EMBERS - embers) .. " Blaze Ember" end
     return {

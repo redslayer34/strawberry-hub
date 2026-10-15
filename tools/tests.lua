@@ -3471,7 +3471,9 @@ do
     Volcano.RESET_AFTER = 10
 end
 
--- The magnet craft alternates its two forms while the magnet is missing.
+-- The magnet recipe: "PossibleHardcode" asks whether it is unlocked (the
+-- Dojo's Yellow belt); locked, the Dojo belts come first and nothing is
+-- crafted; unlocked, only the real "Craft" call is sent.
 seaSetup(nil, {
     { Name = "Scrap Metal", Type = "Material", Count = 10 },
     { Name = "Blaze Ember", Type = "Material", Count = 15 },
@@ -3479,11 +3481,25 @@ seaSetup(nil, {
 do
     Settings.set("VolcanoMagnet", true)
     local craft = newInstance("RemoteFunction", "RF/Craft", rs.Modules.Net)
+    local open = false
+    craft.OnInvoke = function(action) if action == "PossibleHardcode" then return open end end
     Volcano.magnet.tick()
+    check("locked: the Dojo first", Volcano.magnet.status:find("Magnet locked (Dojo Yellow belt needed)", 1, true) ~= nil,
+        Volcano.magnet.status)
+    for _, call in ipairs(craft.Invoked or {}) do
+        check("locked: no craft sent", call[1] ~= "Craft")
+    end
+    open = true
+    Volcano.reset()
     require("Features.Stack.Common").reset()
+    craft.Invoked = {}
     Volcano.magnet.tick()
-    eq("first form", craft.Invoked and craft.Invoked[1][1], "Craft")
-    eq("second form", craft.Invoked and craft.Invoked[2] and craft.Invoked[2][1], "PossibleHardcode")
+    eq("unlocked: crafting", Volcano.magnet.status, "Crafting the Volcanic Magnet")
+    local crafts = 0
+    for _, call in ipairs(craft.Invoked) do
+        if call[1] == "Craft" then crafts = crafts + 1 eq("craft args", call[2], "Volcanic Magnet") end
+    end
+    eq("one real craft", crafts, 1)
 end
 
 -- Fully: the dragon eggs are collected unless skipped.

@@ -44,13 +44,17 @@ SIM.tool("Combat", "Melee", { "Z", "X", "C" })
 SIM.enableBoats()
 
 local state = { crafted = false, spawned = false, streamed = false, started = false, over = false,
-    eggs = 0, bones = 0, resets = 0 }
+    eggs = 0, bones = 0, resets = 0, yellowBelt = true }
 local islandAt, island, core
 local golems, rocks = {}, {}
 
 SIM.onNet("RF/Craft", function(...)
     local args = { ... }
     SIM.note("server: RF/Craft " .. tostring(args[1]) .. " " .. tostring(args[2]))
+    -- Decompiled CraftUtil: "PossibleHardcode" only says whether the recipe
+    -- is unlocked (the Dojo's Yellow belt); "Craft" crafts.
+    if args[1] == "PossibleHardcode" then return state.yellowBelt end
+    if args[1] ~= "Craft" or args[2] ~= "Volcanic Magnet" or not state.yellowBelt then return nil end
     if state.crafted then return nil end
     local scrap, ember = 0, 0
     for _, item in ipairs(SIM.inventory) do

@@ -121,6 +121,35 @@ seaBelt = function(mode)
     return string.format("In the danger-6 sea, %d s left", math.ceil(left))
 end
 
+-- One step of the trainer's belts (also used by the Volcano: the Volcanic
+-- Magnet recipe needs the Yellow belt). Returns the status.
+function Dragon.dojoStep(mode)
+    if restUntil and os.clock() < restUntil then
+        Movement.stop()
+        return "Dojo: no task from the trainer (resting)"
+    end
+    local goal = belt and Dragon.BELTS[belt]
+    if goal and kills >= goal.kills then belt = nil end
+    if not belt then return askTrainer() end
+
+    local prefix = string.format("%s belt %d/%d: ", belt, kills, goal.kills)
+    if belt == "White" then
+        LevelFarm.tick()
+        mode.target = LevelFarm.target
+        countKill(LevelFarm.target)
+        return prefix .. tostring(LevelFarm.status)
+    end
+    if belt == "Yellow" or belt == "Red" or belt == "Green" then return prefix .. seaBelt(mode) end
+    local elite, inWorld = EliteHunter.find()
+    if not elite then
+        Movement.stop()
+        return prefix .. "waiting for an Elite Hunter"
+    end
+    local status = EliteHunter.run(mode, elite, inWorld)
+    countKill(mode.target)
+    return prefix .. status
+end
+
 Dragon.dojo = Mode({
     name = "Dojo Trainer",
     key = "OtherDojo",
@@ -131,28 +160,7 @@ Dragon.dojo = Mode({
         return true
     end,
     idleStatus = "Resting (no task from the trainer)",
-    tick = function(mode)
-        local goal = belt and Dragon.BELTS[belt]
-        if goal and kills >= goal.kills then belt = nil end
-        if not belt then return askTrainer() end
-
-        local prefix = string.format("%s belt %d/%d: ", belt, kills, goal.kills)
-        if belt == "White" then
-            LevelFarm.tick()
-            mode.target = LevelFarm.target
-            countKill(LevelFarm.target)
-            return prefix .. tostring(LevelFarm.status)
-        end
-        if belt == "Yellow" or belt == "Red" or belt == "Green" then return prefix .. seaBelt(mode) end
-        local elite, inWorld = EliteHunter.find()
-        if not elite then
-            Movement.stop()
-            return prefix .. "waiting for an Elite Hunter"
-        end
-        local status = EliteHunter.run(mode, elite, inWorld)
-        countKill(mode.target)
-        return prefix .. status
-    end,
+    tick = function(mode) return Dragon.dojoStep(mode) end,
     stop = function()
         LevelFarm.stop()
         Boat.stop()
