@@ -190,7 +190,11 @@ end
 -- RegisterHit for `first` and the `rest` of the {rig, part} pairs (with the
 -- SecureHits check when it is on).
 function Combat.sendHits(registerHit, first, rest)
-    if Settings.get("SecureHits") then
+    -- The game's Net module hands out a wrapper for a "Virtual" remote, and
+    -- that wrapper already sends the hidden check (decompiled
+    -- Modules.Net: hidden:FireServer(name, bxor(Id + 909090, seed * 2), ...)).
+    -- SecureHits only adds it for a plain RemoteEvent, never twice.
+    if Settings.get("SecureHits") and typeof(registerHit) == "Instance" then
         registerHit:FireServer(first[2], rest, {})
         local all = { first }
         for _, pair in ipairs(rest) do all[#all + 1] = pair end
