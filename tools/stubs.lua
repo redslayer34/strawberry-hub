@@ -91,6 +91,7 @@ CFramemt.__eq = function(a, b) return a.Position == b.Position end
 -- Translation-only CFrames: they always face -Z.
 CFramemt.__index = function(_, key)
     if key == "LookVector" then return Vector3.new(0, 0, -1) end
+    if key == "PointToObjectSpace" then return function(self, point) return point - self.Position end end
     return nil
 end
 CFrame = {

@@ -3351,6 +3351,52 @@ do
     eq("secure on: RegisterHit third argument", type(last[3]), "table")
 end
 
+-- Combat remotes kept under another name, found by their Id attribute.
+setup()
+do
+    rs.Modules.Net:FindFirstChild("RE/RegisterAttack").Parent = nil
+    local moved = newInstance("RemoteEvent", "x7f", rs.Remotes)
+    moved:SetAttribute("Id", "RE/RegisterAttack")
+    eq("remote found by its Id", Services.netRemote("RegisterAttack", false), moved)
+end
+
+-- Harpoon aim: straight ahead is yaw 0 and a small lift; aside, clamped.
+do
+    local SeaIslands2 = require("Features.Sea.Islands")
+    local pitch, yaw = SeaIslands2.harpoonAngles(CFrame.new(0, 0, 0), Vector3.new(0, 0, -300))
+    check("harpoon: yaw 0 ahead", math.abs(yaw) < 1e-6, yaw)
+    check("harpoon: small upward arc", pitch > 0 and pitch < 0.3, pitch)
+    local _, side = SeaIslands2.harpoonAngles(CFrame.new(0, 0, 0), Vector3.new(300, 0, 0))
+    check("harpoon: yaw clamped", math.abs(side - SeaIslands2.HARPOON_YAW) < 1e-6, side)
+    local high = SeaIslands2.harpoonAngles(CFrame.new(0, 0, 0), Vector3.new(0, 5000, -10))
+    check("harpoon: pitch clamped", math.abs(high - SeaIslands2.HARPOON_PITCH[2]) < 1e-6, high)
+end
+
+-- Soul Guitar swamp: lower the healthy zombies, then hit all together.
+do
+    local Guitar = require("Features.Items.Guitar")
+    local function zombie(health)
+        local model = mob("Living Zombie", Vector3.new(0, 0, 0), health)
+        model.Humanoid.MaxHealth = 100
+        return model
+    end
+    setup()
+    local list = { zombie(90), zombie(20), zombie(60), zombie(10), zombie(80), zombie(30) }
+    local targets, final = Guitar.swampTargets(list)
+    check("swamp: not final yet", not final)
+    eq("swamp: two at a time", #targets, 2)
+    eq("swamp: healthiest first", targets[1], list[1])
+    eq("swamp: then the next", targets[2], list[5])
+    for _, model in ipairs(list) do model.Humanoid.Health = 25 end
+    local all, sync = Guitar.swampTargets(list)
+    check("swamp: final blow", sync)
+    eq("swamp: on all of them", #all, 6)
+    local hit = rs.Modules.Net.ModuleValue.RemoteEvent(nil, "RegisterHit")
+    Combat.hitRigs(all, 3)
+    eq("hitRigs: sent the given times", #(hit.Fired or {}), 3)
+    eq("hitRigs: the five others with the first", #hit.Fired[1][2], 5)
+end
+
 -- Prehistoric marker without the island streamed in: off the boat and there.
 seaSetup()
 do

@@ -105,6 +105,16 @@ local function netModuleEvent(name)
     return nil
 end
 
+-- Newer builds also keep remotes in ReplicatedStorage.Remotes under another
+-- name, with the real one in an "Id" attribute (Meyy's Remotes[Id] table).
+local function remoteById(name)
+    local folder = Services.find(Services.replicated(), "Remotes")
+    for _, child in ipairs(folder and folder:GetChildren() or {}) do
+        if child:IsA("RemoteEvent") and child:GetAttribute("Id") == "RE/" .. name then return child end
+    end
+    return nil
+end
+
 -- ReplicatedStorage.Modules.Net holds the combat remotes. The reference
 -- reaches RE/RegisterAttack as a plain child, but RegisterHit through the Net
 -- module's own accessor, Net:RemoteEvent(name, true). The same split is kept
@@ -119,6 +129,7 @@ function Services.netRemote(name, viaModule)
     else
         remote = netChild(name) or netModuleEvent(name)
     end
+    remote = remote or remoteById(name)
 
     remotes[name] = remote
     return remote

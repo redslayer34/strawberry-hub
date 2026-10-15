@@ -359,6 +359,61 @@ Islands.leviathanAttack = Mode({
     end,
 })
 
+-- Aiming the harpoon (Meyy's CalculateHarpoonAngles): the heart in the
+-- harpoon base's own space, the yaw toward it, and the low ballistic arc of
+-- a 400 studs/s shot, both clamped to the harpoon's range.
+Islands.HARPOON_SPEED = 400
+Islands.HARPOON_PITCH = { -0.17453292519943295, 0.7853981633974483 }
+Islands.HARPOON_YAW = 1.1344640137963142
+Islands.HARPOON_DEFAULT = { 0.7853981633974483, 4.4342573293783646e-4 }   -- the old fixed shot
+
+function Islands.harpoonAngles(base, target)
+    local ok, offset = pcall(function() return base:PointToObjectSpace(target) end)
+    if not ok or typeof(offset) ~= "Vector3" then return Islands.HARPOON_DEFAULT[1], Islands.HARPOON_DEFAULT[2] end
+    local yaw = math.atan2(offset.X, -offset.Z)
+    local x = math.sqrt(offset.X ^ 2 + offset.Z ^ 2)
+    local y = offset.Y
+    local v = Islands.HARPOON_SPEED
+    local g = tonumber(workspace.Gravity) or 196.2
+    local root = v ^ 4 - g * (g * x ^ 2 + 2 * y * v ^ 2)
+    local pitch
+    if root >= 0 then
+        pitch = math.atan2(v ^ 2 - math.sqrt(root), g * x)
+    else
+        pitch = math.atan2(y, x)
+    end
+    return math.clamp(pitch, Islands.HARPOON_PITCH[1], Islands.HARPOON_PITCH[2]),
+        math.clamp(yaw, -Islands.HARPOON_YAW, Islands.HARPOON_YAW)
+end
+
+-- The CFrame the harpoon turns from: what its seat is welded to, the seat,
+-- or the harpoon itself.
+local function harpoonBase(harpoon)
+    local seat = harpoon:FindFirstChild("Seat")
+    local weld = seat and seat:FindFirstChild("BoatWeld")
+    local part0 = weld and weld.Part0
+    if part0 then return part0.CFrame end
+    if seat and seat:IsA("BasePart") then return seat.CFrame end
+    return Common.pivot(harpoon)
+end
+
+-- Turns the harpoon on screen as the game does (its seat's welds).
+local function turnHarpoon(harpoon, pitch, yaw)
+    local seat = harpoon:FindFirstChild("Seat")
+    local boatWeld = seat and seat:FindFirstChild("BoatWeld")
+    local cannonWeld = seat and seat:FindFirstChild("CannonWeld")
+    pcall(function()
+        if boatWeld then
+            boatWeld.C0 = CFrame.Angles(0, yaw, 0)
+            boatWeld.C1 = CFrame.Angles(0, yaw * 2, 0)
+        end
+        if cannonWeld then
+            local lift = math.max(pitch - 0.4363323129985824, 0) / 0.6108652381980153 * 2.5
+            cannonWeld.C0 = CFrame.new(0, lift, 0) * CFrame.Angles(pitch, 0, 0) * CFrame.new(0, 0, -lift / 1.4142135623730951)
+        end
+    end)
+end
+
 local function frozenHeart()
     local heart = map("FrozenHeart")
     local inside = heart and heart:FindFirstChild("Inside")
@@ -409,10 +464,13 @@ Islands.leviathanHeart = Mode({
         if not harpoon then return "This boat has no harpoon" end
         if sitting and sitting.Parent == harpoon then
             Movement.stop()
-            if Common.every("FireHarpoon", 2) then
+            if Common.every("FireHarpoon", 1) then
                 local ok, now = pcall(function() return workspace:GetServerTimeNow() end)
-                Services.invoke("FireHarpoon", 0.7853981633974483, 4.4342573293783646e-4, harpoon,
-                    ok and now or os.time())
+                local base = harpoonBase(harpoon)
+                local pitch, yaw = Islands.HARPOON_DEFAULT[1], Islands.HARPOON_DEFAULT[2]
+                if base then pitch, yaw = Islands.harpoonAngles(base, inside.Position) end
+                turnHarpoon(harpoon, pitch, yaw)
+                Services.invoke("FireHarpoon", pitch, yaw, harpoon, ok and now or os.time())
             end
             return "Harpooning the Frozen Heart"
         end

@@ -183,13 +183,42 @@ function Combat.attack(range, includePlayers)
 
     local first = table.remove(hits, 1)
     registerAttack:FireServer(0)
+    Combat.sendHits(registerHit, first, hits)
+    return true
+end
+
+-- RegisterHit for `first` and the `rest` of the {rig, part} pairs (with the
+-- SecureHits check when it is on).
+function Combat.sendHits(registerHit, first, rest)
     if Settings.get("SecureHits") then
-        registerHit:FireServer(first[2], hits, {})
+        registerHit:FireServer(first[2], rest, {})
         local all = { first }
-        for _, pair in ipairs(hits) do all[#all + 1] = pair end
+        for _, pair in ipairs(rest) do all[#all + 1] = pair end
         Combat.secureHit(first[2], all)
     else
-        registerHit:FireServer(first[2], hits)
+        registerHit:FireServer(first[2], rest)
+    end
+end
+
+-- Hits exactly these rigs (no others in range), `times` times: the Soul
+-- Guitar's zombies are lowered together, then killed in the same instant.
+-- Returns true when the hits were sent.
+function Combat.hitRigs(rigs, times)
+    if Player.stunned() then return false end
+    local registerAttack = Services.netRemote("RegisterAttack", false)
+    local registerHit = Services.netRemote("RegisterHit", true)
+    if not registerAttack or not registerHit then return false end
+    local pairs_ = {}
+    for _, rig in ipairs(rigs) do
+        local part = rig:FindFirstChild("Head") or rig:FindFirstChild("HumanoidRootPart")
+        if part then pairs_[#pairs_ + 1] = { rig, part } end
+    end
+    if #pairs_ == 0 then return false end
+    registerAttack:FireServer(0)
+    for _ = 1, times or 1 do
+        local rest = {}
+        for index = 2, #pairs_ do rest[#rest + 1] = pairs_[index] end
+        Combat.sendHits(registerHit, pairs_[1], rest)
     end
     return true
 end

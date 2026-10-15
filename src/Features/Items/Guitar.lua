@@ -9,7 +9,8 @@
 --  then 5000 fragments to buy it, and the Haunted Castle puzzle
 --  (GuitarPuzzleProgress Check):
 --    start      a full moon at night, at the gravestone (gravestoneEvent 2)
---    Swamp      kill the 6 Living Zombies at once
+--    Swamp      kill the 6 Living Zombies at once: lowered to 30 % first,
+--               then all hit in the same instant (Meyy's way)
 --    Gravestones  click the placards the reference lists
 --    Ghost      talk to the ghost
 --    Trophies   turn the tablets to match the trophies
@@ -17,6 +18,8 @@
 --=============================================================================
 
 local Bosses = require("Features.Stack.Bosses")
+local Bring = require("Game.Bring")
+local Combat = require("Game.Combat")
 local ChestHunt = require("Features.ChestHunt")
 local Common = require("Features.Stack.Common")
 local Data = require("Game.Data")
@@ -38,6 +41,12 @@ Guitar.BONES = 500
 Guitar.SHIP_MOBS = { "Ship Deckhand", "Ship Steward", "Ship Officer", "Ship Engineer" }
 Guitar.GRAVESTONE = Vector3.new(-8654.314453125, 140.9499053955078, 6167.5283203125)
 Guitar.SWAMP = Vector3.new(-10171.7607421875, 158.62667846679688, 6008.0654296875)
+Guitar.ZOMBIES = 6
+Guitar.SYNC_SHARE = 0.3       -- every zombie at or under this share of health, then the final blow
+Guitar.SYNC_HITS = 15         -- hits sent at once for the final blow
+Guitar.LOWER_EVERY = 0.2
+Guitar.SWAMP_HEIGHT = 12
+Guitar.SWAMP_REACH = 40
 Guitar.PLACARDS_SPOT = Vector3.new(-8761.4765625, 142.10487365722656, 6086.07861328125)
 Guitar.GHOST = Vector3.new(-9755.6591796875, 271.0661315917969, 6290.61474609375)
 Guitar.TABLETS_SPOT = Vector3.new(-9530.0126953125, 6.104853630065918, 6054.83349609375)
@@ -56,6 +65,7 @@ Guitar.PIPES = {
 
 local search = Fight.newSearch()
 local chests = ChestHunt.new()
+local syncing = false   -- the final blow has started: keep at it while zombies are left
 
 local function castle(path)
     return Services.find(workspace, "Map.Haunted Castle" .. (path and ("." .. path) or ""))
@@ -116,6 +126,45 @@ local function strongestZombie()
     return best
 end
 
+-- The zombies must all die at once (Meyy's way): those above 30 % health
+-- are lowered two at a time, only them; once every one is under, all of
+-- them are hit together, several times in the same instant.
+local function share(zombie)
+    local humanoid = zombie:FindFirstChildOfClass("Humanoid")
+    if not humanoid or not humanoid.MaxHealth or humanoid.MaxHealth <= 0 then return 1 end
+    return humanoid.Health / humanoid.MaxHealth
+end
+
+-- The zombies to hit now, and whether it is the final, synchronised blow.
+function Guitar.swampTargets(zombies)
+    local above = {}
+    for _, zombie in ipairs(zombies) do
+        if share(zombie) > Guitar.SYNC_SHARE then above[#above + 1] = zombie end
+    end
+    if #above == 0 then return zombies, true end
+    table.sort(above, function(a, b) return share(a) > share(b) end)
+    return { above[1], above[2] }, false
+end
+
+function Guitar.swampStep(zombies)
+    local strongest = strongestZombie() or zombies[1]
+    local root = strongest:FindFirstChild("HumanoidRootPart")
+    if not root then return "waiting for the zombies" end
+    Common.goTo(root.CFrame * CFrame.new(0, Guitar.SWAMP_HEIGHT, 0))
+    -- Pulled together, so one blow reaches all of them.
+    Bring.run(strongest, Guitar.ZOMBIES)
+    Player.equip(Settings.get("Weapon"))
+    local targets, final = Guitar.swampTargets(zombies)
+    syncing = syncing or final
+    if not Common.near(root.Position, Guitar.SWAMP_REACH) then return "flying over the zombies" end
+    if final then
+        Combat.hitRigs(targets, Guitar.SYNC_HITS)
+        return "killing all the zombies at once"
+    end
+    if Common.every("GuitarLower", Guitar.LOWER_EVERY) then Combat.hitRigs(targets, 1) end
+    return "lowering the zombies to 30%"
+end
+
 local function trophyAngle(trophy)
     local handle = castle("Trophies.Quest." .. trophy .. ".Handle")
     if not handle then return nil end
@@ -144,10 +193,11 @@ local function puzzle(mode, progress)
             Common.goTo(Guitar.SWAMP)
             return "Going to the swamp"
         end
-        if #Enemies.all("Living Zombie") >= 6 or (mode.target and Enemies.isAlive(mode.target)) then
-            local zombie = strongestZombie()
-            if zombie then return "Swamp: " .. Common.fight(mode, zombie, true) end
+        local zombies = Enemies.all("Living Zombie")
+        if #zombies >= Guitar.ZOMBIES or (syncing and #zombies > 0) then
+            return "Swamp: " .. Guitar.swampStep(zombies)
         end
+        syncing = false
         Movement.stop()
         return "Swamp: waiting for the 6 zombies"
     end
@@ -243,6 +293,7 @@ Guitar.mode = Mode({
 function Guitar.reset()
     search:reset()
     chests:reset()
+    syncing = false
 end
 
 return Guitar
