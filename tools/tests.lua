@@ -1346,7 +1346,9 @@ do
 
     -- Cannot be reached.
     Router.clearPauses()
-    Router.PAD_STUCK = 0
+    -- -1, not 0: on Windows os.clock can return the same value for all three
+    -- calls, and "> 0" is then never true.
+    Router.PAD_STUCK = -1
     Router.update(CASTLE, goal, 300)   -- the flying frame after the last jump
     Router.update(CASTLE, goal, 300)   -- heading for the door
     Router.update(CASTLE, goal, 300)   -- no closer

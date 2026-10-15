@@ -206,7 +206,7 @@ def build(entry: str, dist: pathlib.Path, no_prune: bool = False) -> None:
         modules = reachable(modules, entry)
     bundled = bundle(modules, entry)
     dist.parent.mkdir(parents=True, exist_ok=True)
-    dist.write_text(pack(bundled), encoding="utf-8")
+    dist.write_text(pack(bundled), encoding="utf-8", newline="\n")
     print(
         f"packed {len(modules)} modules (entry {entry}) -> {dist.name} "
         f"({len(bundled)} bytes source, {dist.stat().st_size} bytes dist)"
@@ -250,7 +250,7 @@ def main() -> int:
         bundled = bundle(modules, entry)
         out = pathlib.Path(args.bundle_only)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(bundled, encoding="utf-8")
+        out.write_text(bundled, encoding="utf-8", newline="\n")
         print(f"bundle -> {args.bundle_only} ({len(modules)} modules, {len(bundled)} bytes)")
         return 0
 
