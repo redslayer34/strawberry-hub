@@ -166,6 +166,35 @@ local function purchase(remote, box)
         or (result ~= nil and not refused(result))
 end
 
+-- "[You must wait 01:23 to buy another roll.]" -> seconds (HH:MM, or
+-- HH:MM:SS), nil when there is no time in the text.
+function Fruits.waitSeconds(text)
+    local parts = {}
+    for number in tostring(text or ""):gmatch("(%d+)") do parts[#parts + 1] = tonumber(number) end
+    if #parts == 3 then return parts[1] * 3600 + parts[2] * 60 + parts[3] end
+    if #parts == 2 then return parts[1] * 3600 + parts[2] * 60 end
+    return nil
+end
+
+-- The gacha's own "Check" (decompiled GachaClient, seen in game): every
+-- requirement with RequirementMet and an ErrorMessage -- the price in
+-- Beli (it grows with the level), level 50, the cooldown. Returns false
+-- and why when the server already says no; true otherwise (a game without
+-- Check answers is let through to Purchase, as before).
+function Fruits.check(remote, box)
+    local ok, answer = pcall(function() return remote:InvokeServer({ Context = "Check", BoxName = box }) end)
+    if not ok or type(answer) ~= "table" or answer.RequirementsMet == nil then return true end
+    if answer.RequirementsMet == true then return true end
+    local cooldown = type(answer.Cooldown) == "table" and answer.Cooldown
+    if cooldown and cooldown.RequirementMet == false then
+        local left = Fruits.waitSeconds(cooldown.ErrorMessage)
+        if left then serverLeft = { seconds = left, at = os.time() } end
+    end
+    local price = type(answer.Price) == "table" and answer.Price
+    Fruits.price = price and tonumber(price.Value) or Fruits.price
+    return false, tostring(answer.ErrorMessage or "not available")
+end
+
 -- The old Cousin remote (before v30), for a game that still has it.
 local function cousin(box)
     local time = Services.invoke("Cousin", "CheckTime", box)
@@ -192,6 +221,12 @@ function Fruits.roll()
     local remote = Common.net(Fruits.GACHA_REMOTE)
     local done
     if remote then
+        local allowed, why = Fruits.check(remote, box)
+        if not allowed then
+            Fruits.answers = { box = box, result = why }
+            lastTry = os.clock()
+            return false
+        end
         done = purchase(remote, box)
     else
         done = cousin(banner or "DLCBoxData")
@@ -216,7 +251,7 @@ end
 
 -- Test hook.
 function Fruits.resetRoll()
-    lastRollAt, serverLeft, lastTry, boxTurn, Fruits.answers = nil, nil, nil, 0, nil
+    lastRollAt, serverLeft, lastTry, boxTurn, Fruits.answers, Fruits.price = nil, nil, nil, 0, nil, nil
 end
 
 -- Closes the spin animation's window (Teddy: the close button, then
