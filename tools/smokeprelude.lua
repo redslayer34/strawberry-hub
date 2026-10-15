@@ -6,7 +6,9 @@
 --  exactly where main.lua downloads the real one.
 --=============================================================================
 
-local genv = {}
+-- The smoke runs main with the fake Fluent: the strawberry window needs a
+-- real Roblox to draw (its facade has its own tests in the ui suite).
+local genv = { StrawberryUI = "Fluent" }
 getgenv = function() return genv end
 
 local players = game:GetService("Players")

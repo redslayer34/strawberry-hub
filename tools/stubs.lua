@@ -495,6 +495,93 @@ local services = {
     UserInputService = newInstance("UserInputService", "UserInputService"),
 }
 
+-- HttpService: a small JSON encoder / decoder (objects, arrays, strings,
+-- numbers, booleans), enough for the settings files.
+do
+    local http = newInstance("HttpService", "HttpService")
+    local function encode(value)
+        local kind = type(value)
+        if kind == "string" then return string.format("%q", value):gsub("\\\n", "\\n") end
+        if kind == "number" or kind == "boolean" then return tostring(value) end
+        if kind ~= "table" then return "null" end
+        if #value > 0 or next(value) == nil then
+            local parts = {}
+            for _, item in ipairs(value) do parts[#parts + 1] = encode(item) end
+            if #parts > 0 or next(value) == nil then return "[" .. table.concat(parts, ",") .. "]" end
+        end
+        local parts = {}
+        for key, item in pairs(value) do parts[#parts + 1] = encode(tostring(key)) .. ":" .. encode(item) end
+        table.sort(parts)
+        return "{" .. table.concat(parts, ",") .. "}"
+    end
+    local function decode(text)
+        local position = 1
+        local function space() position = text:find("[^%s]", position) or #text + 1 end
+        local value
+        local function str()
+            local out, i = {}, position + 1
+            while true do
+                local c = text:sub(i, i)
+                if c == "\"" then position = i + 1 return table.concat(out) end
+                if c == "\\" then
+                    local n = text:sub(i + 1, i + 1)
+                    out[#out + 1] = n == "n" and "\n" or n
+                    i = i + 2
+                else
+                    out[#out + 1] = c
+                    i = i + 1
+                end
+            end
+        end
+        function value()
+            space()
+            local c = text:sub(position, position)
+            if c == "{" then
+                local out = {}
+                position = position + 1
+                space()
+                if text:sub(position, position) == "}" then position = position + 1 return out end
+                while true do
+                    space()
+                    local key = str()
+                    space()
+                    position = position + 1 -- :
+                    out[key] = value()
+                    space()
+                    local sep = text:sub(position, position)
+                    position = position + 1
+                    if sep == "}" then return out end
+                end
+            elseif c == "[" then
+                local out = {}
+                position = position + 1
+                space()
+                if text:sub(position, position) == "]" then position = position + 1 return out end
+                while true do
+                    out[#out + 1] = value()
+                    space()
+                    local sep = text:sub(position, position)
+                    position = position + 1
+                    if sep == "]" then return out end
+                end
+            elseif c == "\"" then
+                return str()
+            elseif text:sub(position, position + 3) == "true" then position = position + 4 return true
+            elseif text:sub(position, position + 4) == "false" then position = position + 5 return false
+            elseif text:sub(position, position + 3) == "null" then position = position + 4 return nil
+            else
+                local number = text:match("^-?[%d%.eE+-]+", position)
+                position = position + #number
+                return tonumber(number)
+            end
+        end
+        return value()
+    end
+    http.JSONEncode = function(_, value) return (encode(value)) end
+    http.JSONDecode = function(_, text) return decode(text) end
+    services.HttpService = http
+end
+
 game = {
     PlaceId = 4442272183,
     JobId = "test-job",

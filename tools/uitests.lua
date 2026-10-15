@@ -402,6 +402,151 @@ do
 end
 
 ---------------------------------------------------------------------------
+-- The strawberry window (UI.Facade over a fake UI.Library)
+---------------------------------------------------------------------------
+
+local Facade = require("UI.Facade")
+
+-- Stands in for UI.Library: same calls, same habits (a toggle fires its
+-- callback at creation, SetStage only clicks when the state changes, a
+-- multi dropdown calls back (name, ticked)).
+local function newFakeCore()
+    local rec = { tabs = {}, sections = {}, toggles = {}, sliders = {}, dropdowns = {}, inputs = {}, buttons = {},
+        labels = {}, notes = {}, shown = 0, destroyed = false }
+    local core = {}
+    function core:Notify(config) rec.notes[#rec.notes + 1] = config end
+    core.ToggleUI = function() rec.shown = rec.shown + 1 end
+    core.DestroyUI = function() rec.destroyed = true end
+    function core:CreateWindow(config)
+        rec.window = config
+        local window = {}
+        function window:AddTab(name)
+            rec.tabs[#rec.tabs + 1] = name
+            local page = {}
+            function page:AddLeftGroupbox(title)
+                rec.sections[#rec.sections + 1] = title
+                local section = {}
+                function section:AddToggle(idx, config)
+                    local state = config.Default == true
+                    local toggle = { config = config }
+                    function toggle.SetStage(value)
+                        if value ~= state then
+                            state = value
+                            config.Callback(value)
+                        end
+                    end
+                    rec.toggles[idx] = toggle
+                    if config.Callback then config.Callback(state) end
+                    return toggle
+                end
+                function section:AddSlider(config)
+                    local slider = { config = config }
+                    function slider.SetValue(value) config.Callback(value) end
+                    rec.sliders[config.Title] = slider
+                    config.Callback(config.Default)
+                    return slider
+                end
+                function section:AddDropdown(idx, config)
+                    local dropdown = { config = config, ticks = {}, list = config.Values }
+                    function dropdown:SetValue(value)
+                        if config.Multi then
+                            self.ticks[value] = true
+                            config.Callback(value, true)
+                        else
+                            config.Callback(value)
+                        end
+                    end
+                    function dropdown:GetNewList(list) self.list = list end
+                    rec.dropdowns[idx] = dropdown
+                    if config.Default and config.Callback and not config.Multi then config.Callback(config.Default) end
+                    return dropdown
+                end
+                function section:AddInput(idx, config)
+                    local input = { config = config }
+                    function input.SetValue(text) config.Callback(text) end
+                    rec.inputs[idx] = input
+                    return input
+                end
+                function section:AddButton(config)
+                    rec.buttons[config.Title] = config
+                    return {}
+                end
+                function section:AddLabel(text)
+                    local label = { text = text }
+                    function label:SetText(value) self.text = value end
+                    rec.labels[#rec.labels + 1] = label
+                    return label
+                end
+                return section
+            end
+            return page
+        end
+        return window
+    end
+    return core, rec
+end
+
+reset()
+do
+    local core, rec = newFakeCore()
+    local library = Facade.wrap(core)
+    local save = Facade.saveManager()
+    local okBuild, window, failedTabs = pcall(Interface.build, library, save, nil, { version = "test", unload = function() end })
+    check("strawberry window builds", okBuild, window)
+    eq("no tab failed", failedTabs and #failedTabs, 0)
+    eq("every tab", #rec.tabs, #Interface.TABS)
+    eq("title", rec.window and rec.window.Title, "Strawberry Hub")
+    eq("window shown once", rec.shown, 1)
+    check("own toggle button (no extra mobile button)", window and window.HasToggleButton)
+    check("sections built", #rec.sections > 20, #rec.sections)
+    check("options registered", library.Options.AutoFarmLevel ~= nil)
+
+    -- A toggle writes the setting, both ways.
+    rec.toggles.AutoFarmLevel.config.Callback(true)
+    eq("toggle -> setting", Settings.get("AutoFarmLevel"), true)
+    library.Options.AutoFarmLevel:SetValue(false)
+    eq("SetValue -> setting", Settings.get("AutoFarmLevel"), false)
+    eq("option value follows", library.Options.AutoFarmLevel.Value, false)
+
+    -- Multi dropdown: a set, ticks kept.
+    rec.dropdowns.SkillsMelee.config.Callback("Z", false)
+    rec.dropdowns.SkillsMelee.config.Callback("X", true)
+    local skills = Settings.get("SkillsMelee")
+    check("multi dropdown -> set", skills.X == true and skills.Z == nil, skills.Z)
+
+    -- Paragraphs update their label.
+    local before = #rec.labels
+    check("paragraphs are labels", before > 5, before)
+
+    -- Save, change, load back (Fluent SaveManager's format).
+    Settings.set("BringCount", 4)
+    library.Options.BringCount:SetValue(4)
+    local okSave = save:Save("autosave")
+    check("saved", okSave)
+    local path = save.Folder .. "/settings/autosave.json"
+    check("file written", FILES[path] ~= nil)
+    library.Options.BringCount:SetValue(2)
+    eq("changed", Settings.get("BringCount"), 2)
+    local okLoad = save:Load("autosave")
+    check("loaded", okLoad)
+    eq("value back from the file", Settings.get("BringCount"), 4)
+
+    -- A Fluent-saved multi dropdown (a list) loads as a set.
+    FILES[save.Folder .. "/settings/old.json"] = game:GetService("HttpService"):JSONEncode({
+        objects = { { type = "Dropdown", idx = "SkillsMelee", value = { "C" }, multi = true } },
+    })
+    save:Load("old")
+    check("old list -> set", Settings.get("SkillsMelee").C == true)
+
+    -- Notify and Dialog do not error; Destroy releases the library.
+    library:Notify({ Title = "T", Content = "C", SubContent = "S", Duration = 1 })
+    eq("notification content", rec.notes[#rec.notes].Content, "C\nS")
+    library:Destroy()
+    check("destroyed", rec.destroyed and library.Unloaded)
+    Interface.destroy()
+end
+
+---------------------------------------------------------------------------
 -- Report
 ---------------------------------------------------------------------------
 

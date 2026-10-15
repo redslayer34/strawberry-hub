@@ -122,8 +122,11 @@ function Interface.build(library, saveManager, interfaceManager, options)
 
     window:SelectTab(1)
 
-    local okButton, button = pcall(MobileButton.create, window)
-    if okButton then state.mobileButton = button end
+    -- The strawberry window has its own round button (UI.Library).
+    if not window.HasToggleButton then
+        local okButton, button = pcall(MobileButton.create, window)
+        if okButton then state.mobileButton = button end
+    end
 
     if #failed > 0 then
         library:Notify({

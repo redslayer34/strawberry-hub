@@ -5,10 +5,12 @@
 --
 --      game ready      wait for the player data, pick a team, anti-AFK
 --      engine          movement driver + farm and attack loops
---      interface       Fluent window (downloaded from GitHub)
+--      interface       the strawberry window (UI.Library, Banana Hub's in
+--                      red, bundled, through UI.Facade); Fluent from GitHub
+--                      when it fails or with getgenv().StrawberryUI = "Fluent"
 --
---  If Fluent cannot be downloaded the engine still runs; there is just no
---  window to drive it from.
+--  If no window can be built the engine still runs; there is just no window
+--  to drive it from.
 --=============================================================================
 
 local AimHook = require("Game.AimHook")
@@ -29,6 +31,7 @@ local Pvp = require("Features.Pvp")
 local Screen = require("Features.Screen")
 local Webhook = require("Features.Webhook")
 local Scout = require("Features.Scout")
+local Facade = require("UI.Facade")
 local FluentLoader = require("UI.Fluent")
 local Interface = require("UI.Interface")
 local Loop = require("Core.Loop")
@@ -159,8 +162,19 @@ end
 -- Interface
 ---------------------------------------------------------------------------
 
+-- The strawberry window (Banana Hub's, in red, bundled); Fluent when it
+-- fails, or when asked for: getgenv().StrawberryUI = "Fluent".
+local function loadInterface()
+    if env.StrawberryUI ~= "Fluent" then
+        local ok, lib, save = pcall(Facade.load)
+        if ok then return lib, save, nil end
+        warn("[Strawberry Hub] strawberry window failed, using Fluent: " .. tostring(lib))
+    end
+    return FluentLoader.load()
+end
+
 local saveManager, interfaceManager
-library, saveManager, interfaceManager = guard("Fluent download", FluentLoader.load)
+library, saveManager, interfaceManager = guard("interface library", loadInterface)
 
 if library then
     local window = guard("interface", Interface.build, library, saveManager, interfaceManager, {
@@ -171,7 +185,7 @@ if library then
     hub.Fluent = library
     if not window then notify("The window failed to build -- check the console (F9).") end
 else
-    notify("Fluent could not be downloaded. The hub is loaded without a window.")
+    notify("The window could not be loaded. The hub runs without a window.")
 end
 
 return hub

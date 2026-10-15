@@ -1,6 +1,7 @@
 # Strawberry Hub
 
-Blox Fruits script with a [Fluent](https://github.com/dawid-scripts/Fluent) interface.
+Blox Fruits script. Its window is Banana Hub's UI recoloured in strawberry red (bundled, nothing downloaded);
+`getgenv().StrawberryUI = "Fluent"` before the loader brings back the [Fluent](https://github.com/dawid-scripts/Fluent) window.
 
 ## Loader
 
@@ -12,7 +13,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/redslayer34/strawberr
 
 Optional, before the loader: `getgenv().StrawberryTeam = "Marines"` (default: Pirates).
 
-`LeftControl` shows / hides the window. On mobile, tap the round **SH** button.
+`LeftControl` shows / hides the window, and so does the round strawberry button (bottom left, draggable).
 Settings are saved automatically (`StrawberryHub/BloxFruits/settings/autosave.json`)
 and loaded on the next run.
 
