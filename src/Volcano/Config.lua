@@ -19,7 +19,7 @@ local Config = {}
 
 Config.DEFAULTS = {
     Team = "Pirates",
-    Speed = 300,             -- flying speed (studs/s)
+    Speed = 150,             -- flying speed (studs/s): Teddy's 150, the server keeps up
     Boat = "Guardian",       -- the boat bought at the Tiki dealer (Boat.NAMES)
     BoatSpeed = 350,
     Weapon = "Melee",        -- golems and the magnet's mobs: "Melee", "Sword" or "Blox Fruit"

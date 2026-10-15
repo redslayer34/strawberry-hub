@@ -18,7 +18,10 @@ local Config = {}
 Config.DEFAULTS = {
     Team = "Pirates",
     Hop = true,              -- allow server hops (Soul Guitar full moon, later the targeted hops)
-    Speed = 300,             -- flying speed (studs/s)
+    -- Flying speed (studs/s). Teddy's Kaitun flies at 150 and forces its
+    -- old 195 / 250 / 300 back to 150: faster, the server's position of the
+    -- character lags behind the client's and hits land late or not at all.
+    Speed = 150,
     SkipLevel = true,        -- Teddy's skip under level 150 (Sky Bandits, God's Guards)
     RedeemCodes = true,      -- every code once per account, while levelling (2x experience)
     WalkOnWater = true,      -- an invisible floor on the sea, as in Banana / Vxeze
