@@ -18,7 +18,12 @@ local Settings = require("Core.Settings")
 
 local Fight = {}
 
-Fight.SPAWN_HEIGHT = 60      -- fly this high above a spawn point
+Fight.SPAWN_HEIGHT = 60      -- fly this high toward a far mob or boss
+-- Waiting for mobs at their spawn: as low as Teddy's TweenToMobSpawn (25).
+-- From 60 up (above the Prison's roof) the Ruthless Prisoners met on
+-- arrival took no hit for 3 to 15 s; the ones met next to the pack died
+-- in 0.2 s.
+Fight.WAIT_HEIGHT = 25
 Fight.SPAWN_REACHED = 100    -- studs: close enough, mobs stream in
 
 -- Engages `mob` for `mode` (sets mode.target, which the attack loop hits).
@@ -241,7 +246,7 @@ function Search:run(mode, names)
         point = points[1]
     end
 
-    Movement.to(point.CFrame * CFrame.new(0, Fight.SPAWN_HEIGHT, 0))
+    Movement.to(point.CFrame * CFrame.new(0, Fight.WAIT_HEIGHT, 0))
     -- No mob up where they spawn: have that place loaded (low graphics).
     IslandLoader.focus(point.Position)
     if Player.distanceTo(point.Position) <= Fight.SPAWN_REACHED then

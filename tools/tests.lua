@@ -707,7 +707,7 @@ do
     require("Game.Data").MOB_SPOTS.Zombie = nil
     LevelFarm.tick()
     goal = Movement.goal()
-    near("unknown spot: waits above the quest giver", goal.Position, Vector3.new(1000, 70, 1000))
+    near("unknown spot: waits above the quest giver", goal.Position, Vector3.new(1000, 35, 1000))
     require("Game.Data").MOB_SPOTS.Zombie = zombieSpot
     check("Shanda and God's Guard live apart: no double quest between them",
         not require("Game.Quests").near("God's Guard", "Shanda"))
@@ -733,14 +733,14 @@ do
     part("Zombie [Lv. 950]", Vector3.new(1400, 5, 1000), spawns)
     LevelFarm.tick()
     goal = Movement.goal()
-    near("searches the spawn point", goal.Position, Vector3.new(1200, 65, 1000))
+    near("searches the spawn point", goal.Position, Vector3.new(1200, 30, 1000))
     eq("no attack target while searching", LevelFarm.target, nil)
 
     world.hrp.Position = Vector3.new(1200, 65, 1000)
     LevelFarm.tick()
     LevelFarm.tick()
     goal = Movement.goal()
-    near("moves on to the next spawn point", goal.Position, Vector3.new(1400, 65, 1000))
+    near("moves on to the next spawn point", goal.Position, Vector3.new(1400, 30, 1000))
     near("first spawn point left alone once visited", spawnPoint.Position, Vector3.new(1200, 5, 1000))
 
     world.humanoid.Health = 0
@@ -902,7 +902,7 @@ do
     local spawns = folder("EnemySpawns", folder("_WorldOrigin", workspace))
     part("Reborn Skeleton [Lv. 1975]", Vector3.new(300, 0, 0), spawns)
     BoneFarm.tick()
-    near("bone farm tours the spawn points", Movement.goal().Position, Vector3.new(300, 60, 0))
+    near("bone farm tours the spawn points", Movement.goal().Position, Vector3.new(300, 25, 0))
     local skeleton = mob("Reborn Skeleton", Vector3.new(310, 0, 0))
     BoneFarm.tick()
     eq("bone farm fights a bone mob", BoneFarm.target, skeleton)
@@ -2451,7 +2451,16 @@ local function batchBSetup(place, level)
     Raids.reset()
 end
 
--- Random fruit (v30): the Net gacha remote, once per cooldown.
+-- Random fruit (v30): the Net gacha remote, once per cooldown. Each roll
+-- asks { Context = "Check" } first, then { Context = "Purchase" }.
+local function purchases(remote)
+    local list = {}
+    for _, call in ipairs(remote.Invoked or {}) do
+        if type(call[1]) == "table" and call[1].Context == "Purchase" then list[#list + 1] = call[1] end
+    end
+    return list
+end
+
 local function gachaRemote(answer)
     local remote = newInstance("RemoteFunction", "RF/GachaNetworkRF", folder("Net", folder("Modules", game:GetService("ReplicatedStorage"))))
     local beli = world.player.Data:FindFirstChild("Beli") or newInstance("IntValue", "Beli", world.player.Data)
@@ -2469,14 +2478,14 @@ do
     local remote = gachaRemote("pay")
     world.player.Data.Level.Value = 40
     check("below level 50: no roll", not Fruits.roll())
-    eq("below level 50: nothing bought", #(remote.Invoked or {}), 0)
+    eq("below level 50: nothing bought", #purchases(remote), 0)
     world.player.Data.Level.Value = 60
     check("allowed: rolled (the Beli went down)", Fruits.roll())
-    local request = remote.Invoked and remote.Invoked[1] and remote.Invoked[1][1]
+    local request = purchases(remote)[1]
     eq("purchase context", request and request.Context, "Purchase")
     eq("the Cousin's box", request and request.BoxName, "ZiolesGacha")
     check("right after: no second purchase", not Fruits.roll())
-    eq("one purchase only", #remote.Invoked, 1)
+    eq("one purchase only", #purchases(remote), 1)
     remote.Parent = nil
     Fruits.resetRoll()
 end
@@ -2490,7 +2499,7 @@ do
     check("refused: no roll", not Fruits.roll())
     eq("refused: the answer shown", Fruits.rollInfo(), "roll Cooldown, ZiolesGacha")
     check("refused: not asked again at once", not Fruits.roll())
-    eq("refused: one try", #remote.Invoked, 1)
+    eq("refused: one try", #purchases(remote), 1)
     remote.Parent = nil
     Fruits.resetRoll()
 end
@@ -2505,7 +2514,7 @@ do
     newInstance("ScreenGui", "SpinnerWindow", gui).Enabled = true
     Settings.set("FruitRandom", true)
     Fruits.step()
-    eq("spin window open: still rolls", #(remote.Invoked or {}), 1)
+    eq("spin window open: still rolls", #purchases(remote), 1)
     Settings.set("FruitRandom", false)
     remote.Parent = nil
     Fruits.resetRoll()
@@ -3527,7 +3536,7 @@ do
     eq("volcano config: weapon", merged.Weapon, "Sword")
     eq("volcano config: skill weapons merged", merged.SkillWeapons.Gun, false)
     eq("volcano config: other skills kept", merged.SkillWeapons.Melee, true)
-    eq("volcano config: a wrong type falls back", merged.Speed, 300)
+    eq("volcano config: a wrong type falls back", merged.Speed, 150)
     eq("volcano config: defaults", VolcanoConfig.merge(nil).CraftMagnet, true)
     check("volcano loader: this script", VolcanoConfig.loader():find("StrawberryVolcano.lua", 1, true) ~= nil)
 
@@ -3996,7 +4005,7 @@ end
 do
     local merged = KConfig.merge({ Team = "Marines", Speed = "fast", Skip = { CDK = true }, Extra = 1 })
     eq("config: string kept", merged.Team, "Marines")
-    eq("config: wrong type falls back", merged.Speed, 300)
+    eq("config: wrong type falls back", merged.Speed, 150)
     eq("config: skip merged key by key", merged.Skip.CDK, true)
     eq("config: other skips kept", merged.Skip.Yama, false)
     eq("config: unknown key kept", merged.Extra, 1)

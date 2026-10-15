@@ -131,7 +131,7 @@ local function hunt(name)
     -- the Upper Skylands, far from their giver on the lower ones.
     local spot = Data.MOB_SPOTS[name]
     if spot then
-        Movement.to(CFrame.new(spot) * CFrame.new(0, Fight.SPAWN_HEIGHT, 0))
+        Movement.to(CFrame.new(spot) * CFrame.new(0, Fight.WAIT_HEIGHT, 0))
         IslandLoader.focus(spot)
         LevelFarm.status = "Looking for " .. name .. " where it lives"
         return
@@ -142,7 +142,7 @@ local function hunt(name)
         if quest.mob == name then plan = quest end
     end
     if plan and plan.position then
-        Movement.to(CFrame.new(plan.position) * CFrame.new(0, Fight.SPAWN_HEIGHT, 0))
+        Movement.to(CFrame.new(plan.position) * CFrame.new(0, Fight.WAIT_HEIGHT, 0))
         IslandLoader.focus(plan.position)
         LevelFarm.status = "Looking for " .. name .. " around its quest giver"
     else
